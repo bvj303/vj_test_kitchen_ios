@@ -13,7 +13,7 @@ final class FakeGroceryRecipeService: RecipeServicing, @unchecked Sendable {
     var detailsById: [Int64: RecipeDetail] = [:]
     var errorToThrow: Error?
 
-    func fetchAll() async throws -> [Recipe] { fatalError("not used") }
+    func fetchPage(offset: Int, limit: Int, matching search: String?) async throws -> [Recipe] { fatalError("not used") }
 
     func fetchDetail(id: Int64) async throws -> RecipeDetail {
         if let errorToThrow { throw errorToThrow }

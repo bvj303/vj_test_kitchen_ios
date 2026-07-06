@@ -26,8 +26,18 @@ final class FakeMealPlanService: MealPlanServicing, @unchecked Sendable {
 
 final class FakeMealPlanRecipeService: RecipeServicing, @unchecked Sendable {
     var recipesToReturn: [Recipe] = []
+    private(set) var fetchedPages: [(offset: Int, limit: Int, search: String?)] = []
 
-    func fetchAll() async throws -> [Recipe] { recipesToReturn }
+    func fetchPage(offset: Int, limit: Int, matching search: String?) async throws -> [Recipe] {
+        fetchedPages.append((offset, limit, search))
+        let filtered = search.map { term in
+            recipesToReturn.filter { $0.title.localizedCaseInsensitiveContains(term) }
+        } ?? recipesToReturn
+        let start = min(offset, filtered.count)
+        let end = min(offset + limit, filtered.count)
+        return Array(filtered[start..<end])
+    }
+
     func fetchDetail(id: Int64) async throws -> RecipeDetail { fatalError("not used") }
     func create(_ draft: RecipeDraft) async throws -> Recipe { fatalError("not used") }
     func update(id: Int64, with draft: RecipeDraft) async throws { fatalError("not used") }
@@ -100,19 +110,23 @@ struct MealCalendarViewModelTests {
         #expect(viewModel.errorMessage == "failed")
     }
 
-    @Test func matchingRecipesFiltersBySearchTextCaseInsensitively() async {
+    @Test func matchingRecipesFiltersBySearchTextCaseInsensitivelyViaServerSideSearch() async {
         let recipes = FakeMealPlanRecipeService()
         recipes.recipesToReturn = [
             Recipe(id: 1, userId: nil, title: "Carbonara", description: nil, instructions: nil, imagePath: nil, prepTime: nil, servings: nil, createdAt: Date()),
             Recipe(id: 2, userId: nil, title: "Beef Tacos", description: nil, instructions: nil, imagePath: nil, prepTime: nil, servings: nil, createdAt: Date()),
         ]
-        let viewModel = MealCalendarViewModel(mealPlanService: FakeMealPlanService(), recipeService: recipes)
+        let viewModel = MealCalendarViewModel(mealPlanService: FakeMealPlanService(), recipeService: recipes, debounceDelay: .zero)
         await viewModel.load()
 
         #expect(viewModel.matchingRecipes.isEmpty)
 
         viewModel.recipeSearchText = "taco"
+        try? await Task.sleep(for: .milliseconds(50))
+
         #expect(viewModel.matchingRecipes.map(\.title) == ["Beef Tacos"])
+        #expect(recipes.fetchedPages.last?.search == "taco")
+        #expect(recipes.fetchedPages.last?.limit == 5)
     }
 
     @Test func addMealPlanCallsServiceThenReloads() async {

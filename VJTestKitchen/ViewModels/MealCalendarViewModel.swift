@@ -7,10 +7,15 @@ final class MealCalendarViewModel {
     static let mealTypes = ["Breakfast", "Lunch", "Dinner", "Snack"]
 
     let weekDates: [String]
-    private(set) var allRecipes: [Recipe] = []
+    private(set) var matchingRecipes: [Recipe] = []
     private(set) var isLoading = false
     var errorMessage: String?
-    var recipeSearchText = ""
+    var recipeSearchText = "" {
+        didSet {
+            guard oldValue != recipeSearchText else { return }
+            debouncer.run { [weak self] in await self?.reloadMatchingRecipes() }
+        }
+    }
     var selectedMealType = "Dinner"
     /// Which day the Quick Planner adds to. Defaults to the first day of the
     /// visible week; the view exposes a day picker so it isn't stuck on "today".
@@ -19,22 +24,23 @@ final class MealCalendarViewModel {
     private var mealPlansByDate: [String: [MealPlanWithRecipe]] = [:]
     private let mealPlanService: MealPlanServicing
     private let recipeService: RecipeServicing
+    private let debouncer: Debouncer
+
+    /// Matches `.prefix(5)` in `MealCalendarView`'s Quick Planner search results.
+    private static let matchingRecipesLimit = 5
 
     init(
         referenceDate: Date = Date(),
         mealPlanService: MealPlanServicing = MealPlanService(),
-        recipeService: RecipeServicing = RecipeService()
+        recipeService: RecipeServicing = RecipeService(),
+        debounceDelay: Duration = .milliseconds(300)
     ) {
         self.mealPlanService = mealPlanService
         self.recipeService = recipeService
+        self.debouncer = Debouncer(delay: debounceDelay)
         let dates = Self.computeWeekDates(from: referenceDate)
         weekDates = dates
         selectedPlanningDate = dates[0]
-    }
-
-    var matchingRecipes: [Recipe] {
-        guard !recipeSearchText.isEmpty else { return [] }
-        return allRecipes.filter { $0.title.localizedCaseInsensitiveContains(recipeSearchText) }
     }
 
     func mealPlans(for date: String) -> [MealPlanWithRecipe] {
@@ -46,11 +52,24 @@ final class MealCalendarViewModel {
         isLoading = true
         defer { isLoading = false }
         do {
-            async let plansTask = mealPlanService.fetchAll()
-            async let recipesTask = recipeService.fetchAll()
-            let (plans, recipes) = try await (plansTask, recipesTask)
+            let plans = try await mealPlanService.fetchAll()
             mealPlansByDate = Dictionary(grouping: plans, by: \.date)
-            allRecipes = recipes
+        } catch {
+            errorMessage = ErrorPresenter.message(for: error)
+        }
+    }
+
+    private func reloadMatchingRecipes() async {
+        guard !recipeSearchText.isEmpty else {
+            matchingRecipes = []
+            return
+        }
+        do {
+            matchingRecipes = try await recipeService.fetchPage(
+                offset: 0,
+                limit: Self.matchingRecipesLimit,
+                matching: recipeSearchText
+            )
         } catch {
             errorMessage = ErrorPresenter.message(for: error)
         }
