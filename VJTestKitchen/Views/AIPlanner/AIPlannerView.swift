@@ -100,6 +100,7 @@ struct AIPlannerView: View {
                 } label: {
                     HStack {
                         Image(systemName: suggestion.icon)
+                            .foregroundStyle(Color.brandPrimary)
                         Text(suggestion.label)
                         Spacer()
                     }
@@ -131,9 +132,14 @@ struct AIPlannerView: View {
     }
 
     private func bubbleText(_ message: AIPlannerViewModel.ChatMessage) -> some View {
-        Text(LocalizedStringKey(message.content))
+        let isUser = message.role == .user
+        return Text(LocalizedStringKey(message.content))
+            .foregroundStyle(isUser ? .white : .primary)
             .padding(12)
-            .glassEffect(in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .glassEffect(
+                isUser ? .regular.tint(Color.brandPrimary.opacity(0.85)) : .regular,
+                in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+            )
     }
 
     private var inputBar: some View {
