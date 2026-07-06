@@ -17,6 +17,14 @@ struct ProfileView: View {
                 }
 
                 Section {
+                    NavigationLink {
+                        SettingsView()
+                    } label: {
+                        Label("Settings", systemImage: "gearshape")
+                    }
+                }
+
+                Section {
                     Button(role: .destructive) {
                         Task {
                             await authViewModel.signOut()
@@ -41,4 +49,5 @@ struct ProfileView: View {
 #Preview {
     ProfileView()
         .environment(AuthViewModel())
+        .environment(SettingsViewModel())
 }
