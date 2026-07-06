@@ -102,7 +102,7 @@ struct AuthViewModelTests {
         let fake = FakeAuthService()
         let viewModel = AuthViewModel(authService: fake)
         viewModel.email = "new@example.com"
-        viewModel.password = "s3cret!"
+        viewModel.password = "s3cretpw"
 
         await viewModel.signUp()
 
@@ -115,10 +115,50 @@ struct AuthViewModelTests {
         let fake = FakeAuthService()
         fake.errorToThrow = TestError()
         let viewModel = AuthViewModel(authService: fake)
+        viewModel.email = "new@example.com"
+        viewModel.password = "s3cretpw"
 
         await viewModel.signUp()
 
         #expect(viewModel.errorMessage == "invalid credentials")
+    }
+
+    @Test func signUpRejectsPasswordShorterThanMinimumWithoutCallingService() async {
+        let fake = FakeAuthService()
+        let viewModel = AuthViewModel(authService: fake)
+        viewModel.email = "new@example.com"
+        viewModel.password = "short7!"  // 7 chars, below the minimum
+
+        await viewModel.signUp()
+
+        #expect(fake.signUpCallCount == 0)
+        #expect(viewModel.errorMessage != nil)
+        #expect(viewModel.errorMessage?.contains("\(AuthViewModel.minimumPasswordLength)") == true)
+    }
+
+    @Test func signUpAcceptsPasswordMeetingMinimum() async {
+        let fake = FakeAuthService()
+        let viewModel = AuthViewModel(authService: fake)
+        viewModel.email = "new@example.com"
+        viewModel.password = String(repeating: "a", count: AuthViewModel.minimumPasswordLength)
+
+        await viewModel.signUp()
+
+        #expect(fake.signUpCallCount == 1)
+        #expect(viewModel.errorMessage == nil)
+    }
+
+    @Test func signInIsNotBlockedByPasswordLength() async {
+        // Existing accounts may predate the minimum — sign-in must not gate on it.
+        let fake = FakeAuthService()
+        let viewModel = AuthViewModel(authService: fake)
+        viewModel.email = "old@example.com"
+        viewModel.password = "old"
+
+        await viewModel.signIn()
+
+        #expect(fake.signInCallCount == 1)
+        #expect(viewModel.errorMessage == nil)
     }
 
     @Test func signOutCallsService() async {
