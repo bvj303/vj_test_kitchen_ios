@@ -10,6 +10,11 @@ final class AuthViewModel {
         case signedIn(userId: UUID)
     }
 
+    /// Minimum password length enforced client-side at sign-up. Keep in sync
+    /// with the Supabase project's `minimum_password_length` (Auth settings /
+    /// config.toml) — the server is the real gate; this is fast UX feedback.
+    static let minimumPasswordLength = 8
+
     private(set) var state: AuthState = .loading
     var email = ""
     var password = ""
@@ -39,6 +44,12 @@ final class AuthViewModel {
     }
 
     func signUp() async {
+        // Validate before hitting the network so a too-short password fails
+        // fast with a clear message rather than a generic server error.
+        guard password.count >= Self.minimumPasswordLength else {
+            errorMessage = "Password must be at least \(Self.minimumPasswordLength) characters."
+            return
+        }
         await perform { try await authService.signUp(email: email, password: password) }
     }
 
