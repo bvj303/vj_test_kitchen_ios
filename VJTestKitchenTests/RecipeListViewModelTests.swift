@@ -6,10 +6,17 @@ final class FakeRecipeService: RecipeServicing, @unchecked Sendable {
     var recipesToReturn: [Recipe] = []
     var errorToThrow: Error?
     private(set) var deletedIds: [Int64] = []
+    private(set) var fetchedPages: [(offset: Int, limit: Int, search: String?)] = []
 
-    func fetchAll() async throws -> [Recipe] {
+    func fetchPage(offset: Int, limit: Int, matching search: String?) async throws -> [Recipe] {
+        fetchedPages.append((offset, limit, search))
         if let errorToThrow { throw errorToThrow }
-        return recipesToReturn
+        let filtered = search.map { term in
+            recipesToReturn.filter { $0.title.localizedCaseInsensitiveContains(term) }
+        } ?? recipesToReturn
+        let start = min(offset, filtered.count)
+        let end = min(offset + limit, filtered.count)
+        return Array(filtered[start..<end])
     }
 
     func fetchDetail(id: Int64) async throws -> RecipeDetail {
@@ -46,7 +53,7 @@ struct RecipeListViewModelTests {
 
         await viewModel.load()
 
-        #expect(viewModel.recipes.map(\.title) == ["Carbonara", "Tacos"])
+        #expect(viewModel.items.map(\.title) == ["Carbonara", "Tacos"])
         #expect(viewModel.errorMessage == nil)
         #expect(viewModel.isLoading == false)
     }
@@ -59,28 +66,61 @@ struct RecipeListViewModelTests {
         await viewModel.load()
 
         #expect(viewModel.errorMessage == "failed to load")
-        #expect(viewModel.recipes.isEmpty)
+        #expect(viewModel.items.isEmpty)
     }
 
-    @Test func searchTextFiltersByTitleCaseInsensitively() async {
+    @Test func searchTextReloadsFromServerAfterDebounce() async {
         let fake = FakeRecipeService()
         fake.recipesToReturn = [makeRecipe(id: 1, title: "Carbonara"), makeRecipe(id: 2, title: "Beef Tacos")]
-        let viewModel = RecipeListViewModel(recipeService: fake)
+        let viewModel = RecipeListViewModel(recipeService: fake, debounceDelay: .zero)
         await viewModel.load()
 
         viewModel.searchText = "taco"
+        try? await Task.sleep(for: .milliseconds(50))
 
-        #expect(viewModel.filteredRecipes.map(\.title) == ["Beef Tacos"])
+        #expect(viewModel.items.map(\.title) == ["Beef Tacos"])
+        #expect(fake.fetchedPages.last?.search == "taco")
+        #expect(fake.fetchedPages.last?.offset == 0)
     }
 
     @Test func emptySearchTextShowsAllRecipes() async {
         let fake = FakeRecipeService()
         fake.recipesToReturn = [makeRecipe(id: 1, title: "Carbonara"), makeRecipe(id: 2, title: "Tacos")]
-        let viewModel = RecipeListViewModel(recipeService: fake)
+        let viewModel = RecipeListViewModel(recipeService: fake, debounceDelay: .zero)
         await viewModel.load()
 
+        viewModel.searchText = "taco"
+        try? await Task.sleep(for: .milliseconds(50))
         viewModel.searchText = ""
+        try? await Task.sleep(for: .milliseconds(50))
 
-        #expect(viewModel.filteredRecipes.count == 2)
+        #expect(viewModel.items.count == 2)
+    }
+
+    @Test func loadMoreIfNeededFetchesNextPageNearEndOfList() async {
+        let fake = FakeRecipeService()
+        // 60 recipes so the first 50-row page is full and a second page exists.
+        fake.recipesToReturn = (1...60).map { makeRecipe(id: Int64($0), title: "Recipe \($0)") }
+        let viewModel = RecipeListViewModel(recipeService: fake)
+        await viewModel.load()
+        #expect(viewModel.items.count == 50)
+
+        await viewModel.loadMoreIfNeeded(currentItem: viewModel.items[49])
+
+        #expect(viewModel.items.count == 60)
+        #expect(fake.fetchedPages.last?.offset == 50)
+    }
+
+    @Test func loadMoreIfNeededDoesNothingWhenFarFromEndOfList() async {
+        let fake = FakeRecipeService()
+        fake.recipesToReturn = (1...60).map { makeRecipe(id: Int64($0), title: "Recipe \($0)") }
+        let viewModel = RecipeListViewModel(recipeService: fake)
+        await viewModel.load()
+        let pageCountBefore = fake.fetchedPages.count
+
+        await viewModel.loadMoreIfNeeded(currentItem: viewModel.items[0])
+
+        #expect(viewModel.items.count == 50)
+        #expect(fake.fetchedPages.count == pageCountBefore)
     }
 }

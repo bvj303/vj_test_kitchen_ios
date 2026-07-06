@@ -70,7 +70,7 @@ struct MealCalendarView: View {
 
             if !viewModel.matchingRecipes.isEmpty {
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach(viewModel.matchingRecipes.prefix(5)) { recipe in
+                    ForEach(viewModel.matchingRecipes) { recipe in
                         Button {
                             Task {
                                 await viewModel.addMealPlan(date: viewModel.selectedPlanningDate, recipeId: recipe.id)
