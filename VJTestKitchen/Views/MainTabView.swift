@@ -25,4 +25,5 @@ struct MainTabView: View {
 #Preview {
     MainTabView()
         .environment(AuthViewModel())
+        .environment(SettingsViewModel())
 }

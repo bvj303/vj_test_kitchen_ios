@@ -6,6 +6,7 @@ import SwiftUI
 /// (App Store, Music, Photos) handle a profile icon: a dedicated page, not
 /// an inline menu, once there's more than a single trivial action.
 struct AccountButton: View {
+    @Environment(SettingsViewModel.self) private var settingsViewModel
     @State private var showingProfile = false
 
     var body: some View {
@@ -16,6 +17,11 @@ struct AccountButton: View {
         }
         .sheet(isPresented: $showingProfile) {
             ProfileView()
+                // `.preferredColorScheme` on the WindowGroup root doesn't
+                // propagate into `.sheet` content in SwiftUI — sheets get
+                // their own presentation context, so the override must be
+                // re-applied here too.
+                .preferredColorScheme(settingsViewModel.appearanceMode.colorScheme)
         }
     }
 }

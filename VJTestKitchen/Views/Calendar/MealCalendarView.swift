@@ -47,7 +47,9 @@ struct MealCalendarView: View {
         @Bindable var viewModel = viewModel
 
         return VStack(alignment: .leading, spacing: 12) {
-            Text("Quick Planner").font(.headline)
+            Label("Quick Planner", systemImage: "calendar.badge.clock")
+                .font(.headline)
+                .foregroundStyle(Color.brandPrimary)
 
             Picker("Meal", selection: $viewModel.selectedMealType) {
                 ForEach(MealCalendarViewModel.mealTypes, id: \.self) { type in
@@ -79,6 +81,7 @@ struct MealCalendarView: View {
                                 Text(recipe.title)
                                 Spacer()
                                 Image(systemName: "plus.circle")
+                                    .foregroundStyle(Color.brandSage)
                             }
                             .padding(.vertical, 8)
                         }
@@ -99,6 +102,7 @@ struct MealCalendarView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(Self.displayLabel(for: date))
                 .font(.headline)
+                .foregroundStyle(Color.brandSage)
 
             if plans.isEmpty {
                 Text("No meals planned.")
@@ -116,6 +120,7 @@ struct MealCalendarView: View {
                             Task { await viewModel.deleteMealPlan(plan.id) }
                         } label: {
                             Image(systemName: "trash")
+                                .foregroundStyle(.red)
                         }
                         .buttonStyle(.plain)
                     }

@@ -18,4 +18,5 @@ struct RootView: View {
 #Preview {
     RootView()
         .environment(AuthViewModel())
+        .environment(SettingsViewModel())
 }

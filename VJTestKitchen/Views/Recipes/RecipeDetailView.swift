@@ -79,11 +79,12 @@ struct RecipeDetailView: View {
         VStack(alignment: .leading, spacing: 12) {
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .fill(.thinMaterial)
+                .glassEffect(.regular.tint(Color.brandPrimary.opacity(0.22)), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
                 .frame(height: 220)
                 .overlay {
                     Image(systemName: "fork.knife.circle")
                         .font(.system(size: 48))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.brandPrimary)
                 }
 
             Text(detail.title)
@@ -95,9 +96,10 @@ struct RecipeDetailView: View {
                         ForEach(detail.tagNames, id: \.self) { tag in
                             Text(tag)
                                 .font(.caption.weight(.semibold))
+                                .foregroundStyle(Color.brandSage)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 6)
-                                .glassEffect(in: Capsule())
+                                .glassEffect(.regular.tint(Color.brandSage.opacity(0.28)), in: Capsule())
                         }
                     }
                 }
@@ -125,6 +127,7 @@ struct RecipeDetailView: View {
     private func statTile(icon: String, value: String, label: String) -> some View {
         VStack(spacing: 4) {
             Image(systemName: icon)
+                .foregroundStyle(Color.brandPrimary)
             Text(value).font(.headline)
             Text(label).font(.caption2).foregroundStyle(.secondary)
         }
@@ -136,7 +139,7 @@ struct RecipeDetailView: View {
     @ViewBuilder
     private func ingredientsSection(_ detail: RecipeDetail) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Ingredients").font(.title3.bold())
+            Text("Ingredients").font(.title3.bold()).foregroundStyle(Color.brandPrimary)
             ForEach(detail.ingredients) { ingredient in
                 HStack(alignment: .firstTextBaseline) {
                     Text(formattedAmount(ingredient))
@@ -159,19 +162,19 @@ struct RecipeDetailView: View {
     @ViewBuilder
     private func instructionsSection(_ instructions: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Instructions").font(.title3.bold())
+            Text("Instructions").font(.title3.bold()).foregroundStyle(Color.brandPrimary)
             Text(instructions)
         }
     }
 
     private var ratingSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("My Rating & Notes").font(.title3.bold())
+            Text("My Rating & Notes").font(.title3.bold()).foregroundStyle(Color.brandPrimary)
 
             HStack(spacing: 4) {
                 ForEach(1...5, id: \.self) { star in
                     Image(systemName: star <= (viewModel.rating ?? 0) ? "star.fill" : "star")
-                        .foregroundStyle(.yellow)
+                        .foregroundStyle(Color.brandSaffron)
                         .onTapGesture { viewModel.rating = star }
                 }
             }
