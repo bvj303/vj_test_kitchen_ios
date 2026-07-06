@@ -54,6 +54,13 @@ struct AuthView: View {
                             .onSubmit { Task { await viewModel.signIn() } }
                             .textFieldStyle(.roundedBorder)
 
+                        if !viewModel.password.isEmpty && viewModel.password.count < AuthViewModel.minimumPasswordLength {
+                            Text("Password must be at least \(AuthViewModel.minimumPasswordLength) characters.")
+                                .foregroundStyle(.secondary)
+                                .font(.footnote)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+
                         if let errorMessage = viewModel.errorMessage {
                             Text(errorMessage)
                                 .foregroundStyle(.red)
@@ -74,7 +81,7 @@ struct AuthView: View {
                         Button("Create Account") {
                             Task { await viewModel.signUp() }
                         }
-                        .disabled(viewModel.isSubmitting || viewModel.email.isEmpty || viewModel.password.isEmpty)
+                        .disabled(viewModel.isSubmitting || viewModel.email.isEmpty || viewModel.password.count < AuthViewModel.minimumPasswordLength)
                     }
                     .padding(24)
                     .glassEffect(in: RoundedRectangle(cornerRadius: 24, style: .continuous))
