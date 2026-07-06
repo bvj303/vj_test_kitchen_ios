@@ -1,0 +1,192 @@
+import SwiftUI
+
+struct RecipeDetailView: View {
+    @State private var viewModel: RecipeDetailViewModel
+    @Environment(AuthViewModel.self) private var authViewModel
+    @State private var showingEditSheet = false
+    let recipeId: Int64
+
+    init(recipeId: Int64) {
+        self.recipeId = recipeId
+        _viewModel = State(initialValue: RecipeDetailViewModel(recipeId: recipeId))
+    }
+
+    private var isOwnedByCurrentUser: Bool {
+        guard let detail = viewModel.detail, case .signedIn(let userId) = authViewModel.state else { return false }
+        return detail.userId == userId
+    }
+
+    var body: some View {
+        @Bindable var viewModel = viewModel
+
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                if let detail = viewModel.detail {
+                    header(detail)
+                    statsRow(detail)
+                    if !detail.ingredients.isEmpty {
+                        ingredientsSection(detail)
+                    }
+                    if let instructions = detail.instructions, !instructions.isEmpty {
+                        instructionsSection(instructions)
+                    }
+                    ratingSection
+                } else if viewModel.isLoading {
+                    ProgressView().padding(.top, 80)
+                }
+            }
+            .padding()
+        }
+        .navigationTitle(viewModel.detail?.title ?? "Recipe")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if viewModel.detail != nil {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        viewModel.toggleGroceryList()
+                    } label: {
+                        Image(systemName: viewModel.isInGroceryList ? "cart.fill" : "cart.badge.plus")
+                    }
+                }
+            }
+            if isOwnedByCurrentUser {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Edit") { showingEditSheet = true }
+                }
+            }
+        }
+        .sheet(isPresented: $showingEditSheet, onDismiss: { Task { await viewModel.load() } }) {
+            NavigationStack {
+                RecipeFormView(mode: .edit(recipeId: recipeId))
+            }
+        }
+        .task { await viewModel.load() }
+        .alert(
+            "Something Went Wrong",
+            isPresented: Binding(
+                get: { viewModel.errorMessage != nil },
+                set: { if !$0 { viewModel.errorMessage = nil } }
+            )
+        ) {
+            Button("OK") { viewModel.errorMessage = nil }
+        } message: {
+            Text(viewModel.errorMessage ?? "")
+        }
+    }
+
+    @ViewBuilder
+    private func header(_ detail: RecipeDetail) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(.thinMaterial)
+                .frame(height: 220)
+                .overlay {
+                    Image(systemName: "fork.knife.circle")
+                        .font(.system(size: 48))
+                        .foregroundStyle(.secondary)
+                }
+
+            Text(detail.title)
+                .font(.largeTitle.bold())
+
+            if !detail.tagNames.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(detail.tagNames, id: \.self) { tag in
+                            Text(tag)
+                                .font(.caption.weight(.semibold))
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .glassEffect(in: Capsule())
+                        }
+                    }
+                }
+            }
+
+            if let description = detail.description, !description.isEmpty {
+                Text(description)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func statsRow(_ detail: RecipeDetail) -> some View {
+        HStack(spacing: 16) {
+            if let prepTime = detail.prepTime {
+                statTile(icon: "clock", value: "\(prepTime) min", label: "Prep Time")
+            }
+            if let servings = detail.servings {
+                statTile(icon: "person.2", value: "\(servings)", label: "Servings")
+            }
+        }
+    }
+
+    private func statTile(icon: String, value: String, label: String) -> some View {
+        VStack(spacing: 4) {
+            Image(systemName: icon)
+            Text(value).font(.headline)
+            Text(label).font(.caption2).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding()
+        .glassEffect(in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    @ViewBuilder
+    private func ingredientsSection(_ detail: RecipeDetail) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Ingredients").font(.title3.bold())
+            ForEach(detail.ingredients) { ingredient in
+                HStack(alignment: .firstTextBaseline) {
+                    Text(formattedAmount(ingredient))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 90, alignment: .leading)
+                    Text(ingredient.name)
+                }
+                .font(.subheadline)
+            }
+        }
+    }
+
+    private func formattedAmount(_ ingredient: Ingredient) -> String {
+        let amountText = ingredient.amount == ingredient.amount.rounded()
+            ? String(Int(ingredient.amount))
+            : String(format: "%.2f", ingredient.amount)
+        return ingredient.unit.isEmpty ? amountText : "\(amountText) \(ingredient.unit)"
+    }
+
+    @ViewBuilder
+    private func instructionsSection(_ instructions: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Instructions").font(.title3.bold())
+            Text(instructions)
+        }
+    }
+
+    private var ratingSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("My Rating & Notes").font(.title3.bold())
+
+            HStack(spacing: 4) {
+                ForEach(1...5, id: \.self) { star in
+                    Image(systemName: star <= (viewModel.rating ?? 0) ? "star.fill" : "star")
+                        .foregroundStyle(.yellow)
+                        .onTapGesture { viewModel.rating = star }
+                }
+            }
+            .font(.title3)
+
+            TextField("Notes (e.g. substitutions, tips)", text: $viewModel.notes, axis: .vertical)
+                .textFieldStyle(.roundedBorder)
+                .lineLimit(3...6)
+
+            Button("Save") {
+                Task { await viewModel.saveRating() }
+            }
+            .buttonStyle(.glassProminent)
+        }
+        .padding()
+        .glassEffect(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+}
