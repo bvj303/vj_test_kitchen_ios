@@ -1,0 +1,64 @@
+# VJ Test Kitchen (iOS)
+
+Native SwiftUI rebuild of VJ Test Kitchen — a recipe manager with AI-powered menu planning. Replaces the old React/Express/Railway stack entirely; there is no website. See global `~/.claude/CLAUDE.md` for the mandatory TDD workflow and commit conventions this repo follows — not repeated here.
+
+Prior web app (reference only, not integrated, not deployed): `/Users/bvj13/source/vj-test-kitchen`. Its Postgres schema (`backend/db.js`) and feature set are the starting point for this rebuild's data model and scope, but no code is shared or ported directly.
+
+## Architecture
+- **Client**: Native SwiftUI, universal iPhone + iPad, Swift 6, MVVM. Deployment target: **iOS 26 / iPadOS 26 minimum** (bumped from 18 for Liquid Glass — see DECISIONS.md, 2026-07-06). Built with Xcode 26+.
+- **Design language**: Liquid Glass throughout (`.glassEffect()`, `GlassEffectContainer`, `.glassProminent` button style) — this is a deliberate visual identity choice, not just "whatever's default." Standard components (`TabView`, `NavigationStack`/`NavigationSplitView` toolbars, sheets) get it automatically from the iOS 26 SDK; custom cards/overlays/floating controls should opt in explicitly to stay visually consistent with system chrome.
+- **Backend**: Supabase — Postgres (with Row Level Security), Supabase Auth, Supabase Storage for images/files, Supabase Edge Functions for server-side logic.
+- **AI planner**: Google Gemini (`gemini-3.1-flash-lite`, carried over from the old app for its free-tier quota) called from a Supabase Edge Function. The Gemini API key lives only as a Supabase secret — never shipped in the client.
+- **Networking**: `supabase-swift` SDK, async/await throughout (no completion-handler APIs).
+- **Testing**: Swift Testing (`@Test`/`#expect`), not XCTest.
+- **Bundle identifier**: `com.bvj303.vjtestkitchen`.
+
+## Folder structure
+```
+project.yml                 # xcodegen spec — source of truth; VJTestKitchen.xcodeproj is generated, gitignored
+Config/
+  Secrets.xcconfig           # real values, gitignored
+  Secrets.xcconfig.example    # tracked template
+VJTestKitchen/
+  App/                  # App entry point (VJTestKitchenApp.swift)
+  Models/                # Codable structs matching Postgres tables (Recipe, RecipeRating, Ingredient, Tag, MealPlan, Profile)
+  Services/              # AppConfig, SupabaseDecoding, SupabaseManager (client singleton), one Service struct per resource
+  ViewModels/             # MVVM view models, one per screen/feature (empty until Stage 5)
+  Views/                  # SwiftUI views, grouped by feature
+  Resources/              # Info.plist (custom, NOT auto-generated — see below), assets
+VJTestKitchenTests/       # Swift Testing unit tests
+```
+
+Regenerate the Xcode project any time `project.yml` changes: `xcodegen generate`.
+
+## Configuration & secrets
+- **Supabase project**: ref `aviyhrmjsqygoyzjprii`, region `us-east-2`, Postgres 17. Repo is linked via `supabase link` (uses `SUPABASE_ACCESS_TOKEN` from the developer's shell profile, never committed).
+- **Project URL + anon/publishable key** (`sb_publishable_...`): safe to embed client-side by design — security is enforced by RLS policies, not by hiding this key. Real values live in `Config/Secrets.xcconfig` (gitignored; `Config/Secrets.xcconfig.example` is the tracked template) and a repo-root `.env` (gitignored, for shell/CLI use). xcconfig treats `//` as a comment start, so URLs are written as `https:/$()/host` to escape it.
+- **The app target uses a custom `VJTestKitchen/Resources/Info.plist`, not `GENERATE_INFOPLIST_FILE`** — Xcode's auto-generated-Info.plist + `INFOPLIST_KEY_*` mechanism only synthesizes a fixed list of Apple-known keys (launch screen, orientations, etc.) and **silently drops arbitrary custom keys** like `SUPABASE_URL`. Custom keys must go in a real Info.plist file with `$(SUPABASE_URL)`-style variable substitution. `Info.plist` is excluded from the target's `sources` copy-resources step (it's consumed via `INFOPLIST_FILE`, not copied as a resource) — see `project.yml`.
+- `AppConfig` (`Services/AppConfig.swift`) reads these via an injectable `Bundle` parameter (defaulting to `.main`). This isn't just DI-for-its-own-sake: unhosted Swift Testing unit tests do **not** run inside the app process, so `Bundle.main` inside a test resolves to the test bundle, not the app — tests must build and inject a synthetic `Bundle` (real temp-directory-backed, with its own `Info.plist`) to exercise `AppConfig`'s parsing logic. See `AppConfigTests.swift`.
+- **`service_role` key and the Gemini API key are true secrets** — full DB access bypassing RLS, and paid API access, respectively. They live only as Supabase Edge Function secrets (`supabase secrets set`), never in the client, never in `.env`, never committed.
+- Prefer Supabase's newer `sb_publishable_...` / `sb_secret_...` key naming over the legacy anon/service_role JWTs when either is exposed in the dashboard — same roles, newer scheme.
+
+## Conventions
+- MVVM: Views own no business logic; ViewModels are `@Observable` (or `ObservableObject` if needed) and talk to Services; Services own all Supabase calls.
+- All Supabase/network calls are `async throws`, called from ViewModels via `Task { }`.
+- Session persistence is Keychain-backed (via supabase-swift's built-in secure storage), not UserDefaults.
+- Postgrest filter values (`.eq`, etc.) must be passed as `String` — `Int64` does not conform to `PostgrestFilterValue` in supabase-swift 2.x. See `RecipeService.swift`.
+- `SupabaseDecoding.decoder`/`.encoder` (shared `JSONDecoder`/`JSONEncoder`) handle snake_case<->camelCase conversion and Postgres `timestamptz` parsing (with or without fractional seconds) for all models — always decode/encode Postgrest payloads through these, not a bare `JSONDecoder()`. Postgres `date` columns (e.g. `meal_plans.date`) are the exception: kept as a plain `"yyyy-MM-dd"` `String` on the model since the shared decoder's date strategy is timestamp-oriented.
+- `RecipeService` is the reference pattern for the Service layer (one struct per resource, thin async/await wrappers, Codable in/out) — replicate its shape for ingredients/tags/recipe_ratings/meal_plans as Stage 5 needs them.
+- Auth follows the same protocol-abstraction pattern: `AuthServicing` (real impl `AuthService`, wraps `client.auth`) is what `AuthViewModel` depends on, never `SupabaseClient` directly — keeps view models unit-testable without a network/session, and keeps SDK-specific types (`Session`, `User`) out of the ViewModel layer. `AuthViewModel.state` (`.loading`/`.signedOut`/`.signedIn(userId:)`) drives `RootView`'s top-level gating between `AuthView` and the signed-in app (`MainTabView`).
+- Account/profile access: a toolbar `AccountButton` (`person.crop.circle`, present on every tab via `PlaceholderTabView` and `RecipesTab`) presents `ProfileView` as a sheet. Matches Apple's own apps (App Store, Music, Photos) — a dedicated page for account actions, not an inline menu, once there's more than one trivial action. `ProfileView` currently only hosts Sign Out; grows into real profile content later. On iPad's `NavigationSplitView`, this button lives on the detail column's toolbar, not the sidebar's — the sidebar's trailing slot is already taken by the system sidebar-collapse toggle.
+- Supabase project has `mailer_autoconfirm = true` (Auth config) for solo testing — signups get an active session immediately, no email-confirmation click-through. **Must flip back to `false`** before inviting another real user or shipping (see DECISIONS.md, 2026-07-06).
+- `RecipeRatingService` resolves "who am I" internally (via `client.auth.session.user.id`) rather than making ViewModels pass a user id around — same reasoning as the `AuthServicing` abstraction, keeps auth-awareness contained to the Service layer.
+- `RecipeDetail` (joined recipe + ingredients + tags via Postgrest embedding, `recipes.select("*, ingredients(*), recipe_tags(tags(name))")`) is a separate model from the plain `Recipe` used by the list screen — the list doesn't need the join, so it shouldn't pay for it.
+- Liquid Glass: `TabView`/`NavigationStack`/`NavigationSplitView` chrome (tab bar, nav bar, toolbar buttons) gets it automatically from the iOS 26 SDK — confirmed visually (floating pill tab bar, circular glass toolbar button). Custom surfaces opt in explicitly with `.glassEffect(in: <Shape>)` (stat tiles, tag chips, the rating/notes card) and prominent actions use `.buttonStyle(.glassProminent)`. Pattern established in `RecipeDetailView.swift` — replicate for new custom surfaces rather than inventing another card style.
+- iPad: only the Recipes tab uses `NavigationSplitView` (list+detail is the one screen with that shape); other tabs stay plain `NavigationStack`, gated on `@Environment(\.horizontalSizeClass)`. See `RecipesTab.swift`.
+- Recipe create/update/delete: `RecipeDraft` (title/description/instructions/imagePath/prepTime/servings, no id/userId) is what `RecipeFormViewModel` works with — `RecipeService.create` resolves the current user internally (same pattern as `RecipeRatingService`) and `.update` never touches ownership. Saving a recipe always fully replaces its ingredients and tags (`IngredientService`/`TagService.replaceAll`) rather than diffing — matches the old app's behavior and is much simpler. `RecipeFormView` doubles as both Add (tab root, via `AddRecipeTab`, resets via `.id(_:)` after save since there's nothing to `dismiss()`) and Edit (sheet from `RecipeDetailView`, only shown when `detail.userId` matches the signed-in user — enforced in the UI *and* by RLS). Tags are shared/global (see schema decisions) — `TagService` upserts with `ignoreDuplicates: true` since the `tags` table intentionally has no UPDATE policy.
+
+- Calendar: `MealPlanWithRecipe` (joined via `meal_plans.select("*, recipes(title)")`) and `MealPlanDraft` follow the same Service-layer patterns as Recipes. `MealCalendarViewModel.weekDates` is 7 fixed `"yyyy-MM-dd"` strings computed with a UTC calendar — any view code displaying these must format with a UTC `DateFormatter` too, or the shown day can shift by one in non-UTC time zones (see `MealCalendarView.displayDateFormatter`).
+- Grocery List: see DECISIONS.md (2026-07-06) for why selection state is `UserDefaults`-backed, not a table. `ReminderService` wraps EventKit (`NSRemindersFullAccessUsageDescription` required in Info.plist) behind `ReminderExporting` — same testability pattern as every other Service.
+- AI Planner: `supabase/functions/ai-chat` has **zero external imports** (`Deno.serve` + built-in `fetch`/`Deno.env` only) — deliberately, after discovering `supabase functions deploy`'s bundling container couldn't resolve DNS on its managed Docker network in this environment (see DECISIONS.md, 2026-07-06). If a future function genuinely needs an npm:/jsr: package, expect to hit this again. Client side follows the same Service/protocol pattern as everywhere else: `AIServicing`/`AIService` wraps `client.functions.invoke("ai-chat", ...)`.
+- Siri: `PlanMealIntent`/`VJTestKitchenShortcuts` (`VJTestKitchen/AppIntents/`) live in the main app target — no separate Intents extension, no Siri entitlement needed (that's only for the older SiriKit `.intentdefinition` approach). Reuses `AIService` directly since it runs in-process.
+
+## Status
+Stages 1-4 complete (Supabase project + local dev, schema/RLS, Swift scaffold + supabase-swift integration, Auth). **Stage 5 (screen-by-screen build) complete**: Recipes (list/detail/Add-Edit), Calendar, Grocery List, and AI Planner (chat UI + Gemini-backed Edge Function + a Siri/App Intents entry point) all built. Real Supabase data throughout, full recipe CRUD with ownership-gated editing, meal planning, grocery aggregation + Reminders export, Liquid Glass styling, iPad split view for Recipes. Verified via 51 passing unit tests, real end-to-end checks against the live project (seeded data, a real signed-in user, a recipe created through the app, the deployed Edge Function's full pipeline including a real Gemini response that correctly referenced an actual catalog recipe by name/prep-time/servings). `GEMINI_API_KEY` is set. **Not verified**: literal tap-through of Calendar/Grocery List/AI Planner in the simulator (Accessibility automation proved intermittent this session — user has visually confirmed the Recipes tab and sign-in only), and real "Hey Siri" voice invocation (Simulator can't do this at all — device-only). Not yet started: file uploads (Stage 6 proper — recipe cover photos), content migration (Stage 8), polish/ship (Stage 9). Update this file as each stage lands.

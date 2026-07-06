@@ -1,0 +1,64 @@
+name: VJTestKitchen
+options:
+  bundleIdPrefix: com.bvj303
+  deploymentTarget:
+    iOS: "26.0"
+  developmentLanguage: en
+
+configFiles:
+  Debug: Config/Secrets.xcconfig
+  Release: Config/Secrets.xcconfig
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    TARGETED_DEVICE_FAMILY: "1,2"
+    SUPPORTS_MACCATALYST: NO
+    ENABLE_PREVIEWS: YES
+
+packages:
+  Supabase:
+    url: https://github.com/supabase/supabase-swift
+    from: 2.0.0
+
+targets:
+  VJTestKitchen:
+    type: application
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: VJTestKitchen
+        excludes:
+          - "Resources/Info.plist"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.bvj303.vjtestkitchen
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: VJTestKitchen/Resources/Info.plist
+    dependencies:
+      - package: Supabase
+        product: Supabase
+
+  VJTestKitchenTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: VJTestKitchenTests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+    dependencies:
+      - target: VJTestKitchen
+
+schemes:
+  VJTestKitchen:
+    build:
+      targets:
+        VJTestKitchen: all
+        VJTestKitchenTests: [test]
+    test:
+      targets:
+        - VJTestKitchenTests
+    run:
+      config: Debug

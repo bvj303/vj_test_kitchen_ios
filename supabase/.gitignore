@@ -1,0 +1,12 @@
+# Supabase
+.branches
+.temp
+
+# dotenvx
+.env.keys
+.env.local
+.env.*.local
+
+# Edge Function local secrets (real GEMINI_API_KEY etc. — set via `supabase secrets set` for deployed use)
+.env
+functions/.env
