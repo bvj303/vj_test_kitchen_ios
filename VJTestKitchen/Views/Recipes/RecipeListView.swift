@@ -7,20 +7,21 @@ struct RecipeListView: View {
     var body: some View {
         @Bindable var viewModel = viewModel
 
-        List(viewModel.filteredRecipes) { recipe in
+        List(viewModel.items) { recipe in
             Button {
                 onSelect(recipe)
             } label: {
                 RecipeRowView(recipe: recipe)
             }
             .buttonStyle(.plain)
+            .onAppear { Task { await viewModel.loadMoreIfNeeded(currentItem: recipe) } }
         }
         .listStyle(.plain)
         .searchable(text: $viewModel.searchText, prompt: "Search recipes")
         .overlay {
-            if viewModel.isLoading && viewModel.recipes.isEmpty {
+            if viewModel.isLoading && viewModel.items.isEmpty {
                 ProgressView()
-            } else if !viewModel.isLoading && viewModel.recipes.isEmpty && viewModel.errorMessage == nil {
+            } else if !viewModel.isLoading && viewModel.items.isEmpty && viewModel.errorMessage == nil {
                 ContentUnavailableView(
                     "No Recipes Yet",
                     systemImage: "fork.knife",
