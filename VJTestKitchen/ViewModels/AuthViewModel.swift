@@ -61,6 +61,10 @@ final class AuthViewModel {
         await perform { try await authService.signOut() }
     }
 
+    func deleteAccount() async {
+        await perform { try await authService.deleteAccount() }
+    }
+
     private func perform(_ operation: () async throws -> Void) async {
         errorMessage = nil
         isSubmitting = true
