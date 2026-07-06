@@ -71,6 +71,7 @@ struct RecipeFormView: View {
                 } label: {
                     Label("Add Ingredient", systemImage: "plus.circle")
                 }
+                .foregroundStyle(Color.brandSage)
             }
 
             Section("Categories") {
