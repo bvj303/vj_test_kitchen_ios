@@ -9,8 +9,9 @@ struct RecipeThumbnail: View {
         ZStack {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(.thinMaterial)
+                .glassEffect(.regular.tint(Color.brandPrimary.opacity(0.22)), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             Image(systemName: "fork.knife")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.brandPrimary)
         }
     }
 }
