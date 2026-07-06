@@ -9,6 +9,7 @@ final class FakeAuthService: AuthServicing, @unchecked Sendable {
     private(set) var signUpCallCount = 0
     private(set) var signInCallCount = 0
     private(set) var signOutCallCount = 0
+    private(set) var deleteAccountCallCount = 0
     private(set) var lastEmail: String?
     private(set) var lastPassword: String?
     var errorToThrow: Error?
@@ -38,6 +39,11 @@ final class FakeAuthService: AuthServicing, @unchecked Sendable {
 
     func signOut() async throws {
         signOutCallCount += 1
+        if let errorToThrow { throw errorToThrow }
+    }
+
+    func deleteAccount() async throws {
+        deleteAccountCallCount += 1
         if let errorToThrow { throw errorToThrow }
     }
 
@@ -168,5 +174,26 @@ struct AuthViewModelTests {
         await viewModel.signOut()
 
         #expect(fake.signOutCallCount == 1)
+    }
+
+    @Test func deleteAccountCallsService() async {
+        let fake = FakeAuthService()
+        let viewModel = AuthViewModel(authService: fake)
+
+        await viewModel.deleteAccount()
+
+        #expect(fake.deleteAccountCallCount == 1)
+        #expect(viewModel.errorMessage == nil)
+    }
+
+    @Test func deleteAccountSurfacesErrorMessageOnFailure() async {
+        let fake = FakeAuthService()
+        fake.errorToThrow = TestError()
+        let viewModel = AuthViewModel(authService: fake)
+
+        await viewModel.deleteAccount()
+
+        #expect(fake.deleteAccountCallCount == 1)
+        #expect(viewModel.errorMessage == "invalid credentials")
     }
 }
