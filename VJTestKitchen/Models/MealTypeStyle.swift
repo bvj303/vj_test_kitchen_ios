@@ -17,6 +17,20 @@ enum MealTypeStyle {
         }
     }
 
+    /// Sort rank for the given meal type so a day's meals read in the order they'd
+    /// actually be eaten — Breakfast, Lunch, Dinner, then Snack last. Matching is
+    /// case-insensitive; any unknown/custom type sorts after Snack (so a stray type
+    /// never jumps ahead of the real meals). See `MealCalendarViewModel.mealPlans`.
+    static func sortOrder(for mealType: String) -> Int {
+        switch mealType.lowercased() {
+        case "breakfast": return 0
+        case "lunch": return 1
+        case "dinner": return 2
+        case "snack": return 3
+        default: return 4
+        }
+    }
+
     /// Brand tint for the given meal type — mirrors the "Warm Kitchen" palette's
     /// role assignments (see Theme.swift).
     static func tint(for mealType: String) -> Color {
