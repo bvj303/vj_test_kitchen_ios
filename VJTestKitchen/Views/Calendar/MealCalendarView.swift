@@ -279,6 +279,10 @@ struct MealCalendarView: View {
         )
     }
 
+    /// A single planned meal. Deletion lives in a long-press context menu rather
+    /// than a visible trash button — the row stays clean and uncluttered, matching
+    /// the native "press to reveal actions" pattern (Reminders, Calendar). The whole
+    /// row is the target, so it reads as one tappable object with hidden actions.
     private func mealRow(_ plan: MealPlanWithRecipe) -> some View {
         HStack(spacing: 12) {
             Image(systemName: MealTypeStyle.icon(for: plan.mealType))
@@ -295,17 +299,17 @@ struct MealCalendarView: View {
             }
 
             Spacer(minLength: 0)
-
+        }
+        .padding(.vertical, 2)
+        // Make the full row width the long-press target, not just the text.
+        .contentShape(Rectangle())
+        .contextMenu {
             Button(role: .destructive) {
                 Task { await viewModel.deleteMealPlan(plan.id) }
             } label: {
-                Image(systemName: "trash")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                Label("Remove from Calendar", systemImage: "trash")
             }
-            .buttonStyle(.plain)
         }
-        .padding(.vertical, 2)
     }
 
     // MARK: - Quick Planner
