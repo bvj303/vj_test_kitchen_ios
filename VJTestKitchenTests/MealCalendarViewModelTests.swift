@@ -44,8 +44,8 @@ final class FakeMealPlanRecipeService: RecipeServicing, @unchecked Sendable {
     func delete(id: Int64) async throws { fatalError("not used") }
 }
 
-private func makePlan(id: Int64, date: String, title: String) -> MealPlanWithRecipe {
-    MealPlanWithRecipe(id: id, userId: UUID(), date: date, mealType: "Dinner", recipeId: 1, createdAt: Date(), recipes: .init(title: title))
+private func makePlan(id: Int64, date: String, title: String, mealType: String = "Dinner") -> MealPlanWithRecipe {
+    MealPlanWithRecipe(id: id, userId: UUID(), date: date, mealType: mealType, recipeId: 1, createdAt: Date(), recipes: .init(title: title))
 }
 
 private struct TestError: Error, LocalizedError {
@@ -123,6 +123,37 @@ struct MealCalendarViewModelTests {
         #expect(viewModel.errorMessage == nil)
     }
 
+    @Test func mealPlansAreOrderedByMealTypeWithSnackLast() async {
+        let plans = FakeMealPlanService()
+        // Intentionally out of order (and snack not last) as returned by the DB.
+        plans.plansToReturn = [
+            makePlan(id: 1, date: "2026-07-05", title: "Trail Mix", mealType: "Snack"),
+            makePlan(id: 2, date: "2026-07-05", title: "Steak", mealType: "Dinner"),
+            makePlan(id: 3, date: "2026-07-05", title: "Pancakes", mealType: "Breakfast"),
+            makePlan(id: 4, date: "2026-07-05", title: "Sandwich", mealType: "Lunch"),
+        ]
+        let viewModel = MealCalendarViewModel(mealPlanService: plans, recipeService: FakeMealPlanRecipeService())
+
+        await viewModel.load()
+
+        #expect(viewModel.mealPlans(for: "2026-07-05").map(\.mealType) == ["Breakfast", "Lunch", "Dinner", "Snack"])
+    }
+
+    @Test func mealPlansOrderIsStableForSameMealType() async {
+        let plans = FakeMealPlanService()
+        plans.plansToReturn = [
+            makePlan(id: 3, date: "2026-07-05", title: "Late Dinner", mealType: "Dinner"),
+            makePlan(id: 1, date: "2026-07-05", title: "Early Dinner", mealType: "Dinner"),
+            makePlan(id: 2, date: "2026-07-05", title: "Mid Dinner", mealType: "Dinner"),
+        ]
+        let viewModel = MealCalendarViewModel(mealPlanService: plans, recipeService: FakeMealPlanRecipeService())
+
+        await viewModel.load()
+
+        // Same meal type keeps a deterministic order (by id) rather than DB order.
+        #expect(viewModel.mealPlans(for: "2026-07-05").map(\.id) == [1, 2, 3])
+    }
+
     @Test func loadSurfacesErrorMessage() async {
         let plans = FakeMealPlanService()
         plans.errorToThrow = TestError()
@@ -187,5 +218,16 @@ struct MealTypeStyleTests {
     @Test func iconFallsBackForUnknownMealType() {
         #expect(MealTypeStyle.icon(for: "Brunch") == "fork.knife")
         #expect(MealTypeStyle.icon(for: "") == "fork.knife")
+    }
+
+    @Test func sortOrderRunsBreakfastLunchDinnerThenSnackLast() {
+        let ordered = ["Snack", "Dinner", "Breakfast", "Lunch"]
+            .sorted { MealTypeStyle.sortOrder(for: $0) < MealTypeStyle.sortOrder(for: $1) }
+        #expect(ordered == ["Breakfast", "Lunch", "Dinner", "Snack"])
+    }
+
+    @Test func sortOrderIsCaseInsensitiveAndPlacesUnknownAfterSnack() {
+        #expect(MealTypeStyle.sortOrder(for: "BREAKFAST") == MealTypeStyle.sortOrder(for: "breakfast"))
+        #expect(MealTypeStyle.sortOrder(for: "Brunch") > MealTypeStyle.sortOrder(for: "Snack"))
     }
 }

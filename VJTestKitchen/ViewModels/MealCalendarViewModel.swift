@@ -68,8 +68,17 @@ final class MealCalendarViewModel {
         forecastByDate[date]
     }
 
+    /// A day's meals ordered as they'd be eaten — Breakfast, Lunch, Dinner, then
+    /// Snack (and any unknown type) last, via `MealTypeStyle.sortOrder`. Ties within
+    /// the same meal type fall back to `id` so the order is stable across reloads
+    /// rather than following the DB's fetch order.
     func mealPlans(for date: String) -> [MealPlanWithRecipe] {
-        mealPlansByDate[date] ?? []
+        (mealPlansByDate[date] ?? []).sorted { lhs, rhs in
+            let lhsOrder = MealTypeStyle.sortOrder(for: lhs.mealType)
+            let rhsOrder = MealTypeStyle.sortOrder(for: rhs.mealType)
+            if lhsOrder != rhsOrder { return lhsOrder < rhsOrder }
+            return lhs.id < rhs.id
+        }
     }
 
     /// Whether the given "yyyy-MM-dd" string is today, for highlighting the
