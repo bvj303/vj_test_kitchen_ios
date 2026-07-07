@@ -19,8 +19,8 @@ struct HomeView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: isRegular ? 28 : 24) {
                 suggestionHeader
-                statsRow
                 suggestedGrid
+                statsRow
             }
             .frame(maxWidth: Self.regularMaxWidth)
             .frame(maxWidth: .infinity)
@@ -67,9 +67,10 @@ struct HomeView: View {
 
     // MARK: - Stats
 
-    /// Three glanceable tiles that double as jumps to their tabs.
+    /// Three compact summary tiles at the foot of the screen that double as
+    /// jumps to their tabs.
     private var statsRow: some View {
-        HStack(spacing: isRegular ? 16 : 12) {
+        HStack(spacing: 10) {
             statTile(
                 value: viewModel.totalRecipeCount.map(Self.compactNumber) ?? "—",
                 label: "Recipes", systemImage: "book.pages", tint: .brandPrimary
@@ -87,21 +88,23 @@ struct HomeView: View {
 
     private func statTile(value: String, label: String, systemImage: String, tint: Color, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
                 Image(systemName: systemImage)
-                    .font(isRegular ? .title3 : .headline)
+                    .font(.footnote)
                     .foregroundStyle(tint)
                 Text(value)
-                    .font(isRegular ? .largeTitle.bold() : .title2.bold())
+                    .font(.subheadline.bold())
                     .foregroundStyle(.primary)
                     .contentTransition(.numericText())
                 Text(label)
-                    .font(isRegular ? .subheadline : .caption)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(isRegular ? 20 : 16)
-            .glassEffect(.regular.tint(tint.opacity(0.14)), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+            .padding(.horizontal, 12)
+            .glassEffect(.regular.tint(tint.opacity(0.14)), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .buttonStyle(.plain)
     }
