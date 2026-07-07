@@ -1,9 +1,7 @@
 import SwiftUI
 
-/// Placeholder profile/account screen — presented as a sheet from the
-/// toolbar account button on every tab. Grows into real profile content
-/// (display name, avatar) in a later stage; for now it just hosts sign out
-/// so that action lives somewhere more standard than a bare toolbar icon.
+/// Profile/account screen — presented as a sheet from the toolbar account
+/// button on every tab.
 struct ProfileView: View {
     @Environment(AuthViewModel.self) private var authViewModel
     @Environment(\.dismiss) private var dismiss
@@ -13,8 +11,11 @@ struct ProfileView: View {
         NavigationStack {
             List {
                 Section {
-                    Label("Profile details coming soon", systemImage: "person.crop.circle")
-                        .foregroundStyle(.secondary)
+                    NavigationLink {
+                        EditProfileView()
+                    } label: {
+                        Label("Edit Profile", systemImage: "person.crop.circle")
+                    }
                 }
 
                 Section {

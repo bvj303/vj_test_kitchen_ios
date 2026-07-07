@@ -25,11 +25,6 @@ final class AuthViewModel {
     /// config.toml) — the server is the real gate; this is fast UX feedback.
     static let minimumPasswordLength = 8
 
-    /// Keep in sync with the `profiles_username_format` check constraint
-    /// (profiles_first_last_username migration) — the server is the real
-    /// gate; this is fast UX feedback.
-    static let usernamePattern = #"^[A-Za-z0-9_]{3,20}$"#
-
     private(set) var state: AuthState = .loading
     var email = ""
     var password = ""
@@ -38,7 +33,7 @@ final class AuthViewModel {
     var username = "" {
         didSet {
             guard oldValue != username else { return }
-            guard Self.isValidUsernameFormat(username) else {
+            guard UsernameFormat.isValid(username) else {
                 usernameAvailability = username.isEmpty ? nil : .invalidFormat
                 return
             }
@@ -56,10 +51,6 @@ final class AuthViewModel {
         !firstName.trimmingCharacters(in: .whitespaces).isEmpty
             && !lastName.trimmingCharacters(in: .whitespaces).isEmpty
             && usernameAvailability == .available
-    }
-
-    static func isValidUsernameFormat(_ username: String) -> Bool {
-        username.range(of: usernamePattern, options: .regularExpression) != nil
     }
 
     private let authService: AuthServicing
