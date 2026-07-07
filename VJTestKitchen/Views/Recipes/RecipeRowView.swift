@@ -24,6 +24,7 @@ struct RecipeRowView: View {
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .labelStyle(.compact)
             }
         }
         .padding(.vertical, 4)
