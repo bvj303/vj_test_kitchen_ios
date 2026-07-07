@@ -47,6 +47,7 @@ struct RecipeDetailView: View {
                     } label: {
                         Image(systemName: viewModel.isInGroceryList ? "cart.fill" : "cart.badge.plus")
                     }
+                    .accessibilityLabel(viewModel.isInGroceryList ? "Remove All Ingredients from Grocery List" : "Add All Ingredients to Grocery List")
                 }
             }
             if isOwnedByCurrentUser {
@@ -139,13 +140,33 @@ struct RecipeDetailView: View {
     @ViewBuilder
     private func ingredientsSection(_ detail: RecipeDetail) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Ingredients").font(.title3.bold()).foregroundStyle(Color.brandPrimary)
+            HStack {
+                Text("Ingredients").font(.title3.bold()).foregroundStyle(Color.brandPrimary)
+                Spacer()
+                Button {
+                    if !viewModel.isInGroceryList { viewModel.toggleGroceryList() }
+                } label: {
+                    Label("Add All", systemImage: "cart.badge.plus")
+                        .font(.subheadline)
+                }
+                .foregroundStyle(Color.brandSage)
+                .disabled(viewModel.isInGroceryList)
+            }
             ForEach(detail.ingredients) { ingredient in
                 HStack(alignment: .firstTextBaseline) {
                     Text(formattedAmount(ingredient))
                         .foregroundStyle(.secondary)
                         .frame(width: 90, alignment: .leading)
                     Text(ingredient.name)
+                    Spacer()
+                    Button {
+                        viewModel.addIngredientToGroceryList(ingredient)
+                    } label: {
+                        Image(systemName: viewModel.addedIngredientIds.contains(ingredient.id) ? "checkmark.circle.fill" : "plus.circle")
+                            .foregroundStyle(Color.brandSage)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Add \(ingredient.name) to Grocery List")
                 }
                 .font(.subheadline)
             }

@@ -159,4 +159,23 @@ struct RecipeDetailViewModelTests {
         #expect(viewModel.isInGroceryList == false)
         #expect(groceryStore.ids.isEmpty)
     }
+
+    @Test func addIngredientToGroceryListSnapshotsIngredientAsCustomItem() async {
+        let recipes = FakeRecipeDetailService()
+        recipes.detailToReturn = makeDetail(id: 1)
+        let groceryStore = FakeGroceryListStore()
+
+        let viewModel = RecipeDetailViewModel(recipeId: 1, recipeService: recipes, ratingService: FakeRecipeRatingService(), groceryListStore: groceryStore)
+        await viewModel.load()
+        let ingredient = viewModel.detail!.ingredients[0]
+
+        viewModel.addIngredientToGroceryList(ingredient)
+
+        #expect(groceryStore.customItems.map(\.name) == ["Pasta"])
+        #expect(groceryStore.customItems.first?.amount == 200)
+        #expect(groceryStore.customItems.first?.unit == "g")
+        // Adding an individual ingredient shouldn't also add the whole recipe.
+        #expect(groceryStore.ids.isEmpty)
+        #expect(viewModel.addedIngredientIds.contains(ingredient.id))
+    }
 }
