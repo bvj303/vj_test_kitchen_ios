@@ -4,6 +4,7 @@ struct RecipeDetailView: View {
     @State private var viewModel: RecipeDetailViewModel
     @Environment(AuthViewModel.self) private var authViewModel
     @State private var showingEditSheet = false
+    @State private var showingAddToCalendar = false
     let recipeId: Int64
 
     init(recipeId: Int64) {
@@ -40,6 +41,19 @@ struct RecipeDetailView: View {
         .navigationTitle(viewModel.detail?.title ?? "Recipe")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            // Any signed-in user can schedule any recipe onto their own
+            // (RLS-scoped) calendar — this isn't gated on ownership the way
+            // Edit is. Shown once the recipe has loaded, since the sheet needs
+            // its title.
+            if viewModel.detail != nil {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showingAddToCalendar = true
+                    } label: {
+                        Label("Add to Calendar", systemImage: "calendar.badge.plus")
+                    }
+                }
+            }
             if isOwnedByCurrentUser {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Edit") { showingEditSheet = true }
@@ -49,6 +63,12 @@ struct RecipeDetailView: View {
         .sheet(isPresented: $showingEditSheet, onDismiss: { Task { await viewModel.load() } }) {
             NavigationStack {
                 RecipeFormView(mode: .edit(recipeId: recipeId))
+            }
+        }
+        .sheet(isPresented: $showingAddToCalendar) {
+            if let detail = viewModel.detail {
+                AddToCalendarSheet(recipeId: recipeId, recipeTitle: detail.title)
+                    .presentationDetents([.medium, .large])
             }
         }
         .task { await viewModel.load() }
@@ -72,20 +92,26 @@ struct RecipeDetailView: View {
             shape
                 .fill(.thinMaterial)
                 .glassEffect(.regular.tint(Color.brandPrimary.opacity(0.22)), in: shape)
-            RemoteImage(url: heroURL(detail)) { image in
-                image.resizable().scaledToFill()
-            } placeholder: {
+            if let imageUrl = detail.imageUrl, let url = URL(string: imageUrl), !imageUrl.isEmpty {
+                CachedAsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image.resizable().scaledToFill()
+                    case .failure:
+                        heroPlaceholder
+                    case .empty:
+                        ProgressView()
+                    @unknown default:
+                        heroPlaceholder
+                    }
+                }
+            } else {
                 heroPlaceholder
             }
         }
         .frame(height: 220)
         .frame(maxWidth: .infinity)
         .clipShape(shape)
-    }
-
-    private func heroURL(_ detail: RecipeDetail) -> URL? {
-        guard let imageUrl = detail.imageUrl, !imageUrl.isEmpty else { return nil }
-        return URL(string: imageUrl)
     }
 
     private var heroPlaceholder: some View {

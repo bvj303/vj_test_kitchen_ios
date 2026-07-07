@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RecipeListView: View {
     @State private var viewModel = RecipeListViewModel()
+    @State private var showingAddRecipe = false
     let onSelect: (Recipe) -> Void
 
     var body: some View {
@@ -18,9 +19,27 @@ struct RecipeListView: View {
         }
         .listStyle(.plain)
         .searchable(text: $viewModel.searchText, prompt: "Search recipes")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showingAddRecipe = true
+                } label: {
+                    Label("Add Recipe", systemImage: "plus")
+                }
+            }
+        }
         .safeAreaInset(edge: .top, spacing: 0) {
             RecipeFilterBar(viewModel: viewModel)
                 .background(.bar)
+        }
+        .sheet(isPresented: $showingAddRecipe) {
+            NavigationStack {
+                // Reload the list on save so the new recipe appears without a
+                // manual pull-to-refresh; RecipeFormView dismisses itself.
+                RecipeFormView(mode: .create, showsCancelButton: true, onSaved: {
+                    Task { await viewModel.load() }
+                })
+            }
         }
         .overlay {
             if viewModel.isLoading && viewModel.items.isEmpty {
