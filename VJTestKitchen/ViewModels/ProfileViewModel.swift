@@ -21,6 +21,11 @@ final class ProfileViewModel {
     private(set) var isLoading = false
     private(set) var isSaving = false
     private(set) var didSave = false
+    private(set) var isUploadingAvatar = false
+    /// Public URL of the current avatar, or nil if none set. Updated
+    /// immediately after a successful upload so the UI reflects the new
+    /// picture without waiting for a Save.
+    private(set) var avatarUrl: String?
     var errorMessage: String?
 
     var firstName = ""
@@ -67,6 +72,7 @@ final class ProfileViewModel {
             let profile = try await profileService.fetchMine()
             firstName = profile.firstName ?? ""
             lastName = profile.lastName ?? ""
+            avatarUrl = profile.avatarUrl
             originalUsername = profile.username ?? ""
             username = originalUsername
         } catch {
@@ -85,6 +91,21 @@ final class ProfileViewModel {
             try await profileService.updateMine(firstName: trimmedFirstName, lastName: trimmedLastName, username: username)
             originalUsername = username
             didSave = true
+        } catch {
+            errorMessage = ErrorPresenter.message(for: error)
+        }
+    }
+
+    /// Uploads a newly-picked avatar image and reflects the new URL right
+    /// away. Independent of `save()` — the picture persists on pick, the way
+    /// avatar pickers usually behave, so it isn't lost if the user backs out
+    /// without tapping Save.
+    func uploadAvatar(_ imageData: Data) async {
+        errorMessage = nil
+        isUploadingAvatar = true
+        defer { isUploadingAvatar = false }
+        do {
+            avatarUrl = try await profileService.uploadAvatar(imageData)
         } catch {
             errorMessage = ErrorPresenter.message(for: error)
         }
