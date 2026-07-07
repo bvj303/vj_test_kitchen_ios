@@ -102,6 +102,35 @@ struct CalendarWeatherTests {
         #expect(forecaster.requestedCoordinates.isEmpty)
     }
 
+    @Test func loadWeatherRefetchesWhenPreferenceFlipsOnAfterEmptyLoad() async {
+        // Mirrors the real flow: the calendar first loads with weather off (empty
+        // forecast), then the user enables it in the Settings sheet. The view's
+        // `.onChange(of: settingsViewModel.useCurrentLocationForWeather)` calls
+        // `loadWeather()` again — which must now populate, not stay empty.
+        let store = FakeWeatherPreferenceStore()
+        store.enabled = false
+        let location = FakeLocationProvider()
+        location.authorization = .authorized
+        let forecaster = FakeWeatherForecaster()
+        forecaster.forecasts = [makeForecast(date: "2026-07-05")]
+
+        let viewModel = MealCalendarViewModel(
+            mealPlanService: FakeMealPlanService(),
+            recipeService: FakeMealPlanRecipeService(),
+            weatherForecaster: forecaster,
+            locationProvider: location,
+            weatherPreferenceStore: store
+        )
+
+        await viewModel.loadWeather()
+        #expect(viewModel.forecastByDate.isEmpty)
+
+        store.enabled = true
+        await viewModel.loadWeather()
+
+        #expect(viewModel.forecast(for: "2026-07-05") != nil)
+    }
+
     @Test func loadWeatherSwallowsErrorsWithoutRaisingTheMealPlanAlert() async {
         let store = FakeWeatherPreferenceStore()
         store.enabled = true
