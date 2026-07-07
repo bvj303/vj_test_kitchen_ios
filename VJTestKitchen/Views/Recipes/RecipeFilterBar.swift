@@ -1,35 +1,26 @@
 import SwiftUI
 
-/// Always-visible horizontal row of filter chips shown directly under the
-/// Recipes search field. Replaces the old tucked-away toolbar filter `Menu` so
-/// filtering is one tap away — especially on iPad, where the wide list column
-/// has ample room and a hidden menu icon was easy to miss.
+/// Always-visible row of filter chips shown directly under the Recipes search
+/// field. Consolidated to three dropdown chips — **Prep Time, Course, Cuisine**
+/// — each a compact menu whose label reflects the current selection, plus a
+/// Clear chip when any filter is active. All drive the same
+/// `RecipeListViewModel` filter state, so paging/search behavior is unchanged.
 ///
-/// Course tags (few, fixed order) are direct toggle chips; the longer Cuisine
-/// list and the Prep Time options stay behind compact menu chips whose labels
-/// reflect the current selection. All of these drive the same
-/// `RecipeListViewModel` filter state the toolbar menu used, so paging/search
-/// behavior is unchanged.
+/// Course and Cuisine both bind to the single `selectedTag` (a recipe is
+/// filtered by one tag at a time); their setters only clear `selectedTag` when
+/// *their own* dimension is the active one, so opening one menu and picking
+/// "Any …" can't wipe a selection made in the other.
 struct RecipeFilterBar: View {
     @Bindable var viewModel: RecipeListViewModel
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                ForEach(viewModel.courseTags, id: \.self) { tag in
-                    Button {
-                        viewModel.selectedTag = (viewModel.selectedTag == tag) ? nil : tag
-                    } label: {
-                        chipLabel(tag, isOn: viewModel.selectedTag == tag, tint: .brandSage)
-                    }
-                    .buttonStyle(.plain)
-                }
-
+                prepTimeMenu
+                courseMenu
                 if !viewModel.cuisineTags.isEmpty {
                     cuisineMenu
                 }
-
-                prepTimeMenu
 
                 if viewModel.hasActiveFilters {
                     Button {
@@ -47,9 +38,58 @@ struct RecipeFilterBar: View {
 
     // MARK: - Menu chips
 
-    /// Whether the current `selectedTag` is a cuisine (vs a course), so the
-    /// cuisine chip highlights only when the active tag is actually one of its
-    /// options — a selected course must not make Cuisine look active.
+    private var prepTimeMenu: some View {
+        Menu {
+            Picker("Prep Time", selection: Binding(
+                get: { viewModel.prepTimeFilter },
+                set: { viewModel.prepTimeFilter = $0 }
+            )) {
+                Text("Any Time").tag(PrepTimeFilter?.none)
+                ForEach(PrepTimeFilter.allCases) { option in
+                    Text(option.label).tag(PrepTimeFilter?.some(option))
+                }
+            }
+        } label: {
+            chipLabel(
+                viewModel.prepTimeFilter?.chipLabel ?? "Prep Time",
+                systemImage: "clock",
+                isOn: viewModel.prepTimeFilter != nil,
+                tint: .brandPrimary
+            )
+        }
+    }
+
+    /// The active tag when it's a course (else nil), so the Course chip
+    /// highlights only for course selections — not a chosen cuisine.
+    private var selectedCourse: String? {
+        guard let tag = viewModel.selectedTag, viewModel.courseTags.contains(tag) else { return nil }
+        return tag
+    }
+
+    private var courseMenu: some View {
+        Menu {
+            Picker("Course", selection: Binding(
+                get: { selectedCourse },
+                set: { newValue in
+                    if let newValue { viewModel.selectedTag = newValue }
+                    else if selectedCourse != nil { viewModel.selectedTag = nil }
+                }
+            )) {
+                Text("Any Course").tag(String?.none)
+                ForEach(viewModel.courseTags, id: \.self) { course in
+                    Text(course).tag(String?.some(course))
+                }
+            }
+        } label: {
+            chipLabel(
+                selectedCourse ?? "Course",
+                systemImage: "chevron.down",
+                isOn: selectedCourse != nil,
+                tint: .brandSage
+            )
+        }
+    }
+
     private var selectedCuisine: String? {
         guard let tag = viewModel.selectedTag, viewModel.cuisineTags.contains(tag) else { return nil }
         return tag
@@ -59,7 +99,10 @@ struct RecipeFilterBar: View {
         Menu {
             Picker("Cuisine", selection: Binding(
                 get: { selectedCuisine },
-                set: { viewModel.selectedTag = $0 }
+                set: { newValue in
+                    if let newValue { viewModel.selectedTag = newValue }
+                    else if selectedCuisine != nil { viewModel.selectedTag = nil }
+                }
             )) {
                 Text("Any Cuisine").tag(String?.none)
                 ForEach(viewModel.cuisineTags, id: \.self) { cuisine in
@@ -72,27 +115,6 @@ struct RecipeFilterBar: View {
                 systemImage: "chevron.down",
                 isOn: selectedCuisine != nil,
                 tint: .brandSage
-            )
-        }
-    }
-
-    private var prepTimeMenu: some View {
-        Menu {
-            Picker("Max Prep Time", selection: Binding(
-                get: { viewModel.maxPrepTime },
-                set: { viewModel.maxPrepTime = $0 }
-            )) {
-                Text("Any").tag(Int?.none)
-                ForEach(RecipeListViewModel.prepTimeOptions, id: \.self) { minutes in
-                    Text("\(PrepTimeFormat.string(minutes: minutes)) or less").tag(Int?.some(minutes))
-                }
-            }
-        } label: {
-            chipLabel(
-                viewModel.maxPrepTime.map { "≤ \(PrepTimeFormat.string(minutes: $0))" } ?? "Prep Time",
-                systemImage: "clock",
-                isOn: viewModel.maxPrepTime != nil,
-                tint: .brandPrimary
             )
         }
     }
