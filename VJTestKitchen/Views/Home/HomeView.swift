@@ -148,7 +148,7 @@ struct HomeView: View {
                 .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if let prep = recipe.prepTime {
-                Label("\(prep) min", systemImage: "clock")
+                Label(PrepTimeFormat.string(minutes: prep), systemImage: "clock")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

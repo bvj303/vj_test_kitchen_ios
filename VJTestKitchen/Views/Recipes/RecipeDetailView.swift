@@ -154,7 +154,7 @@ struct RecipeDetailView: View {
     private func statsRow(_ detail: RecipeDetail) -> some View {
         HStack(spacing: 16) {
             if let prepTime = detail.prepTime {
-                statTile(icon: "clock", value: "\(prepTime) min", label: "Prep Time")
+                statTile(icon: "clock", value: PrepTimeFormat.string(minutes: prepTime), label: "Prep Time")
             }
             if let servings = detail.servings {
                 statTile(icon: "person.2", value: "\(servings)", label: "Servings")

@@ -19,10 +19,11 @@ final class RecipeListViewModel {
             debouncer.run { [weak self] in await self?.reload() }
         }
     }
-    /// Upper bound on `prep_time` in minutes — nil means "any".
-    var maxPrepTime: Int? {
+    /// Prep-time range filter — nil means "any". Decomposes to gte/lte bounds
+    /// when querying (see `PrepTimeFilter`).
+    var prepTimeFilter: PrepTimeFilter? {
         didSet {
-            guard oldValue != maxPrepTime else { return }
+            guard oldValue != prepTimeFilter else { return }
             debouncer.run { [weak self] in await self?.reload() }
         }
     }
@@ -39,9 +40,6 @@ final class RecipeListViewModel {
     /// other tag is treated as a cuisine/origin.
     static let courseTagOrder = ["Main Courses", "Side Dishes", "Appetizers", "Desserts"]
 
-    /// Prep-time ceilings (minutes) offered in the filter menu.
-    static let prepTimeOptions = [30, 45, 60]
-
     var courseTags: [String] {
         Self.courseTagOrder.filter { availableTags.contains($0) }
     }
@@ -51,7 +49,7 @@ final class RecipeListViewModel {
     }
 
     var hasActiveFilters: Bool {
-        selectedTag != nil || maxPrepTime != nil
+        selectedTag != nil || prepTimeFilter != nil
     }
 
     /// True when the current empty list is the result of a search/filter (vs an
@@ -92,7 +90,7 @@ final class RecipeListViewModel {
         // Assign through the observed properties so their didSet fires; the
         // debouncer coalesces the two changes into a single reload.
         selectedTag = nil
-        maxPrepTime = nil
+        prepTimeFilter = nil
     }
 
     /// Called from the list row's `.onAppear` (wrapped in a `Task` by the
@@ -118,7 +116,8 @@ final class RecipeListViewModel {
         do {
             let page = try await recipeService.fetchPage(
                 offset: 0, limit: Self.pageSize,
-                matching: normalizedSearch, tag: selectedTag, maxPrepTime: maxPrepTime
+                matching: normalizedSearch, tag: selectedTag,
+                minPrepTime: prepTimeFilter?.minMinutes, maxPrepTime: prepTimeFilter?.maxMinutes
             )
             items = page
             hasMorePages = page.count == Self.pageSize
@@ -134,7 +133,8 @@ final class RecipeListViewModel {
         do {
             let page = try await recipeService.fetchPage(
                 offset: items.count, limit: Self.pageSize,
-                matching: normalizedSearch, tag: selectedTag, maxPrepTime: maxPrepTime
+                matching: normalizedSearch, tag: selectedTag,
+                minPrepTime: prepTimeFilter?.minMinutes, maxPrepTime: prepTimeFilter?.maxMinutes
             )
             items.append(contentsOf: page)
             hasMorePages = page.count == Self.pageSize
