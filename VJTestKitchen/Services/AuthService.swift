@@ -55,11 +55,32 @@ struct AuthService: AuthServicing {
         try await client.auth.signOut()
     }
 
+    /// Pure decision for which user id to emit for a given auth event, split
+    /// out so it's unit-testable without a live `SupabaseClient`/`Session`.
+    ///
+    /// With `emitLocalSessionAsInitialSession` enabled (see SupabaseManager),
+    /// the SDK emits the locally stored session on launch even when it's
+    /// expired. Treat an expired `.initialSession` as signed-out so a stale
+    /// session doesn't briefly flash the signed-in UI; every other event maps
+    /// straight to its session's user id (nil when signed out).
+    static func resolveUserId(event: AuthChangeEvent, userId: UUID?, isExpired: Bool) -> UUID? {
+        if event == .initialSession, isExpired {
+            return nil
+        }
+        return userId
+    }
+
     var userIdChanges: AsyncStream<UUID?> {
         AsyncStream { continuation in
             let task = Task {
-                for await (_, session) in client.auth.authStateChanges {
-                    continuation.yield(session?.user.id)
+                for await (event, session) in client.auth.authStateChanges {
+                    continuation.yield(
+                        AuthService.resolveUserId(
+                            event: event,
+                            userId: session?.user.id,
+                            isExpired: session?.isExpired ?? true
+                        )
+                    )
                 }
                 continuation.finish()
             }
