@@ -33,9 +33,10 @@
 			</array>
 		</dict>
 		<dict>
-			<!-- Precise location is read on-device and sent to Apple WeatherKit to
-			     fetch the calendar's weather outlook. Not linked to identity, not
-			     used for tracking. See CoreLocationService / WeatherKitForecastService. -->
+			<!-- Precise location is read on-device and sent to the Open-Meteo
+			     weather API to fetch the calendar's weather outlook. Not linked to
+			     identity, not used for tracking. See CoreLocationService /
+			     OpenMeteoForecastService. -->
 			<key>NSPrivacyCollectedDataType</key>
 			<string>NSPrivacyCollectedDataTypePreciseLocation</string>
 			<key>NSPrivacyCollectedDataTypeLinked</key>

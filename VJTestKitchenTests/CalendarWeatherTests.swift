@@ -6,7 +6,6 @@ import Testing
 
 final class FakeWeatherForecaster: WeatherForecasting, @unchecked Sendable {
     var forecasts: [DailyForecast] = []
-    var attributionToReturn: WeatherAttributionInfo?
     var errorToThrow: Error?
     private(set) var requestedCoordinates: [Coordinate] = []
 
@@ -14,11 +13,6 @@ final class FakeWeatherForecaster: WeatherForecasting, @unchecked Sendable {
         requestedCoordinates.append(coordinate)
         if let errorToThrow { throw errorToThrow }
         return forecasts
-    }
-
-    func attribution() async throws -> WeatherAttributionInfo {
-        if let attributionToReturn { return attributionToReturn }
-        throw FakeWeatherError()
     }
 }
 
@@ -50,8 +44,6 @@ final class FakeWeatherPreferenceStore: WeatherPreferenceStoring, @unchecked Sen
     func saveUseCurrentLocation(_ enabled: Bool) { self.enabled = enabled }
 }
 
-struct FakeWeatherError: Error {}
-
 func makeForecast(date: String, symbol: String = "sun.max.fill", high: Double = 80, low: Double = 60) -> DailyForecast {
     DailyForecast(
         date: date,
@@ -66,18 +58,13 @@ func makeForecast(date: String, symbol: String = "sun.max.fill", high: Double = 
 
 @MainActor
 struct CalendarWeatherTests {
-    @Test func loadWeatherPopulatesForecastAndAttributionWhenEnabled() async {
+    @Test func loadWeatherPopulatesForecastWhenEnabled() async {
         let store = FakeWeatherPreferenceStore()
         store.enabled = true
         let location = FakeLocationProvider()
         location.authorization = .authorized
         let forecaster = FakeWeatherForecaster()
         forecaster.forecasts = [makeForecast(date: "2026-07-05"), makeForecast(date: "2026-07-06")]
-        forecaster.attributionToReturn = WeatherAttributionInfo(
-            markLightURL: URL(string: "https://weatherkit.apple.com/light.png")!,
-            markDarkURL: URL(string: "https://weatherkit.apple.com/dark.png")!,
-            legalPageURL: URL(string: "https://weatherkit.apple.com/legal")!
-        )
 
         let viewModel = MealCalendarViewModel(
             mealPlanService: FakeMealPlanService(),
@@ -92,7 +79,6 @@ struct CalendarWeatherTests {
         #expect(viewModel.forecast(for: "2026-07-05")?.symbolName == "sun.max.fill")
         #expect(viewModel.forecast(for: "2026-07-06") != nil)
         #expect(viewModel.forecast(for: "2026-07-07") == nil)
-        #expect(viewModel.weatherAttribution?.legalPageURL.absoluteString == "https://weatherkit.apple.com/legal")
         #expect(forecaster.requestedCoordinates.first == location.coordinateToReturn)
     }
 
@@ -113,7 +99,6 @@ struct CalendarWeatherTests {
         await viewModel.loadWeather()
 
         #expect(viewModel.forecast(for: "2026-07-05") == nil)
-        #expect(viewModel.weatherAttribution == nil)
         #expect(forecaster.requestedCoordinates.isEmpty)
     }
 

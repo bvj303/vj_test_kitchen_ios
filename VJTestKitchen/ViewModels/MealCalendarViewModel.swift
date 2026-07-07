@@ -29,9 +29,6 @@ final class MealCalendarViewModel {
     /// when the user has opted into location-based weather. Empty otherwise (or
     /// when the fetch fails) — weather is a supplementary outlook, never required.
     private(set) var forecastByDate: [String: DailyForecast] = [:]
-    /// The WeatherKit attribution to render wherever forecasts are shown; nil when
-    /// weather is off or unavailable. WeatherKit legally requires it be displayed.
-    private(set) var weatherAttribution: WeatherAttributionInfo?
 
     private var mealPlansByDate: [String: [MealPlanWithRecipe]] = [:]
     private let mealPlanService: MealPlanServicing
@@ -48,7 +45,7 @@ final class MealCalendarViewModel {
         referenceDate: Date = Date(),
         mealPlanService: MealPlanServicing = MealPlanService(),
         recipeService: RecipeServicing = RecipeService(),
-        weatherForecaster: WeatherForecasting = WeatherKitForecastService(),
+        weatherForecaster: WeatherForecasting = OpenMeteoForecastService(),
         locationProvider: LocationProviding = CoreLocationService(),
         weatherPreferenceStore: WeatherPreferenceStoring = UserDefaultsWeatherPreferenceStore(),
         debounceDelay: Duration = .milliseconds(300)
@@ -102,23 +99,20 @@ final class MealCalendarViewModel {
     }
 
     /// Loads the week's weather outlook when the user has opted in. Failures
-    /// (location denied, WeatherKit unavailable/unentitled, network) are swallowed
-    /// into an empty forecast rather than raising the meal-plan error alert —
-    /// weather is a nice-to-have, not core to planning.
+    /// (location denied, network, provider error) are swallowed into an empty
+    /// forecast rather than raising the meal-plan error alert — weather is a
+    /// nice-to-have, not core to planning.
     func loadWeather() async {
         guard weatherPreferenceStore.loadUseCurrentLocation() else {
             forecastByDate = [:]
-            weatherAttribution = nil
             return
         }
         do {
             let coordinate = try await locationProvider.currentLocation()
             let forecasts = try await weatherForecaster.dailyForecast(for: coordinate)
             forecastByDate = Dictionary(forecasts.map { ($0.date, $0) }, uniquingKeysWith: { first, _ in first })
-            weatherAttribution = try? await weatherForecaster.attribution()
         } catch {
             forecastByDate = [:]
-            weatherAttribution = nil
         }
     }
 
