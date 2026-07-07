@@ -38,6 +38,42 @@ struct ProfileViewModelTests {
         #expect(viewModel.errorMessage == "failed to load")
     }
 
+    @Test func loadPopulatesAvatarUrlFromFetchedProfile() async {
+        let profile = Profile(id: UUID(), displayName: "Ada Lovelace", firstName: "Ada", lastName: "Lovelace", username: "ada_l", avatarUrl: "https://cdn.example.com/a.jpg", createdAt: Date())
+        let (viewModel, _) = makeViewModel(profile: profile)
+
+        await viewModel.load()
+
+        #expect(viewModel.avatarUrl == "https://cdn.example.com/a.jpg")
+    }
+
+    @Test func uploadAvatarSetsReturnedUrlAndPassesDataToService() async {
+        let (viewModel, fakeProfile) = makeViewModel()
+        await viewModel.load()
+        fakeProfile.avatarUrlToReturn = "https://cdn.example.com/new.jpg?v=2"
+        let data = Data([0x01, 0x02, 0x03])
+
+        await viewModel.uploadAvatar(data)
+
+        #expect(fakeProfile.uploadedAvatarData == [data])
+        #expect(viewModel.avatarUrl == "https://cdn.example.com/new.jpg?v=2")
+        #expect(viewModel.isUploadingAvatar == false)
+        #expect(viewModel.errorMessage == nil)
+    }
+
+    @Test func uploadAvatarSurfacesErrorAndLeavesAvatarUnchangedOnFailure() async {
+        let profile = Profile(id: UUID(), displayName: "Ada", firstName: "Ada", lastName: "Lovelace", username: "ada_l", avatarUrl: "https://cdn.example.com/old.jpg", createdAt: Date())
+        let (viewModel, fakeProfile) = makeViewModel(profile: profile)
+        await viewModel.load()
+        fakeProfile.errorToThrow = TestError()
+
+        await viewModel.uploadAvatar(Data([0xFF]))
+
+        #expect(viewModel.errorMessage == "failed to load")
+        #expect(viewModel.avatarUrl == "https://cdn.example.com/old.jpg")
+        #expect(viewModel.isUploadingAvatar == false)
+    }
+
     @Test func unchangedUsernameIsMarkedUnchangedAndAllowsSaveWithoutARoundTrip() async {
         let (viewModel, fakeProfile) = makeViewModel()
         await viewModel.load()

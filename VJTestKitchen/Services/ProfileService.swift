@@ -13,6 +13,12 @@ protocol ProfileServicing: Sendable {
     /// re-derives display_name to match (same "First Last" logic as
     /// handle_new_user() at sign-up, so it can't go stale after an edit).
     func updateMine(firstName: String, lastName: String, username: String) async throws
+    /// Uploads `imageData` as the signed-in user's avatar (JPEG) to the public
+    /// `avatars` bucket at `<uid>/avatar.jpg` (upsert), records the resulting
+    /// public URL on their profile row, and returns that URL. The public bucket
+    /// plus the world-readable profiles row is what makes an avatar visible to
+    /// others.
+    func uploadAvatar(_ imageData: Data) async throws -> String
 }
 
 struct ProfileService: ProfileServicing {
@@ -26,6 +32,12 @@ struct ProfileService: ProfileServicing {
         let username: String
         let displayName: String
     }
+
+    private struct AvatarUpdate: Encodable {
+        let avatarUrl: String
+    }
+
+    private static let avatarBucket = "avatars"
 
     private let client: SupabaseClient
 
@@ -58,5 +70,33 @@ struct ProfileService: ProfileServicing {
             .update(ProfileUpdate(firstName: firstName, lastName: lastName, username: username, displayName: "\(firstName) \(lastName)"))
             .eq("id", value: userId.uuidString)
             .execute()
+    }
+
+    func uploadAvatar(_ imageData: Data) async throws -> String {
+        let userId = try await client.auth.session.user.id
+        let path = "\(userId.uuidString)/avatar.jpg"
+
+        try await client.storage
+            .from(Self.avatarBucket)
+            .upload(
+                path,
+                data: imageData,
+                options: FileOptions(contentType: "image/jpeg", upsert: true)
+            )
+
+        // The object path is stable across re-uploads (upsert overwrites the
+        // same "avatar.jpg"), so append a cache-busting query item — otherwise
+        // AsyncImage / the CDN would keep serving the previous image after a
+        // change. The row stores the busted URL so every reader gets the fresh one.
+        let publicURL = try client.storage.from(Self.avatarBucket).getPublicURL(path: path)
+        let bustedURL = "\(publicURL.absoluteString)?v=\(Int(Date().timeIntervalSince1970))"
+
+        try await client
+            .from("profiles")
+            .update(AvatarUpdate(avatarUrl: bustedURL))
+            .eq("id", value: userId.uuidString)
+            .execute()
+
+        return bustedURL
     }
 }
