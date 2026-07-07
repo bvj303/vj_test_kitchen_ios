@@ -31,6 +31,10 @@ VJTestKitchenTests/       # Swift Testing unit tests
 
 Regenerate the Xcode project any time `project.yml` changes: `xcodegen generate`.
 
+**This is automated so a stale `.xcodeproj` can't silently break the build** (the class of bug where a pull that changed `project.yml` left the gitignored project pointing at a deleted file — e.g. the WeatherKit `CODE_SIGN_ENTITLEMENTS` reference). Two layers, both keyed off the fact that the gitignored `.xcodeproj` is only ever *older* than `project.yml` when regeneration is actually due:
+- **Git hooks** (`.githooks/`, run `./.githooks/install.sh` once per clone to set `core.hooksPath`) regenerate on `post-merge`/`post-checkout`/`post-rewrite` — i.e. after a pull, branch switch, or rebase that touched `project.yml`, before you ever build.
+- **An Xcode pre-build guard** (`preBuildScripts` in `project.yml`, so it survives regeneration) *fails the build with a fix message* if `project.yml` is newer than the generated project. It deliberately does not regenerate mid-build (Xcode has already loaded the old project into memory — rewriting it underneath a running build is racy); it's the safety net for a hand-edited `project.yml` that the hooks can't catch.
+
 ## Configuration & secrets
 - **Supabase project**: ref `aviyhrmjsqygoyzjprii`, region `us-east-2`, Postgres 17. Repo is linked via `supabase link` (uses `SUPABASE_ACCESS_TOKEN` from the developer's shell profile, never committed).
 - **Project URL + anon/publishable key** (`sb_publishable_...`): safe to embed client-side by design — security is enforced by RLS policies, not by hiding this key. Real values live in `Config/Secrets.xcconfig` (gitignored; `Config/Secrets.xcconfig.example` is the tracked template) and a repo-root `.env` (gitignored, for shell/CLI use). xcconfig treats `//` as a comment start, so URLs are written as `https:/$()/host` to escape it.
