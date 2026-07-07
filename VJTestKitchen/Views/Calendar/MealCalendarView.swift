@@ -17,8 +17,6 @@ struct MealCalendarView: View {
     // to the foreground — edits made on another device then show up without a
     // manual pull-to-refresh.
     @Environment(\.scenePhase) private var scenePhase
-    // Chooses the light/dark variant of the WeatherKit attribution mark.
-    @Environment(\.colorScheme) private var colorScheme
 
     /// Caps the agenda column's width so a landscape iPad reads as a centered
     /// schedule column rather than rows spanning the whole display.
@@ -232,22 +230,15 @@ struct MealCalendarView: View {
         )
     }
 
-    /// WeatherKit requires its attribution mark be shown wherever its data is
-    /// displayed, linking to the data-source legal page. Shown only when a
-    /// forecast is actually loaded.
+    /// Open-Meteo's data is CC-BY 4.0 and asks for a credit + link wherever it's
+    /// shown. Displayed only when a forecast is actually loaded.
     @ViewBuilder
     private var weatherAttributionFooter: some View {
-        if let attribution = viewModel.weatherAttribution {
-            Link(destination: attribution.legalPageURL) {
-                AsyncImage(
-                    url: colorScheme == .dark ? attribution.markDarkURL : attribution.markLightURL
-                ) { image in
-                    image.resizable().scaledToFit()
-                } placeholder: {
-                    Text("Weather").font(.caption2)
-                }
-                .frame(height: 14)
-                .frame(maxWidth: .infinity, alignment: .trailing)
+        if !viewModel.forecastByDate.isEmpty {
+            Link(destination: URL(string: "https://open-meteo.com/")!) {
+                Text("Weather data by Open-Meteo.com")
+                    .font(.caption2)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
             }
             .foregroundStyle(.secondary)
         }
