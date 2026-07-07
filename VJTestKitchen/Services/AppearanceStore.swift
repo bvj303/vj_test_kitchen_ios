@@ -1,8 +1,9 @@
 import Foundation
 
 /// Appearance preference is a client-side, per-device setting — not shared
-/// data — so it's UserDefaults-backed rather than a Postgres column, same
-/// reasoning as `GroceryListStoring`.
+/// data — so it's UserDefaults-backed rather than a Postgres column (the same
+/// protocol-store shape the grocery list used before it moved to an
+/// account-synced table — see DECISIONS.md).
 protocol AppearanceStoring: Sendable {
     func loadAppearanceMode() -> AppearanceMode
     func saveAppearanceMode(_ mode: AppearanceMode)

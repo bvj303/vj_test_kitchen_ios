@@ -49,7 +49,10 @@ private func makeDetail(id: Int64 = 1, title: String = "Carbonara") -> RecipeDet
     RecipeDetail(
         id: id, userId: nil, title: title, description: "desc", instructions: "steps",
         imagePath: nil, prepTime: 20, servings: 2, createdAt: Date(),
-        ingredients: [Ingredient(id: 1, recipeId: id, name: "Pasta", amount: 200, unit: "g")],
+        ingredients: [
+            Ingredient(id: 1, recipeId: id, name: "Pasta", amount: 200, unit: "g"),
+            Ingredient(id: 2, recipeId: id, name: "Pancetta", amount: 100, unit: "g"),
+        ],
         recipeTags: [.init(tags: .init(name: "Italian"))]
     )
 }
@@ -130,33 +133,51 @@ struct RecipeDetailViewModelTests {
         #expect(viewModel.errorMessage == "failed")
     }
 
-    @Test func loadReflectsWhetherRecipeIsAlreadyOnGroceryList() async {
+    @Test func addIngredientAddsToGroceryListTaggedWithRecipeSource() async {
         let recipes = FakeRecipeDetailService()
-        recipes.detailToReturn = makeDetail(id: 1)
-        let groceryStore = FakeGroceryListStore()
-        groceryStore.ids = [1, 2]
+        recipes.detailToReturn = makeDetail(id: 1, title: "Carbonara")
+        let grocery = FakeGroceryItemService()
 
-        let viewModel = RecipeDetailViewModel(recipeId: 1, recipeService: recipes, ratingService: FakeRecipeRatingService(), groceryListStore: groceryStore)
+        let viewModel = RecipeDetailViewModel(recipeId: 1, recipeService: recipes, ratingService: FakeRecipeRatingService(), groceryItemService: grocery)
         await viewModel.load()
+        let ingredient = viewModel.detail!.ingredients[0]
 
-        #expect(viewModel.isInGroceryList == true)
+        await viewModel.addIngredientToGroceryList(ingredient)
+
+        #expect(grocery.addedDrafts.count == 1)
+        #expect(grocery.addedDrafts.first?.name == "Pasta")
+        #expect(grocery.addedDrafts.first?.sourceRecipeId == 1)
+        #expect(grocery.addedDrafts.first?.sourceRecipeTitle == "Carbonara")
+        #expect(viewModel.addedIngredientIds.contains(ingredient.id))
     }
 
-    @Test func toggleGroceryListAddsThenRemoves() async {
+    @Test func addAllIngredientsTagsEveryItemWithRecipe() async {
+        let recipes = FakeRecipeDetailService()
+        recipes.detailToReturn = makeDetail(id: 1, title: "Carbonara")
+        let grocery = FakeGroceryItemService()
+
+        let viewModel = RecipeDetailViewModel(recipeId: 1, recipeService: recipes, ratingService: FakeRecipeRatingService(), groceryItemService: grocery)
+        await viewModel.load()
+
+        await viewModel.addAllIngredientsToGroceryList()
+
+        #expect(grocery.addedDrafts.count == viewModel.detail!.ingredients.count)
+        #expect(grocery.addedDrafts.allSatisfy { $0.sourceRecipeTitle == "Carbonara" })
+        #expect(viewModel.didAddAllToGroceryList == true)
+    }
+
+    @Test func addIngredientSurfacesErrorMessageAndDoesNotMarkAdded() async {
         let recipes = FakeRecipeDetailService()
         recipes.detailToReturn = makeDetail(id: 1)
-        let groceryStore = FakeGroceryListStore()
+        let grocery = FakeGroceryItemService()
+        grocery.addError = TestError()
 
-        let viewModel = RecipeDetailViewModel(recipeId: 1, recipeService: recipes, ratingService: FakeRecipeRatingService(), groceryListStore: groceryStore)
+        let viewModel = RecipeDetailViewModel(recipeId: 1, recipeService: recipes, ratingService: FakeRecipeRatingService(), groceryItemService: grocery)
         await viewModel.load()
-        #expect(viewModel.isInGroceryList == false)
 
-        viewModel.toggleGroceryList()
-        #expect(viewModel.isInGroceryList == true)
-        #expect(groceryStore.ids == [1])
+        await viewModel.addIngredientToGroceryList(viewModel.detail!.ingredients[0])
 
-        viewModel.toggleGroceryList()
-        #expect(viewModel.isInGroceryList == false)
-        #expect(groceryStore.ids.isEmpty)
+        #expect(viewModel.errorMessage == "failed")
+        #expect(viewModel.addedIngredientIds.isEmpty)
     }
 }
