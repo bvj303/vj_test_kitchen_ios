@@ -63,16 +63,36 @@ private struct TestError: Error, LocalizedError {
 }
 
 /// Fake ProfileServicing conformer — lets tests control the username
-/// availability result (or force a failure) without a real network call.
+/// availability result, the profile returned by `fetchMine`, or force a
+/// failure, without a real network call. Shared by AuthViewModelTests and
+/// ProfileViewModelTests.
 final class FakeProfileService: ProfileServicing, @unchecked Sendable {
     var takenUsernames: Set<String> = []
     var errorToThrow: Error?
+    var profileToReturn = Profile(id: UUID(), displayName: nil, firstName: nil, lastName: nil, username: nil, createdAt: Date())
     private(set) var checkedUsernames: [String] = []
+    private(set) var updateCallCount = 0
+    private(set) var lastUpdateFirstName: String?
+    private(set) var lastUpdateLastName: String?
+    private(set) var lastUpdateUsername: String?
 
     func isUsernameAvailable(_ username: String) async throws -> Bool {
         checkedUsernames.append(username)
         if let errorToThrow { throw errorToThrow }
         return !takenUsernames.contains(username)
+    }
+
+    func fetchMine() async throws -> Profile {
+        if let errorToThrow { throw errorToThrow }
+        return profileToReturn
+    }
+
+    func updateMine(firstName: String, lastName: String, username: String) async throws {
+        updateCallCount += 1
+        lastUpdateFirstName = firstName
+        lastUpdateLastName = lastName
+        lastUpdateUsername = username
+        if let errorToThrow { throw errorToThrow }
     }
 }
 
