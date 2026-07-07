@@ -72,9 +72,19 @@ struct ProfileService: ProfileServicing {
             .execute()
     }
 
+    /// Storage object path for a user's avatar: `<uid>/avatar.jpg`, with the
+    /// uid **lowercased**. This matters: `UUID.uuidString` is uppercase, but the
+    /// bucket's owner-folder RLS check compares against `auth.uid()::text`, which
+    /// Postgres renders lowercase — an uppercase folder fails the policy with
+    /// "new row violates row-level security policy". Keep this the single source
+    /// of the path so read and write always agree.
+    static func avatarObjectPath(userId: UUID) -> String {
+        "\(userId.uuidString.lowercased())/avatar.jpg"
+    }
+
     func uploadAvatar(_ imageData: Data) async throws -> String {
         let userId = try await client.auth.session.user.id
-        let path = "\(userId.uuidString)/avatar.jpg"
+        let path = Self.avatarObjectPath(userId: userId)
 
         try await client.storage
             .from(Self.avatarBucket)
