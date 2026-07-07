@@ -68,6 +68,22 @@ struct MealCalendarViewModelTests {
         #expect(viewModel.weekDates == ["2026-07-05", "2026-07-06", "2026-07-07", "2026-07-08", "2026-07-09", "2026-07-10", "2026-07-11"])
     }
 
+    @Test func isTodayMatchesFirstWeekDateOnly() {
+        var components = DateComponents()
+        components.year = 2026
+        components.month = 7
+        components.day = 5
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let referenceDate = calendar.date(from: components)!
+
+        let viewModel = MealCalendarViewModel(referenceDate: referenceDate, mealPlanService: FakeMealPlanService(), recipeService: FakeMealPlanRecipeService())
+
+        #expect(viewModel.todayDate == "2026-07-05")
+        #expect(viewModel.isToday("2026-07-05"))
+        #expect(!viewModel.isToday("2026-07-06"))
+    }
+
     @Test func selectedPlanningDateDefaultsToFirstDayOfWeek() {
         var components = DateComponents()
         components.year = 2026
@@ -150,5 +166,19 @@ struct MealCalendarViewModelTests {
         await viewModel.deleteMealPlan(5)
 
         #expect(plans.deletedIds == [5])
+    }
+}
+
+struct MealTypeStyleTests {
+    @Test func iconMapsKnownMealTypesCaseInsensitively() {
+        #expect(MealTypeStyle.icon(for: "Breakfast") == "sunrise.fill")
+        #expect(MealTypeStyle.icon(for: "lunch") == "sun.max.fill")
+        #expect(MealTypeStyle.icon(for: "DINNER") == "moon.stars.fill")
+        #expect(MealTypeStyle.icon(for: "Snack") == "carrot.fill")
+    }
+
+    @Test func iconFallsBackForUnknownMealType() {
+        #expect(MealTypeStyle.icon(for: "Brunch") == "fork.knife")
+        #expect(MealTypeStyle.icon(for: "") == "fork.knife")
     }
 }
