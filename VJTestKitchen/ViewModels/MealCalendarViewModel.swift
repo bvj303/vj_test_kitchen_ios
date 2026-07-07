@@ -58,6 +58,13 @@ final class MealCalendarViewModel {
         date == todayDate
     }
 
+    /// The holiday (if any) falling on the given "yyyy-MM-dd" string, so the
+    /// schedule view can flag it alongside that day's meals. Pure lookup — see
+    /// `HolidayProvider`.
+    func holiday(for date: String) -> Holiday? {
+        HolidayProvider.holiday(for: date)
+    }
+
     func load() async {
         errorMessage = nil
         isLoading = true
