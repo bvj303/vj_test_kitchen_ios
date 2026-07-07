@@ -39,5 +39,7 @@
 	<string>$(SUPABASE_ANON_KEY)</string>
 	<key>NSRemindersFullAccessUsageDescription</key>
 	<string>VJ Test Kitchen exports your grocery list to a Reminders list so you can check items off while shopping.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>VJ Test Kitchen uses your location to show a local weather outlook on your meal calendar, so you can plan meals around the forecast.</string>
 </dict>
 </plist>
