@@ -9,6 +9,9 @@ struct AddGroceryItemSheet: View {
     /// Once the user touches the category picker, stop auto-overwriting their
     /// choice as they keep typing the name.
     @State private var userPickedCategory = false
+    /// Auto-open the keyboard on the Name field the moment the sheet appears,
+    /// so adding an item is a single tap on "+" rather than tap-then-tap-field.
+    @FocusState private var nameFieldFocused: Bool
 
     let onAdd: (_ name: String, _ amount: Double, _ unit: String, _ category: GroceryCategory) -> Void
 
@@ -21,6 +24,7 @@ struct AddGroceryItemSheet: View {
             Form {
                 Section("Item") {
                     TextField("Name", text: $name)
+                        .focused($nameFieldFocused)
                 }
                 Section("Amount") {
                     HStack {
@@ -64,6 +68,9 @@ struct AddGroceryItemSheet: View {
                     category = GroceryCategorizer.categorize(newName)
                 }
             }
+            // Focus the Name field as the sheet presents so the keyboard is
+            // already up — no second tap needed to start typing.
+            .onAppear { nameFieldFocused = true }
         }
         .presentationDetents([.medium, .large])
     }
