@@ -1,0 +1,4 @@
+#!/bin/sh
+# Runs after history-rewriting commands (e.g. `git rebase`). Keep the Xcode
+# project in sync with project.yml. See .githooks/xcodegen-sync.sh.
+exec "$(git rev-parse --show-toplevel)/.githooks/xcodegen-sync.sh"
