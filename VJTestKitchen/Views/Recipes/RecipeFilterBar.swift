@@ -84,12 +84,12 @@ struct RecipeFilterBar: View {
             )) {
                 Text("Any").tag(Int?.none)
                 ForEach(RecipeListViewModel.prepTimeOptions, id: \.self) { minutes in
-                    Text("\(minutes) min or less").tag(Int?.some(minutes))
+                    Text("\(PrepTimeFormat.string(minutes: minutes)) or less").tag(Int?.some(minutes))
                 }
             }
         } label: {
             chipLabel(
-                viewModel.maxPrepTime.map { "≤ \($0) min" } ?? "Prep Time",
+                viewModel.maxPrepTime.map { "≤ \(PrepTimeFormat.string(minutes: $0))" } ?? "Prep Time",
                 systemImage: "clock",
                 isOn: viewModel.maxPrepTime != nil,
                 tint: .brandPrimary
