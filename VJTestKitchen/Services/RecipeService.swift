@@ -9,6 +9,10 @@ protocol RecipeServicing: Sendable {
     /// `instructions` for every row. All filters are applied server-side so the
     /// list stays paginated and scalable at 15K+ rows.
     func fetchPage(offset: Int, limit: Int, matching search: String?, tag: String?, maxPrepTime: Int?) async throws -> [Recipe]
+    /// Total number of recipes in the catalog, for the Home tab's stat tile. A
+    /// HEAD request with an exact count — no rows transferred. Defaulted in the
+    /// protocol extension so existing test fakes don't have to implement it.
+    func totalCount() async throws -> Int
     func fetchDetail(id: Int64) async throws -> RecipeDetail
     @discardableResult
     func create(_ draft: RecipeDraft) async throws -> Recipe
@@ -23,6 +27,10 @@ extension RecipeServicing {
     func fetchPage(offset: Int, limit: Int, matching search: String?) async throws -> [Recipe] {
         try await fetchPage(offset: offset, limit: limit, matching: search, tag: nil, maxPrepTime: nil)
     }
+
+    /// Default so existing conformers (test fakes) needn't implement counting;
+    /// `RecipeService` overrides this with a real HEAD-count query.
+    func totalCount() async throws -> Int { 0 }
 }
 
 /// Reference implementation of the Service-layer pattern: one struct per
@@ -66,6 +74,16 @@ struct RecipeService: RecipeServicing {
             .range(from: offset, to: offset + limit - 1)
             .execute()
             .value
+    }
+
+    func totalCount() async throws -> Int {
+        // HEAD request: no rows transferred, just the Content-Range total. Exact
+        // count is fine at catalog scale (~15K rows) for a one-shot stat tile.
+        let response = try await client
+            .from("recipes")
+            .select("id", head: true, count: .exact)
+            .execute()
+        return response.count ?? 0
     }
 
     /// Escapes `ilike` wildcard characters (`%`, `_`) and the escape
