@@ -26,9 +26,15 @@ struct RecipeFilterBar: View {
                     Button {
                         viewModel.clearFilters()
                     } label: {
-                        chipLabel("Clear", systemImage: "xmark", isOn: false, tint: .secondary)
+                        Image(systemName: "xmark")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 20, height: 20)
+                            .padding(8)
+                            .glassEffect(.regular.tint(Color.secondary.opacity(0.12)), in: Circle())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Clear filters")
                 }
             }
             .padding(.horizontal)
