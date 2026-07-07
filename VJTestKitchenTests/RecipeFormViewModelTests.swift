@@ -10,7 +10,7 @@ final class FakeRecipeFormRecipeService: RecipeServicing, @unchecked Sendable {
     private(set) var updatedId: Int64?
     private(set) var updatedDraft: RecipeDraft?
 
-    func fetchPage(offset: Int, limit: Int, matching search: String?) async throws -> [Recipe] { fatalError("not used") }
+    func fetchPage(offset: Int, limit: Int, matching search: String?, tag: String?, maxPrepTime: Int?) async throws -> [Recipe] { fatalError("not used") }
 
     func fetchDetail(id: Int64) async throws -> RecipeDetail {
         if let errorToThrow { throw errorToThrow }
@@ -57,12 +57,15 @@ final class FakeTagService: TagServicing, @unchecked Sendable {
     private(set) var replacedRecipeId: Int64?
     private(set) var replacedTagNames: [String]?
     var errorToThrow: Error?
+    var namesToReturn: [String] = []
 
     func replaceAll(recipeId: Int64, withTagNames names: [String]) async throws {
         if let errorToThrow { throw errorToThrow }
         replacedRecipeId = recipeId
         replacedTagNames = names
     }
+
+    func fetchAllNames() async throws -> [String] { namesToReturn }
 }
 
 private struct TestError: Error, LocalizedError {

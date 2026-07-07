@@ -6,6 +6,10 @@ protocol TagServicing: Sendable {
     /// find-or-create each named tag (tags are a shared global vocabulary —
     /// see schema decisions in DECISIONS.md), then relink.
     func replaceAll(recipeId: Int64, withTagNames names: [String]) async throws
+
+    /// All tag names in the shared vocabulary, alphabetical — drives the
+    /// Recipes list's category filter menu so it reflects the actual catalog.
+    func fetchAllNames() async throws -> [String]
 }
 
 struct TagService: TagServicing {
@@ -43,5 +47,15 @@ struct TagService: TagServicing {
             .from("recipe_tags")
             .insert(joins)
             .execute()
+    }
+
+    func fetchAllNames() async throws -> [String] {
+        let tags: [Tag] = try await client
+            .from("tags")
+            .select("id,name")
+            .order("name")
+            .execute()
+            .value
+        return tags.map(\.name)
     }
 }
