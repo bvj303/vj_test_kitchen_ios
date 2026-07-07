@@ -1,16 +1,30 @@
 import SwiftUI
+import PhotosUI
 
 /// Pushed from ProfileView's "Edit Profile" row. Loads the signed-in user's
 /// current first/last name and username, and lets them change any of the
 /// three — mirrors CreateProfileView's fields, but as an edit rather than
-/// the first step of sign-up.
+/// the first step of sign-up. Also lets them set a profile picture, which
+/// uploads immediately on selection (independent of Save).
 struct EditProfileView: View {
-    @State private var viewModel = ProfileViewModel()
+    // Injected so ProfileView can share one instance — an avatar uploaded here
+    // then reflects in ProfileView's header without a manual reload. Defaults
+    // to a fresh one for standalone use / previews.
+    private let viewModel: ProfileViewModel
+    @State private var selectedPhoto: PhotosPickerItem?
     @Environment(\.dismiss) private var dismiss
     @FocusState private var focusedField: Field?
 
+    init(viewModel: ProfileViewModel = ProfileViewModel()) {
+        self.viewModel = viewModel
+    }
+
     private enum Field: Hashable {
         case firstName, lastName, username
+    }
+
+    private var fullName: String {
+        "\(viewModel.firstName) \(viewModel.lastName)".trimmingCharacters(in: .whitespaces)
     }
 
     var body: some View {
@@ -21,6 +35,12 @@ struct EditProfileView: View {
                 ProgressView()
             } else {
                 Form {
+                    Section {
+                        avatarPicker
+                            .frame(maxWidth: .infinity)
+                            .listRowBackground(Color.clear)
+                    }
+
                     Section {
                         TextField("First Name", text: $viewModel.firstName)
                             .textContentType(.givenName)
@@ -78,6 +98,51 @@ struct EditProfileView: View {
             Text(viewModel.errorMessage ?? "")
         }
         .task { await viewModel.load() }
+        .onChange(of: selectedPhoto) { _, newItem in
+            guard let newItem else { return }
+            Task { await loadAndUploadPhoto(newItem) }
+        }
+    }
+
+    private var avatarPicker: some View {
+        VStack(spacing: 12) {
+            PhotosPicker(selection: $selectedPhoto, matching: .images, photoLibrary: .shared()) {
+                ZStack(alignment: .bottomTrailing) {
+                    AvatarView(avatarUrl: viewModel.avatarUrl, name: fullName, size: 96)
+                        .opacity(viewModel.isUploadingAvatar ? 0.5 : 1)
+                        .overlay {
+                            if viewModel.isUploadingAvatar {
+                                ProgressView()
+                            }
+                        }
+
+                    Image(systemName: "pencil.circle.fill")
+                        .font(.title2)
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(.white, Color.brandPrimary)
+                        .background(Circle().fill(.background))
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(viewModel.isUploadingAvatar)
+
+            Text("Tap to change your photo")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func loadAndUploadPhoto(_ item: PhotosPickerItem) async {
+        do {
+            guard let data = try await item.loadTransferable(type: Data.self),
+                  let jpeg = AvatarImageProcessor.normalizedJPEG(from: data) else {
+                viewModel.errorMessage = "Couldn't read the selected photo. Please try another."
+                return
+            }
+            await viewModel.uploadAvatar(jpeg)
+        } catch {
+            viewModel.errorMessage = "Couldn't load the selected photo. Please try another."
+        }
     }
 
     private var usernameStatusText: String? {

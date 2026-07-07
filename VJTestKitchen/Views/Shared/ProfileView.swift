@@ -5,14 +5,37 @@ import SwiftUI
 struct ProfileView: View {
     @Environment(AuthViewModel.self) private var authViewModel
     @Environment(\.dismiss) private var dismiss
+    @State private var viewModel = ProfileViewModel()
     @State private var showingDeleteConfirmation = false
+
+    private var fullName: String {
+        "\(viewModel.firstName) \(viewModel.lastName)".trimmingCharacters(in: .whitespaces)
+    }
 
     var body: some View {
         NavigationStack {
             List {
                 Section {
+                    VStack(spacing: 12) {
+                        AvatarView(avatarUrl: viewModel.avatarUrl, name: fullName, size: 96)
+
+                        if !fullName.isEmpty {
+                            Text(fullName)
+                                .font(.title3.weight(.semibold))
+                        }
+                        if !viewModel.username.isEmpty {
+                            Text("@\(viewModel.username)")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .listRowBackground(Color.clear)
+                }
+
+                Section {
                     NavigationLink {
-                        EditProfileView()
+                        EditProfileView(viewModel: viewModel)
                     } label: {
                         Label("Edit Profile", systemImage: "person.crop.circle")
                     }
@@ -55,6 +78,9 @@ struct ProfileView: View {
                     Button("Done") { dismiss() }
                 }
             }
+            // Reload whenever the sheet reappears (e.g. returning from Edit
+            // Profile after changing the picture) so the header stays fresh.
+            .task { await viewModel.load() }
         }
         .confirmationDialog(
             "Delete your account?",

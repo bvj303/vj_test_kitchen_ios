@@ -75,6 +75,8 @@ final class FakeProfileService: ProfileServicing, @unchecked Sendable {
     private(set) var lastUpdateFirstName: String?
     private(set) var lastUpdateLastName: String?
     private(set) var lastUpdateUsername: String?
+    var avatarUrlToReturn = "https://storage.example.com/avatars/user/avatar.jpg?v=1"
+    private(set) var uploadedAvatarData: [Data] = []
 
     func isUsernameAvailable(_ username: String) async throws -> Bool {
         checkedUsernames.append(username)
@@ -93,6 +95,12 @@ final class FakeProfileService: ProfileServicing, @unchecked Sendable {
         lastUpdateLastName = lastName
         lastUpdateUsername = username
         if let errorToThrow { throw errorToThrow }
+    }
+
+    func uploadAvatar(_ imageData: Data) async throws -> String {
+        uploadedAvatarData.append(imageData)
+        if let errorToThrow { throw errorToThrow }
+        return avatarUrlToReturn
     }
 }
 

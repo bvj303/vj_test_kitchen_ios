@@ -124,6 +124,12 @@ file_size_limit = "50MiB"
 # allowed_mime_types = ["image/png", "image/jpeg"]
 # objects_path = "./images"
 
+# NB: the public `avatars` bucket for profile pictures is created by the
+# profile_avatars migration (so it provisions on both local `db reset` and
+# remote `db push`), not declared here — a declaration here would double up
+# with the migration and trigger an "already exists, overwrite?" prompt on
+# reset.
+
 # Allow connections via S3 compatible clients
 [storage.s3_protocol]
 enabled = true
