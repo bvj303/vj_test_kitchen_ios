@@ -21,6 +21,23 @@ struct SettingsView: View {
             } footer: {
                 Text("System matches your device's Light/Dark Mode setting.")
             }
+
+            Section {
+                Toggle("Use Current Location", isOn: Binding(
+                    get: { settingsViewModel.useCurrentLocationForWeather },
+                    set: { newValue in
+                        Task { await settingsViewModel.setUseCurrentLocation(newValue) }
+                    }
+                ))
+            } header: {
+                Text("Weather")
+            } footer: {
+                if settingsViewModel.locationPermissionDenied {
+                    Text("Location access is off. Turn it on in Settings › Privacy & Security › Location Services to show a weather outlook on your calendar.")
+                } else {
+                    Text("Shows a weather outlook for the week ahead on your meal calendar, using your current location.")
+                }
+            }
         }
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
