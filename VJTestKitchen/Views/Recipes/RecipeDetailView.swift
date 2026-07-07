@@ -219,26 +219,59 @@ struct RecipeDetailView: View {
         return ingredient.unit.isEmpty ? amountText : "\(amountText) \(ingredient.unit)"
     }
 
+    /// A single rendered instruction row: either a component subheading (from an
+    /// ATK `**FOR THE X:**` marker) or a numbered step. Step numbers restart at 1
+    /// after each header, so a multi-component recipe reads as distinct sections.
+    private enum InstructionRow {
+        case header(String)
+        case step(number: Int, text: String)
+    }
+
+    private func instructionRows(_ instructions: String) -> [(id: Int, row: InstructionRow)] {
+        var rows: [(id: Int, row: InstructionRow)] = []
+        var stepNumber = 0
+        for element in RecipeInstructions.elements(from: instructions) {
+            switch element {
+            case let .header(title):
+                stepNumber = 0
+                rows.append((rows.count, .header(title)))
+            case let .step(text):
+                stepNumber += 1
+                rows.append((rows.count, .step(number: stepNumber, text: text)))
+            }
+        }
+        return rows
+    }
+
     @ViewBuilder
     private func instructionsSection(_ instructions: String) -> some View {
-        let steps = RecipeInstructions.steps(from: instructions)
+        let rows = instructionRows(instructions)
+        let stepCount = rows.filter { if case .step = $0.row { return true } else { return false } }.count
         VStack(alignment: .leading, spacing: 12) {
             Text("Instructions").font(.title3.bold()).foregroundStyle(Color.brandPrimary)
-            if steps.count > 1 {
-                ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
-                    HStack(alignment: .firstTextBaseline, spacing: 12) {
-                        Text("\(index + 1)")
-                            .font(.subheadline.weight(.bold))
+            if stepCount > 1 || rows.contains(where: { if case .header = $0.row { return true } else { return false } }) {
+                ForEach(rows, id: \.id) { entry in
+                    switch entry.row {
+                    case let .header(title):
+                        Text(title)
+                            .font(.headline)
                             .foregroundStyle(Color.brandPrimary)
-                            .frame(width: 28, height: 28)
-                            .glassEffect(.regular.tint(Color.brandPrimary.opacity(0.22)), in: Circle())
-                        Text(step)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.top, 4)
+                    case let .step(number, text):
+                        HStack(alignment: .firstTextBaseline, spacing: 12) {
+                            Text("\(number)")
+                                .font(.subheadline.weight(.bold))
+                                .foregroundStyle(Color.brandPrimary)
+                                .frame(width: 28, height: 28)
+                                .glassEffect(.regular.tint(Color.brandPrimary.opacity(0.22)), in: Circle())
+                            Text(text)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
                     }
                 }
             } else {
                 // Single unbroken paragraph — nothing to number.
-                Text(steps.first ?? instructions)
+                Text(rows.first.flatMap { if case let .step(_, text) = $0.row { return text } else { return nil } } ?? instructions)
             }
         }
     }
