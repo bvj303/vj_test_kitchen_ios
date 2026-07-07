@@ -162,6 +162,16 @@ struct MealCalendarView: View {
             dateColumn(date, isToday: isToday)
 
             VStack(alignment: .leading, spacing: 8) {
+                // The forecast is a small chip tucked into the day's top-right
+                // corner — glanceable but no longer claiming a full-height column
+                // beside every meal.
+                if let forecast {
+                    HStack(spacing: 0) {
+                        Spacer(minLength: 0)
+                        weatherChip(forecast)
+                    }
+                }
+
                 if let holiday {
                     holidayRow(holiday)
                 }
@@ -177,10 +187,6 @@ struct MealCalendarView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-
-            if let forecast {
-                weatherBadge(forecast)
-            }
         }
         .padding(.vertical, 14)
         .padding(.horizontal, 14)
@@ -218,21 +224,24 @@ struct MealCalendarView: View {
         .frame(width: 46)
     }
 
-    /// A trailing, glanceable weather badge for a day: a multicolor condition
-    /// icon (WeatherKit's own SF Symbol) over the high and low temperatures — the
-    /// week-ahead "outlook" for planning meals around the weather.
-    private func weatherBadge(_ forecast: DailyForecast) -> some View {
-        VStack(spacing: 2) {
+    /// A compact, glanceable weather chip tucked into a day's top-right corner: a
+    /// multicolor condition icon beside the high and low temperatures on a single
+    /// line — the week-ahead "outlook" for planning meals around the weather,
+    /// without reserving a full-height column beside the day's meals.
+    private func weatherChip(_ forecast: DailyForecast) -> some View {
+        HStack(spacing: 4) {
             Image(systemName: forecast.symbolName)
                 .symbolRenderingMode(.multicolor)
-                .font(.title3)
+                .font(.caption)
             Text(WeatherFormatting.temperatureLabel(forecast.highTemperature))
                 .font(.caption.weight(.semibold))
             Text(WeatherFormatting.temperatureLabel(forecast.lowTemperature))
-                .font(.caption2)
+                .font(.caption)
                 .foregroundStyle(.secondary)
         }
-        .frame(width: 44)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color.primary.opacity(0.05), in: Capsule())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
             "\(forecast.condition), high \(WeatherFormatting.temperatureLabel(forecast.highTemperature)), low \(WeatherFormatting.temperatureLabel(forecast.lowTemperature))"
@@ -279,10 +288,10 @@ struct MealCalendarView: View {
         )
     }
 
-    /// A single planned meal. Deletion lives in a long-press context menu rather
-    /// than a visible trash button — the row stays clean and uncluttered, matching
-    /// the native "press to reveal actions" pattern (Reminders, Calendar). The whole
-    /// row is the target, so it reads as one tappable object with hidden actions.
+    /// A single planned meal. Removal is a visible trailing button (an
+    /// understated hierarchical "minus" circle) so it's discoverable at a glance —
+    /// a long-press context menu is kept as a secondary path, but the button is the
+    /// primary, obvious affordance.
     private func mealRow(_ plan: MealPlanWithRecipe) -> some View {
         HStack(spacing: 12) {
             Image(systemName: MealTypeStyle.icon(for: plan.mealType))
@@ -299,9 +308,19 @@ struct MealCalendarView: View {
             }
 
             Spacer(minLength: 0)
+
+            Button {
+                Task { await viewModel.deleteMealPlan(plan.id) }
+            } label: {
+                Image(systemName: "minus.circle.fill")
+                    .font(.body)
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Remove \(plan.recipeTitle)")
         }
         .padding(.vertical, 2)
-        // Make the full row width the long-press target, not just the text.
         .contentShape(Rectangle())
         .contextMenu {
             Button(role: .destructive) {
