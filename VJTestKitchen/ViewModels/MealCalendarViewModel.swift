@@ -7,6 +7,10 @@ final class MealCalendarViewModel {
     static let mealTypes = ["Breakfast", "Lunch", "Dinner", "Snack"]
 
     let weekDates: [String]
+    /// The "yyyy-MM-dd" string for today — always `weekDates.first`, since the
+    /// week is computed starting at the reference date. Kept explicit so the view
+    /// can highlight today without re-deriving it from `Date()`.
+    let todayDate: String
     private(set) var matchingRecipes: [Recipe] = []
     private(set) var isLoading = false
     var errorMessage: String?
@@ -40,11 +44,18 @@ final class MealCalendarViewModel {
         self.debouncer = Debouncer(delay: debounceDelay)
         let dates = Self.computeWeekDates(from: referenceDate)
         weekDates = dates
+        todayDate = dates[0]
         selectedPlanningDate = dates[0]
     }
 
     func mealPlans(for date: String) -> [MealPlanWithRecipe] {
         mealPlansByDate[date] ?? []
+    }
+
+    /// Whether the given "yyyy-MM-dd" string is today, for highlighting the
+    /// current day in the week view.
+    func isToday(_ date: String) -> Bool {
+        date == todayDate
     }
 
     func load() async {
