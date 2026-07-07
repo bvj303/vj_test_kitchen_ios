@@ -2,33 +2,65 @@ import Foundation
 import Testing
 @testable import VJTestKitchen
 
-final class FakeGroceryListStore: GroceryListStoring, @unchecked Sendable {
-    var ids: [Int64] = []
-    var customItems: [GroceryItem] = []
+/// Shared fake for the account-synced grocery service. Mutations act on an
+/// in-memory `items` array; `mutationError`/`addError`/`fetchError` let tests
+/// exercise failure + optimistic-revert paths.
+final class FakeGroceryItemService: GroceryItemServicing, @unchecked Sendable {
+    var items: [GroceryItem] = []
+    var fetchError: Error?
+    var addError: Error?
+    var mutationError: Error?
+    private(set) var addedDrafts: [GroceryItemDraft] = []
 
-    func loadSelectedRecipeIds() -> [Int64] { ids }
-    func saveSelectedRecipeIds(_ ids: [Int64]) { self.ids = ids }
-    func loadCustomItems() -> [GroceryItem] { customItems }
-    func saveCustomItems(_ items: [GroceryItem]) { customItems = items }
-}
-
-final class FakeGroceryRecipeService: RecipeServicing, @unchecked Sendable {
-    var detailsById: [Int64: RecipeDetail] = [:]
-    var errorToThrow: Error?
-
-    func fetchPage(offset: Int, limit: Int, matching search: String?) async throws -> [Recipe] { fatalError("not used") }
-
-    func fetchDetail(id: Int64) async throws -> RecipeDetail {
-        if let errorToThrow { throw errorToThrow }
-        // A missing id simulates a recipe that was deleted after being added
-        // to the grocery list — fetching its detail fails.
-        guard let detail = detailsById[id] else { throw TestError() }
-        return detail
+    func fetchAll() async throws -> [GroceryItem] {
+        if let fetchError { throw fetchError }
+        return items
     }
 
-    func create(_ draft: RecipeDraft) async throws -> Recipe { fatalError("not used") }
-    func update(id: Int64, with draft: RecipeDraft) async throws { fatalError("not used") }
-    func delete(id: Int64) async throws { fatalError("not used") }
+    func add(_ draft: GroceryItemDraft) async throws -> GroceryItem {
+        if let addError { throw addError }
+        addedDrafts.append(draft)
+        let item = Self.item(from: draft)
+        items.append(item)
+        return item
+    }
+
+    func addMany(_ drafts: [GroceryItemDraft]) async throws -> [GroceryItem] {
+        if let addError { throw addError }
+        addedDrafts.append(contentsOf: drafts)
+        let new = drafts.map(Self.item(from:))
+        items.append(contentsOf: new)
+        return new
+    }
+
+    func setChecked(id: UUID, isChecked: Bool) async throws {
+        if let mutationError { throw mutationError }
+        if let i = items.firstIndex(where: { $0.id == id }) { items[i].isChecked = isChecked }
+    }
+
+    func setCategory(id: UUID, category: GroceryCategory) async throws {
+        if let mutationError { throw mutationError }
+        if let i = items.firstIndex(where: { $0.id == id }) { items[i].category = category }
+    }
+
+    func delete(id: UUID) async throws {
+        if let mutationError { throw mutationError }
+        items.removeAll { $0.id == id }
+    }
+
+    func clearAll() async throws {
+        if let mutationError { throw mutationError }
+        items = []
+    }
+
+    static func item(from draft: GroceryItemDraft) -> GroceryItem {
+        GroceryItem(
+            id: UUID(), userId: UUID(), name: draft.name, amount: draft.amount,
+            unit: draft.unit, category: draft.category, isChecked: false,
+            sourceRecipeId: draft.sourceRecipeId, sourceRecipeTitle: draft.sourceRecipeTitle,
+            createdAt: Date()
+        )
+    }
 }
 
 final class FakeReminderService: ReminderExporting, @unchecked Sendable {
@@ -43,211 +75,203 @@ final class FakeReminderService: ReminderExporting, @unchecked Sendable {
     }
 }
 
-private func makeDetail(id: Int64, ingredients: [Ingredient]) -> RecipeDetail {
-    RecipeDetail(
-        id: id, userId: nil, title: "Recipe \(id)", description: nil, instructions: nil,
-        imagePath: nil, prepTime: nil, servings: nil, createdAt: Date(),
-        ingredients: ingredients, recipeTags: []
-    )
-}
-
 private struct TestError: Error, LocalizedError {
     var errorDescription: String? { "failed" }
 }
 
+private func makeItem(
+    name: String, amount: Double = 1, unit: String = "", category: GroceryCategory = .other,
+    isChecked: Bool = false, recipeTitle: String? = nil
+) -> GroceryItem {
+    GroceryItem(
+        id: UUID(), userId: UUID(), name: name, amount: amount, unit: unit,
+        category: category, isChecked: isChecked,
+        sourceRecipeId: recipeTitle == nil ? nil : 1, sourceRecipeTitle: recipeTitle,
+        createdAt: Date()
+    )
+}
+
 @MainActor
 struct GroceryListViewModelTests {
-    @Test func loadWithEmptyStoreProducesEmptyList() async {
-        let viewModel = GroceryListViewModel(store: FakeGroceryListStore(), recipeService: FakeGroceryRecipeService(), reminderService: FakeReminderService())
+    @Test func loadFetchesItemsFromService() async {
+        let service = FakeGroceryItemService()
+        service.items = [makeItem(name: "Milk"), makeItem(name: "Eggs")]
+        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService())
 
         await viewModel.load()
 
-        #expect(viewModel.aggregatedIngredients.isEmpty)
-        #expect(viewModel.selectedRecipeCount == 0)
+        #expect(viewModel.items.count == 2)
+        #expect(viewModel.isEmpty == false)
     }
 
-    @Test func loadAggregatesIngredientsAcrossRecipesSummingMatchingNameAndUnit() async {
-        let store = FakeGroceryListStore()
-        store.ids = [1, 2]
-        let recipes = FakeGroceryRecipeService()
-        recipes.detailsById = [
-            1: makeDetail(id: 1, ingredients: [
-                Ingredient(id: 1, recipeId: 1, name: "Flour", amount: 200, unit: "g"),
-                Ingredient(id: 2, recipeId: 1, name: "Sugar", amount: 50, unit: "g"),
-            ]),
-            2: makeDetail(id: 2, ingredients: [
-                Ingredient(id: 3, recipeId: 2, name: "flour", amount: 100, unit: "g"),
-            ]),
-        ]
-        let viewModel = GroceryListViewModel(store: store, recipeService: recipes, reminderService: FakeReminderService())
-
-        await viewModel.load()
-
-        #expect(viewModel.selectedRecipeCount == 2)
-        let flour = viewModel.aggregatedIngredients.first { $0.name.lowercased() == "flour" }
-        #expect(flour?.amount == 300)
-        let sugar = viewModel.aggregatedIngredients.first { $0.name.lowercased() == "sugar" }
-        #expect(sugar?.amount == 50)
-    }
-
-    @Test func loadSurfacesErrorMessageWhenNothingCanLoad() async {
-        let store = FakeGroceryListStore()
-        store.ids = [1]
-        let recipes = FakeGroceryRecipeService()
-        recipes.errorToThrow = TestError()
-        let viewModel = GroceryListViewModel(store: store, recipeService: recipes, reminderService: FakeReminderService())
+    @Test func loadSurfacesErrorMessage() async {
+        let service = FakeGroceryItemService()
+        service.fetchError = TestError()
+        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService())
 
         await viewModel.load()
 
         #expect(viewModel.errorMessage == "failed")
     }
 
-    @Test func loadSkipsRecipesThatFailInsteadOfBlankingTheWholeList() async {
-        let store = FakeGroceryListStore()
-        store.ids = [1, 2, 3]
-        let recipes = FakeGroceryRecipeService()
-        // id 2 is absent -> its fetch throws, simulating a deleted recipe.
-        recipes.detailsById = [
-            1: makeDetail(id: 1, ingredients: [Ingredient(id: 1, recipeId: 1, name: "Flour", amount: 100, unit: "g")]),
-            3: makeDetail(id: 3, ingredients: [Ingredient(id: 2, recipeId: 3, name: "Sugar", amount: 50, unit: "g")]),
+    @Test func addManualItemAutoCategorizesFromName() async {
+        let service = FakeGroceryItemService()
+        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService())
+
+        await viewModel.addManualItem(name: "Whole Milk", amount: 1, unit: "gallon")
+
+        #expect(viewModel.items.count == 1)
+        #expect(service.addedDrafts.first?.category == .dairy)
+        #expect(service.addedDrafts.first?.sourceRecipeId == nil)
+    }
+
+    @Test func addManualItemRespectsExplicitCategoryOverride() async {
+        let service = FakeGroceryItemService()
+        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService())
+
+        await viewModel.addManualItem(name: "Milk", amount: 1, unit: "", category: .other)
+
+        #expect(service.addedDrafts.first?.category == .other)
+    }
+
+    @Test func addManualItemIgnoresBlankName() async {
+        let service = FakeGroceryItemService()
+        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService())
+
+        await viewModel.addManualItem(name: "   ", amount: 1, unit: "")
+
+        #expect(viewModel.items.isEmpty)
+        #expect(service.addedDrafts.isEmpty)
+    }
+
+    @Test func toggleCheckedFlipsAndPersists() async {
+        let service = FakeGroceryItemService()
+        service.items = [makeItem(name: "Milk")]
+        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService())
+        await viewModel.load()
+        let item = viewModel.items[0]
+
+        await viewModel.toggleChecked(item)
+
+        #expect(viewModel.items[0].isChecked == true)
+        #expect(service.items[0].isChecked == true)
+    }
+
+    @Test func toggleCheckedRevertsOnError() async {
+        let service = FakeGroceryItemService()
+        service.items = [makeItem(name: "Milk")]
+        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService())
+        await viewModel.load()
+        service.mutationError = TestError()
+
+        await viewModel.toggleChecked(viewModel.items[0])
+
+        #expect(viewModel.items[0].isChecked == false)
+        #expect(viewModel.errorMessage == "failed")
+    }
+
+    @Test func setCategoryUpdatesItem() async {
+        let service = FakeGroceryItemService()
+        service.items = [makeItem(name: "Mystery", category: .other)]
+        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService())
+        await viewModel.load()
+
+        await viewModel.setCategory(viewModel.items[0], to: .produce)
+
+        #expect(viewModel.items[0].category == .produce)
+        #expect(service.items[0].category == .produce)
+    }
+
+    @Test func deleteRemovesItem() async {
+        let service = FakeGroceryItemService()
+        service.items = [makeItem(name: "Milk"), makeItem(name: "Eggs")]
+        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService())
+        await viewModel.load()
+
+        await viewModel.delete(viewModel.items[0])
+
+        #expect(viewModel.items.count == 1)
+        #expect(service.items.count == 1)
+    }
+
+    @Test func clearListEmptiesEverything() async {
+        let service = FakeGroceryItemService()
+        service.items = [makeItem(name: "Milk"), makeItem(name: "Eggs")]
+        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService())
+        await viewModel.load()
+
+        await viewModel.clearList()
+
+        #expect(viewModel.items.isEmpty)
+        #expect(service.items.isEmpty)
+    }
+
+    @Test func recipeGroupingPutsManualItemsUnderOtherLast() async {
+        let service = FakeGroceryItemService()
+        service.items = [
+            makeItem(name: "Flour", recipeTitle: "Bread"),
+            makeItem(name: "Salt", recipeTitle: "Aioli"),
+            makeItem(name: "Paper Towels"), // manual, no recipe
         ]
-        let viewModel = GroceryListViewModel(store: store, recipeService: recipes, reminderService: FakeReminderService())
-
+        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService())
         await viewModel.load()
+        viewModel.grouping = .byRecipe
 
-        #expect(viewModel.aggregatedIngredients.count == 2)
-        #expect(viewModel.errorMessage == nil)
-        #expect(viewModel.selectedRecipeCount == 3)
+        let titles = viewModel.groups.map(\.title)
+        #expect(titles == ["Aioli", "Bread", "Other Items"])
     }
 
-    @Test func loadAggregatesUnitsIgnoringCaseAndWhitespace() async {
-        let store = FakeGroceryListStore()
-        store.ids = [1, 2]
-        let recipes = FakeGroceryRecipeService()
-        recipes.detailsById = [
-            1: makeDetail(id: 1, ingredients: [Ingredient(id: 1, recipeId: 1, name: "Sugar", amount: 50, unit: "g")]),
-            2: makeDetail(id: 2, ingredients: [Ingredient(id: 3, recipeId: 2, name: "sugar", amount: 25, unit: " G ")]),
+    @Test func categoryGroupingOrdersByAisle() async {
+        let service = FakeGroceryItemService()
+        service.items = [
+            makeItem(name: "Milk", category: .dairy),
+            makeItem(name: "Apple", category: .produce),
         ]
-        let viewModel = GroceryListViewModel(store: store, recipeService: recipes, reminderService: FakeReminderService())
-
+        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService())
         await viewModel.load()
+        viewModel.grouping = .byCategory
 
-        #expect(viewModel.aggregatedIngredients.count == 1)
-        #expect(viewModel.aggregatedIngredients.first?.amount == 75)
+        // Produce precedes Dairy in GroceryCategory.allCases (aisle order).
+        #expect(viewModel.groups.map(\.title) == ["Produce", "Dairy & Eggs"])
     }
 
-    @Test func clearListResetsStoreAndState() async {
-        let store = FakeGroceryListStore()
-        store.ids = [1]
-        let recipes = FakeGroceryRecipeService()
-        recipes.detailsById = [1: makeDetail(id: 1, ingredients: [Ingredient(id: 1, recipeId: 1, name: "Flour", amount: 200, unit: "g")])]
-        let viewModel = GroceryListViewModel(store: store, recipeService: recipes, reminderService: FakeReminderService())
-        await viewModel.load()
-
-        viewModel.clearList()
-
-        #expect(store.ids.isEmpty)
-        #expect(viewModel.aggregatedIngredients.isEmpty)
-        #expect(viewModel.selectedRecipeCount == 0)
-    }
-
-    @Test func exportToRemindersFormatsItemsWithAmountUnitName() async {
-        let store = FakeGroceryListStore()
-        store.ids = [1]
-        let recipes = FakeGroceryRecipeService()
-        recipes.detailsById = [1: makeDetail(id: 1, ingredients: [
-            Ingredient(id: 1, recipeId: 1, name: "Flour", amount: 200, unit: "g"),
-            Ingredient(id: 2, recipeId: 1, name: "Salt", amount: 1, unit: ""),
-        ])]
+    @Test func exportSendsUncheckedItemsFormattedWithAmountUnitName() async {
+        let service = FakeGroceryItemService()
+        service.items = [
+            makeItem(name: "Flour", amount: 200, unit: "g"),
+            makeItem(name: "Salt", amount: 1, unit: ""),
+            makeItem(name: "Sugar", amount: 50, unit: "g", isChecked: true),
+        ]
         let reminders = FakeReminderService()
-        let viewModel = GroceryListViewModel(store: store, recipeService: recipes, reminderService: reminders)
+        let viewModel = GroceryListViewModel(service: service, reminderService: reminders)
         await viewModel.load()
 
         await viewModel.exportToReminders()
 
         #expect(reminders.exportedItems?.contains("200 g Flour") == true)
         #expect(reminders.exportedItems?.contains("1 Salt") == true)
-        #expect(viewModel.errorMessage == nil)
+        // Checked items are already "in the cart" and excluded from the export.
+        #expect(reminders.exportedItems?.contains(where: { $0.contains("Sugar") }) == false)
     }
 
-    @Test func exportToRemindersSurfacesErrorMessage() async {
-        let store = FakeGroceryListStore()
+    @Test func exportSurfacesErrorMessage() async {
         let reminders = FakeReminderService()
         reminders.errorToThrow = TestError()
-        let viewModel = GroceryListViewModel(store: store, recipeService: FakeGroceryRecipeService(), reminderService: reminders)
+        let service = FakeGroceryItemService()
+        service.items = [makeItem(name: "Milk")]
+        let viewModel = GroceryListViewModel(service: service, reminderService: reminders)
+        await viewModel.load()
 
         await viewModel.exportToReminders()
 
         #expect(viewModel.errorMessage == "failed")
     }
 
-    @Test func loadReadsCustomItemsFromStore() async {
-        let store = FakeGroceryListStore()
-        store.customItems = [GroceryItem(name: "Paper Towels", amount: 1, unit: "")]
-        let viewModel = GroceryListViewModel(store: store, recipeService: FakeGroceryRecipeService(), reminderService: FakeReminderService())
-
-        await viewModel.load()
-
-        #expect(viewModel.customItems.map(\.name) == ["Paper Towels"])
-    }
-
-    @Test func addCustomItemPersistsToStoreAndUpdatesState() async {
-        let store = FakeGroceryListStore()
-        let viewModel = GroceryListViewModel(store: store, recipeService: FakeGroceryRecipeService(), reminderService: FakeReminderService())
-        await viewModel.load()
-
-        viewModel.addCustomItem(name: "Olive Oil", amount: 1, unit: "bottle")
-
-        #expect(viewModel.customItems.map(\.name) == ["Olive Oil"])
-        #expect(store.customItems.map(\.name) == ["Olive Oil"])
-    }
-
-    @Test func addCustomItemIgnoresBlankName() async {
-        let store = FakeGroceryListStore()
-        let viewModel = GroceryListViewModel(store: store, recipeService: FakeGroceryRecipeService(), reminderService: FakeReminderService())
-        await viewModel.load()
-
-        viewModel.addCustomItem(name: "   ", amount: 1, unit: "")
-
-        #expect(viewModel.customItems.isEmpty)
-        #expect(store.customItems.isEmpty)
-    }
-
-    @Test func removeCustomItemDeletesJustThatItem() async {
-        let store = FakeGroceryListStore()
-        let keep = GroceryItem(name: "Keep Me", amount: 1, unit: "")
-        let remove = GroceryItem(name: "Remove Me", amount: 1, unit: "")
-        store.customItems = [keep, remove]
-        let viewModel = GroceryListViewModel(store: store, recipeService: FakeGroceryRecipeService(), reminderService: FakeReminderService())
-        await viewModel.load()
-
-        viewModel.removeCustomItem(remove)
-
-        #expect(viewModel.customItems == [keep])
-        #expect(store.customItems == [keep])
-    }
-
-    @Test func clearListAlsoClearsCustomItems() async {
-        let store = FakeGroceryListStore()
-        store.customItems = [GroceryItem(name: "Paper Towels", amount: 1, unit: "")]
-        let viewModel = GroceryListViewModel(store: store, recipeService: FakeGroceryRecipeService(), reminderService: FakeReminderService())
-        await viewModel.load()
-
-        viewModel.clearList()
-
-        #expect(viewModel.customItems.isEmpty)
-        #expect(store.customItems.isEmpty)
-    }
-
-    @Test func exportToRemindersIncludesCustomItems() async {
-        let store = FakeGroceryListStore()
-        store.customItems = [GroceryItem(name: "Paper Towels", amount: 2, unit: "rolls")]
-        let reminders = FakeReminderService()
-        let viewModel = GroceryListViewModel(store: store, recipeService: FakeGroceryRecipeService(), reminderService: reminders)
-        await viewModel.load()
-
-        await viewModel.exportToReminders()
-
-        #expect(reminders.exportedItems?.contains("2 rolls Paper Towels") == true)
+    @Test func formattedQuantityHandlesZeroAndFractions() {
+        #expect(GroceryListViewModel.formattedQuantity(amount: 200, unit: "g") == "200 g")
+        #expect(GroceryListViewModel.formattedQuantity(amount: 1, unit: "") == "1")
+        #expect(GroceryListViewModel.formattedQuantity(amount: 0, unit: "") == "")
+        #expect(GroceryListViewModel.formattedQuantity(amount: 0, unit: "cloves") == "cloves")
+        #expect(GroceryListViewModel.formattedQuantity(amount: 1.5, unit: "cups") == "1.50 cups")
     }
 }
