@@ -1,0 +1,7 @@
+#!/bin/sh
+# Runs after `git checkout` / `git switch`. The third arg is 1 for a branch
+# switch and 0 for a file checkout (e.g. `git checkout -- file`); only a branch
+# switch can change project.yml, so skip the file-checkout case. See
+# .githooks/xcodegen-sync.sh.
+[ "${3:-0}" = "1" ] || exit 0
+exec "$(git rev-parse --show-toplevel)/.githooks/xcodegen-sync.sh"

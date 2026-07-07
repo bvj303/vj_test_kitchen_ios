@@ -30,6 +30,20 @@ targets:
       - path: VJTestKitchen
         excludes:
           - "Resources/Info.plist"
+    preBuildScripts:
+      # Fail the build (with a clear fix) if project.yml has drifted ahead of
+      # this generated project — e.g. after a pull that changed the spec. This
+      # deliberately does NOT regenerate mid-build (Xcode has already loaded the
+      # old project into memory; rewriting it underneath the running build is
+      # racy). The .githooks/ hooks handle regeneration on pull/switch/rebase;
+      # this guard is the safety net for a hand-edited project.yml.
+      - name: "Guard: project.yml in sync with generated project"
+        basedOnDependencyAnalysis: false
+        script: |
+          if [ "${SRCROOT}/project.yml" -nt "${SRCROOT}/VJTestKitchen.xcodeproj/project.pbxproj" ]; then
+            echo "error: project.yml is newer than the generated Xcode project. Run 'xcodegen generate' (or ./.githooks/install.sh once to automate it) and build again."
+            exit 1
+          fi
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.bvj303.vjtestkitchen
