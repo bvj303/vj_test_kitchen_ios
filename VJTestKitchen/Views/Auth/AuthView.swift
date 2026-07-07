@@ -11,84 +11,86 @@ struct AuthView: View {
     var body: some View {
         @Bindable var viewModel = viewModel
 
-        ZStack {
-            LinearGradient(
-                colors: [Color.accentColor.opacity(0.18), Color(.systemBackground)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
+        NavigationStack {
+            ZStack {
+                LinearGradient(
+                    colors: [Color.accentColor.opacity(0.18), Color(.systemBackground)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .ignoresSafeArea()
 
-            ScrollView {
-                VStack(spacing: 28) {
-                    VStack(spacing: 8) {
-                        Image(systemName: "fork.knife.circle.fill")
-                            .font(.system(size: 56))
-                            .symbolRenderingMode(.hierarchical)
-                            .foregroundStyle(Color.accentColor)
+                ScrollView {
+                    VStack(spacing: 28) {
+                        VStack(spacing: 8) {
+                            Image(systemName: "fork.knife.circle.fill")
+                                .font(.system(size: 56))
+                                .symbolRenderingMode(.hierarchical)
+                                .foregroundStyle(Color.accentColor)
 
-                        Text("VJ Test Kitchen")
-                            .font(.largeTitle.bold())
+                            Text("VJ Test Kitchen")
+                                .font(.largeTitle.bold())
 
-                        Text("Sign in to your kitchen")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.top, 60)
-
-                    VStack(spacing: 14) {
-                        TextField("Email", text: $viewModel.email)
-                            .textContentType(.emailAddress)
-                            .keyboardType(.emailAddress)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .focused($focusedField, equals: .email)
-                            .submitLabel(.next)
-                            .onSubmit { focusedField = .password }
-                            .textFieldStyle(.roundedBorder)
-
-                        SecureField("Password", text: $viewModel.password)
-                            .textContentType(.password)
-                            .focused($focusedField, equals: .password)
-                            .submitLabel(.go)
-                            .onSubmit { Task { await viewModel.signIn() } }
-                            .textFieldStyle(.roundedBorder)
-
-                        if !viewModel.password.isEmpty && viewModel.password.count < AuthViewModel.minimumPasswordLength {
-                            Text("Password must be at least \(AuthViewModel.minimumPasswordLength) characters.")
+                            Text("Sign in to your kitchen")
+                                .font(.subheadline)
                                 .foregroundStyle(.secondary)
-                                .font(.footnote)
-                                .frame(maxWidth: .infinity, alignment: .leading)
                         }
+                        .padding(.top, 60)
 
-                        if let errorMessage = viewModel.errorMessage {
-                            Text(errorMessage)
-                                .foregroundStyle(.red)
-                                .font(.footnote)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
+                        VStack(spacing: 14) {
+                            TextField("Email", text: $viewModel.email)
+                                .textContentType(.emailAddress)
+                                .keyboardType(.emailAddress)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .focused($focusedField, equals: .email)
+                                .submitLabel(.next)
+                                .onSubmit { focusedField = .password }
+                                .textFieldStyle(.roundedBorder)
 
-                        Button {
-                            Task { await viewModel.signIn() }
-                        } label: {
-                            Text("Sign In")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.glassProminent)
-                        .disabled(viewModel.isSubmitting || viewModel.email.isEmpty || viewModel.password.isEmpty)
-                        .padding(.top, 4)
+                            SecureField("Password", text: $viewModel.password)
+                                .textContentType(.password)
+                                .focused($focusedField, equals: .password)
+                                .submitLabel(.go)
+                                .onSubmit { Task { await viewModel.signIn() } }
+                                .textFieldStyle(.roundedBorder)
 
-                        Button("Create Account") {
-                            Task { await viewModel.signUp() }
+                            if !viewModel.password.isEmpty && viewModel.password.count < AuthViewModel.minimumPasswordLength {
+                                Text("Password must be at least \(AuthViewModel.minimumPasswordLength) characters.")
+                                    .foregroundStyle(.secondary)
+                                    .font(.footnote)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+
+                            if let errorMessage = viewModel.errorMessage {
+                                Text(errorMessage)
+                                    .foregroundStyle(.red)
+                                    .font(.footnote)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+
+                            Button {
+                                Task { await viewModel.signIn() }
+                            } label: {
+                                Text("Sign In")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.glassProminent)
+                            .disabled(viewModel.isSubmitting || viewModel.email.isEmpty || viewModel.password.isEmpty)
+                            .padding(.top, 4)
+
+                            NavigationLink("Create Account") {
+                                CreateProfileView()
+                            }
+                            .disabled(viewModel.isSubmitting)
                         }
-                        .disabled(viewModel.isSubmitting || viewModel.email.isEmpty || viewModel.password.count < AuthViewModel.minimumPasswordLength)
+                        .padding(24)
+                        .glassEffect(in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                        .frame(maxWidth: 420)
                     }
-                    .padding(24)
-                    .glassEffect(in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-                    .frame(maxWidth: 420)
+                    .padding(.horizontal)
+                    .frame(maxWidth: .infinity)
                 }
-                .padding(.horizontal)
-                .frame(maxWidth: .infinity)
             }
         }
     }
