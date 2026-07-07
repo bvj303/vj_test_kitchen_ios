@@ -25,9 +25,20 @@ final class MealCalendarViewModel {
     /// visible week; the view exposes a day picker so it isn't stuck on "today".
     var selectedPlanningDate: String
 
+    /// The week's forecasts keyed by "yyyy-MM-dd", populated by `loadWeather()`
+    /// when the user has opted into location-based weather. Empty otherwise (or
+    /// when the fetch fails) — weather is a supplementary outlook, never required.
+    private(set) var forecastByDate: [String: DailyForecast] = [:]
+    /// The WeatherKit attribution to render wherever forecasts are shown; nil when
+    /// weather is off or unavailable. WeatherKit legally requires it be displayed.
+    private(set) var weatherAttribution: WeatherAttributionInfo?
+
     private var mealPlansByDate: [String: [MealPlanWithRecipe]] = [:]
     private let mealPlanService: MealPlanServicing
     private let recipeService: RecipeServicing
+    private let weatherForecaster: WeatherForecasting
+    private let locationProvider: LocationProviding
+    private let weatherPreferenceStore: WeatherPreferenceStoring
     private let debouncer: Debouncer
 
     /// Matches `.prefix(5)` in `MealCalendarView`'s Quick Planner search results.
@@ -37,15 +48,27 @@ final class MealCalendarViewModel {
         referenceDate: Date = Date(),
         mealPlanService: MealPlanServicing = MealPlanService(),
         recipeService: RecipeServicing = RecipeService(),
+        weatherForecaster: WeatherForecasting = WeatherKitForecastService(),
+        locationProvider: LocationProviding = CoreLocationService(),
+        weatherPreferenceStore: WeatherPreferenceStoring = UserDefaultsWeatherPreferenceStore(),
         debounceDelay: Duration = .milliseconds(300)
     ) {
         self.mealPlanService = mealPlanService
         self.recipeService = recipeService
+        self.weatherForecaster = weatherForecaster
+        self.locationProvider = locationProvider
+        self.weatherPreferenceStore = weatherPreferenceStore
         self.debouncer = Debouncer(delay: debounceDelay)
         let dates = Self.computeWeekDates(from: referenceDate)
         weekDates = dates
         todayDate = dates[0]
         selectedPlanningDate = dates[0]
+    }
+
+    /// The forecast (if any) for the given "yyyy-MM-dd" string, so the schedule
+    /// view can show a weather badge beside that day. Pure lookup.
+    func forecast(for date: String) -> DailyForecast? {
+        forecastByDate[date]
     }
 
     func mealPlans(for date: String) -> [MealPlanWithRecipe] {
@@ -74,6 +97,28 @@ final class MealCalendarViewModel {
             mealPlansByDate = Dictionary(grouping: plans, by: \.date)
         } catch {
             errorMessage = ErrorPresenter.message(for: error)
+        }
+        await loadWeather()
+    }
+
+    /// Loads the week's weather outlook when the user has opted in. Failures
+    /// (location denied, WeatherKit unavailable/unentitled, network) are swallowed
+    /// into an empty forecast rather than raising the meal-plan error alert —
+    /// weather is a nice-to-have, not core to planning.
+    func loadWeather() async {
+        guard weatherPreferenceStore.loadUseCurrentLocation() else {
+            forecastByDate = [:]
+            weatherAttribution = nil
+            return
+        }
+        do {
+            let coordinate = try await locationProvider.currentLocation()
+            let forecasts = try await weatherForecaster.dailyForecast(for: coordinate)
+            forecastByDate = Dictionary(forecasts.map { ($0.date, $0) }, uniquingKeysWith: { first, _ in first })
+            weatherAttribution = try? await weatherForecaster.attribution()
+        } catch {
+            forecastByDate = [:]
+            weatherAttribution = nil
         }
     }
 

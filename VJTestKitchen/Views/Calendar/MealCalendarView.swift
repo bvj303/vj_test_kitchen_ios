@@ -17,6 +17,8 @@ struct MealCalendarView: View {
     // to the foreground — edits made on another device then show up without a
     // manual pull-to-refresh.
     @Environment(\.scenePhase) private var scenePhase
+    // Chooses the light/dark variant of the WeatherKit attribution mark.
+    @Environment(\.colorScheme) private var colorScheme
 
     /// Caps the agenda column's width so a landscape iPad reads as a centered
     /// schedule column rather than rows spanning the whole display.
@@ -75,6 +77,7 @@ struct MealCalendarView: View {
                 weekHeader
                 quickPlanner
                 agendaList
+                weatherAttributionFooter
             }
             .padding()
         }
@@ -94,6 +97,7 @@ struct MealCalendarView: View {
                 VStack(spacing: 20) {
                     weekHeader
                     agendaList
+                    weatherAttributionFooter
                 }
                 .frame(maxWidth: Self.agendaMaxWidth)
                 .frame(maxWidth: .infinity)
@@ -145,6 +149,7 @@ struct MealCalendarView: View {
         let plans = viewModel.mealPlans(for: date)
         let holiday = viewModel.holiday(for: date)
         let isToday = viewModel.isToday(date)
+        let forecast = viewModel.forecast(for: date)
 
         HStack(alignment: .top, spacing: 16) {
             dateColumn(date, isToday: isToday)
@@ -165,6 +170,10 @@ struct MealCalendarView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+
+            if let forecast {
+                weatherBadge(forecast)
+            }
         }
         .padding(.vertical, 14)
         .padding(.horizontal, 14)
@@ -200,6 +209,48 @@ struct MealCalendarView: View {
                 )
         }
         .frame(width: 46)
+    }
+
+    /// A trailing, glanceable weather badge for a day: a multicolor condition
+    /// icon (WeatherKit's own SF Symbol) over the high and low temperatures — the
+    /// week-ahead "outlook" for planning meals around the weather.
+    private func weatherBadge(_ forecast: DailyForecast) -> some View {
+        VStack(spacing: 2) {
+            Image(systemName: forecast.symbolName)
+                .symbolRenderingMode(.multicolor)
+                .font(.title3)
+            Text(WeatherFormatting.temperatureLabel(forecast.highTemperature))
+                .font(.caption.weight(.semibold))
+            Text(WeatherFormatting.temperatureLabel(forecast.lowTemperature))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .frame(width: 44)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            "\(forecast.condition), high \(WeatherFormatting.temperatureLabel(forecast.highTemperature)), low \(WeatherFormatting.temperatureLabel(forecast.lowTemperature))"
+        )
+    }
+
+    /// WeatherKit requires its attribution mark be shown wherever its data is
+    /// displayed, linking to the data-source legal page. Shown only when a
+    /// forecast is actually loaded.
+    @ViewBuilder
+    private var weatherAttributionFooter: some View {
+        if let attribution = viewModel.weatherAttribution {
+            Link(destination: attribution.legalPageURL) {
+                AsyncImage(
+                    url: colorScheme == .dark ? attribution.markDarkURL : attribution.markLightURL
+                ) { image in
+                    image.resizable().scaledToFit()
+                } placeholder: {
+                    Text("Weather").font(.caption2)
+                }
+                .frame(height: 14)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+            .foregroundStyle(.secondary)
+        }
     }
 
     private func holidayRow(_ holiday: Holiday) -> some View {
