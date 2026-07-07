@@ -428,3 +428,11 @@ entrypoint = "./functions/ai-chat/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/ai-chat/*.html" ]
+
+[functions.delete-account]
+enabled = true
+# Same JWT-verification story as ai-chat above — the function only ever sees
+# an already-authenticated caller. No import_map: zero external imports by
+# design (see index.ts).
+verify_jwt = true
+entrypoint = "./functions/delete-account/index.ts"
