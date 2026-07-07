@@ -12,6 +12,9 @@ final class FakeAuthService: AuthServicing, @unchecked Sendable {
     private(set) var deleteAccountCallCount = 0
     private(set) var lastEmail: String?
     private(set) var lastPassword: String?
+    private(set) var lastFirstName: String?
+    private(set) var lastLastName: String?
+    private(set) var lastUsername: String?
     var errorToThrow: Error?
 
     let userIdChanges: AsyncStream<UUID?>
@@ -23,10 +26,13 @@ final class FakeAuthService: AuthServicing, @unchecked Sendable {
         self.continuation = continuation
     }
 
-    func signUp(email: String, password: String) async throws {
+    func signUp(email: String, password: String, firstName: String, lastName: String, username: String) async throws {
         signUpCallCount += 1
         lastEmail = email
         lastPassword = password
+        lastFirstName = firstName
+        lastLastName = lastName
+        lastUsername = username
         if let errorToThrow { throw errorToThrow }
     }
 
@@ -54,6 +60,40 @@ final class FakeAuthService: AuthServicing, @unchecked Sendable {
 
 private struct TestError: Error, LocalizedError {
     var errorDescription: String? { "invalid credentials" }
+}
+
+/// Fake ProfileServicing conformer — lets tests control the username
+/// availability result, the profile returned by `fetchMine`, or force a
+/// failure, without a real network call. Shared by AuthViewModelTests and
+/// ProfileViewModelTests.
+final class FakeProfileService: ProfileServicing, @unchecked Sendable {
+    var takenUsernames: Set<String> = []
+    var errorToThrow: Error?
+    var profileToReturn = Profile(id: UUID(), displayName: nil, firstName: nil, lastName: nil, username: nil, createdAt: Date())
+    private(set) var checkedUsernames: [String] = []
+    private(set) var updateCallCount = 0
+    private(set) var lastUpdateFirstName: String?
+    private(set) var lastUpdateLastName: String?
+    private(set) var lastUpdateUsername: String?
+
+    func isUsernameAvailable(_ username: String) async throws -> Bool {
+        checkedUsernames.append(username)
+        if let errorToThrow { throw errorToThrow }
+        return !takenUsernames.contains(username)
+    }
+
+    func fetchMine() async throws -> Profile {
+        if let errorToThrow { throw errorToThrow }
+        return profileToReturn
+    }
+
+    func updateMine(firstName: String, lastName: String, username: String) async throws {
+        updateCallCount += 1
+        lastUpdateFirstName = firstName
+        lastUpdateLastName = lastName
+        lastUpdateUsername = username
+        if let errorToThrow { throw errorToThrow }
+    }
 }
 
 @MainActor
@@ -109,11 +149,17 @@ struct AuthViewModelTests {
         let viewModel = AuthViewModel(authService: fake)
         viewModel.email = "new@example.com"
         viewModel.password = "s3cretpw"
+        viewModel.firstName = "  Ada  "
+        viewModel.lastName = "  Lovelace  "
+        viewModel.username = "ada_l"
 
         await viewModel.signUp()
 
         #expect(fake.signUpCallCount == 1)
         #expect(fake.lastEmail == "new@example.com")
+        #expect(fake.lastFirstName == "Ada")
+        #expect(fake.lastLastName == "Lovelace")
+        #expect(fake.lastUsername == "ada_l")
         #expect(viewModel.errorMessage == nil)
     }
 
@@ -195,5 +241,76 @@ struct AuthViewModelTests {
 
         #expect(fake.deleteAccountCallCount == 1)
         #expect(viewModel.errorMessage == "invalid credentials")
+    }
+
+    @Test func usernameShorterThanMinimumIsMarkedInvalidWithoutCallingService() async {
+        let fakeProfile = FakeProfileService()
+        let viewModel = AuthViewModel(authService: FakeAuthService(), profileService: fakeProfile, usernameDebounceDelay: .zero)
+
+        viewModel.username = "ab"
+        try? await Task.sleep(for: .milliseconds(50))
+
+        #expect(viewModel.usernameAvailability == .invalidFormat)
+        #expect(fakeProfile.checkedUsernames.isEmpty)
+    }
+
+    @Test func emptyUsernameHasNoAvailabilityStateYet() async {
+        let viewModel = AuthViewModel(authService: FakeAuthService(), profileService: FakeProfileService(), usernameDebounceDelay: .zero)
+
+        viewModel.username = "abc"
+        try? await Task.sleep(for: .milliseconds(50))
+        viewModel.username = ""
+        try? await Task.sleep(for: .milliseconds(50))
+
+        #expect(viewModel.usernameAvailability == nil)
+    }
+
+    @Test func validUsernameIsCheckedAndMarkedAvailable() async {
+        let fakeProfile = FakeProfileService()
+        let viewModel = AuthViewModel(authService: FakeAuthService(), profileService: fakeProfile, usernameDebounceDelay: .zero)
+
+        viewModel.username = "newchef"
+        try? await Task.sleep(for: .milliseconds(50))
+
+        #expect(fakeProfile.checkedUsernames == ["newchef"])
+        #expect(viewModel.usernameAvailability == .available)
+    }
+
+    @Test func takenUsernameIsMarkedTaken() async {
+        let fakeProfile = FakeProfileService()
+        fakeProfile.takenUsernames = ["chef"]
+        let viewModel = AuthViewModel(authService: FakeAuthService(), profileService: fakeProfile, usernameDebounceDelay: .zero)
+
+        viewModel.username = "chef"
+        try? await Task.sleep(for: .milliseconds(50))
+
+        #expect(viewModel.usernameAvailability == .taken)
+    }
+
+    @Test func availabilityCheckFailureIsMarkedUnknownRatherThanTaken() async {
+        let fakeProfile = FakeProfileService()
+        fakeProfile.errorToThrow = TestError()
+        let viewModel = AuthViewModel(authService: FakeAuthService(), profileService: fakeProfile, usernameDebounceDelay: .zero)
+
+        viewModel.username = "chef"
+        try? await Task.sleep(for: .milliseconds(50))
+
+        #expect(viewModel.usernameAvailability == .unknown)
+    }
+
+    @Test func canProceedToAccountStepRequiresNamesAndAnAvailableUsername() async {
+        let fakeProfile = FakeProfileService()
+        let viewModel = AuthViewModel(authService: FakeAuthService(), profileService: fakeProfile, usernameDebounceDelay: .zero)
+
+        #expect(viewModel.canProceedToAccountStep == false)
+
+        viewModel.firstName = "Ada"
+        viewModel.lastName = "Lovelace"
+        #expect(viewModel.canProceedToAccountStep == false, "username not yet checked")
+
+        viewModel.username = "adalovelace"
+        try? await Task.sleep(for: .milliseconds(50))
+
+        #expect(viewModel.canProceedToAccountStep == true)
     }
 }
