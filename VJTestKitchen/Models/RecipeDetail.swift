@@ -11,6 +11,7 @@ struct RecipeDetail: Codable, Sendable, Identifiable {
     var description: String?
     var instructions: String?
     var imagePath: String?
+    var imageUrl: String? = nil
     var prepTime: Int?
     var servings: Int?
     let createdAt: Date

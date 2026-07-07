@@ -1,17 +1,45 @@
 import SwiftUI
 
-/// Placeholder thumbnail — wired up to real Supabase Storage URLs in Stage 6
-/// once the image bucket exists. Every recipe is imageless until then.
+/// Small square recipe image for list rows. Loads a remote `imageUrl` (the
+/// catalog import's Cloudinary URLs) via `AsyncImage`, falling back to a
+/// brand-tinted glass placeholder while loading, on failure, or when a recipe
+/// has no image yet. Supabase Storage cover photos (`image_path`, Stage 6) will
+/// resolve to a URL upstream and flow through this same `imageUrl` path.
 struct RecipeThumbnail: View {
-    let imagePath: String?
+    let imageUrl: String?
+
+    private var url: URL? {
+        guard let imageUrl, !imageUrl.isEmpty else { return nil }
+        return URL(string: imageUrl)
+    }
 
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(.thinMaterial)
-                .glassEffect(.regular.tint(Color.brandPrimary.opacity(0.22)), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            Image(systemName: "fork.knife")
-                .foregroundStyle(Color.brandPrimary)
-        }
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .fill(.thinMaterial)
+            .glassEffect(.regular.tint(Color.brandPrimary.opacity(0.22)), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay {
+                if let url {
+                    AsyncImage(url: url, transaction: Transaction(animation: .default)) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image.resizable().scaledToFill()
+                        case .failure:
+                            placeholderIcon
+                        case .empty:
+                            ProgressView()
+                        @unknown default:
+                            placeholderIcon
+                        }
+                    }
+                } else {
+                    placeholderIcon
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private var placeholderIcon: some View {
+        Image(systemName: "fork.knife")
+            .foregroundStyle(Color.brandPrimary)
     }
 }

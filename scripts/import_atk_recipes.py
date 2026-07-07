@@ -99,13 +99,14 @@ def recipe_statement(recipe: dict) -> str:
     if not title:
         return ""  # title is NOT NULL; skip untitled rows
 
-    cols = "(user_id, title, description, instructions, image_path, prep_time, servings)"
+    cols = "(user_id, title, description, instructions, image_path, image_url, prep_time, servings)"
     vals = (
         "(NULL, "
         f"{sql_str(title)}, "
         f"{sql_str((recipe.get('description') or '').strip())}, "
         f"{sql_str((recipe.get('instructions') or '').strip())}, "
         f"{sql_str((recipe.get('image_path') or '').strip())}, "
+        f"{sql_str((recipe.get('image_url') or '').strip())}, "
         f"{sql_int(recipe.get('prep_time'))}, "
         f"{sql_int(recipe.get('servings'))})"
     )
