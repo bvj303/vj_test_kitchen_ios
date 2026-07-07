@@ -169,13 +169,23 @@ def build_backfill_image_url_sql(recipes: list[dict]) -> str:
     return "\n".join(parts) + "\n"
 
 
-def build_sql(recipes: list[dict], reset_catalog: bool) -> str:
-    parts: list[str] = ["BEGIN;"]
+def build_sql(recipes: list[dict], reset_catalog: bool, batch_size: int = 0) -> str:
+    """Render the import as SQL.
 
+    With `batch_size == 0` the whole import is one `BEGIN … COMMIT` transaction
+    (all-or-nothing). With `batch_size > 0` the recipes are split into
+    per-transaction batches that each commit independently — required for a large
+    remote import, where a single ~15K-statement transaction over the connection
+    pooler is too slow to finish in one shot (and a mid-flight disconnect would
+    roll the *entire* thing back). The reset + tag pre-seed still ride in the
+    first batch's transaction so the catalog is never left tag-less.
+    """
+    # Reset + tag pre-seed statements that must run before any recipe rows.
+    prelude: list[str] = []
     if reset_catalog:
         # Only remove previously-imported *unowned* rows; never touch recipes a
         # real user created (those have a non-NULL user_id).
-        parts.append("DELETE FROM recipes WHERE user_id IS NULL;")
+        prelude.append("DELETE FROM recipes WHERE user_id IS NULL;")
 
     # Pre-seed the shared tag vocabulary once so every recipe_tags insert can
     # resolve names to ids. tags.name is uniquely indexed.
@@ -186,17 +196,22 @@ def build_sql(recipes: list[dict], reset_catalog: bool) -> str:
                 all_tags.append(t)
     if all_tags:
         values = ", ".join(f"({sql_str(t)})" for t in all_tags)
-        parts.append(
+        prelude.append(
             f"INSERT INTO tags (name) VALUES {values} ON CONFLICT (name) DO NOTHING;"
         )
 
-    for r in recipes:
-        stmt = recipe_statement(r)
-        if stmt:
-            parts.append(stmt)
+    recipe_stmts = [s for s in (recipe_statement(r) for r in recipes) if s]
 
-    parts.append("COMMIT;")
-    return "\n\n".join(parts) + "\n"
+    step = batch_size if batch_size > 0 else len(recipe_stmts) or 1
+    blocks: list[str] = []
+    for i in range(0, len(recipe_stmts), step):
+        chunk = recipe_stmts[i : i + step]
+        body = (prelude if i == 0 else []) + chunk
+        blocks.append("BEGIN;\n\n" + "\n\n".join(body) + "\n\nCOMMIT;")
+    if not blocks:  # no recipes but maybe a reset/tag prelude to apply
+        blocks.append("BEGIN;\n\n" + "\n\n".join(prelude) + "\n\nCOMMIT;")
+
+    return "\n\n".join(blocks) + "\n"
 
 
 def main() -> int:
@@ -207,6 +222,9 @@ def main() -> int:
     parser.add_argument("--db-url", default=DEFAULT_DB_URL, help="Postgres connection string")
     parser.add_argument("--owner", default=None, help="Attribute recipes to this auth user UUID (default: unowned)")
     parser.add_argument("--reset-catalog", action="store_true", help="Delete existing unowned recipes first")
+    parser.add_argument("--batch-size", type=int, default=0,
+                        help="Commit every N recipes in their own transaction (0 = one big transaction). "
+                             "Use for large remote imports where a single transaction is too slow to finish.")
     parser.add_argument("--backfill-images", action="store_true",
                         help="Don't insert; only UPDATE image_url on already-imported rows (matched by title)")
     parser.add_argument("--dry-run", action="store_true", help="Print SQL instead of running it")
@@ -226,7 +244,7 @@ def main() -> int:
     if args.backfill_images:
         sql = build_backfill_image_url_sql(subset)
     else:
-        sql = build_sql(subset, reset_catalog=args.reset_catalog)
+        sql = build_sql(subset, reset_catalog=args.reset_catalog, batch_size=args.batch_size)
         if args.owner:
             # Simple, safe global swap: the only "(NULL, " occurrences are the
             # recipes VALUES tuples' user_id slot.
