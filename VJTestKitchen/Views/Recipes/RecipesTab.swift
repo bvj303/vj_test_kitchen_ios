@@ -6,6 +6,18 @@ struct RecipesTab: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var selectedRecipe: Recipe?
     @State private var path = NavigationPath()
+    // Bumped after a delete to re-run the list's load, so the removed recipe
+    // stops appearing (and can't be tapped back into a now-broken detail).
+    @State private var listReloadToken = UUID()
+
+    /// A recipe was deleted from its detail screen. Clear the split-view
+    /// selection (iPad — swaps the detail column back to the placeholder; the
+    /// iPhone push pops itself via the detail's own `dismiss()`) and reload the
+    /// list so the removed recipe drops out and can't be reopened.
+    private func handleRecipeDeleted() {
+        selectedRecipe = nil
+        listReloadToken = UUID()
+    }
 
     var body: some View {
         if horizontalSizeClass == .regular {
@@ -14,7 +26,7 @@ struct RecipesTab: View {
             // the system-provided sidebar-collapse toggle, and stacking our
             // icon next to it there felt cramped.
             NavigationSplitView {
-                RecipeListView { recipe in selectedRecipe = recipe }
+                RecipeListView(reloadToken: listReloadToken) { recipe in selectedRecipe = recipe }
                     .navigationTitle("Recipes")
             } detail: {
                 Group {
@@ -23,7 +35,7 @@ struct RecipesTab: View {
                         // selecting a different recipe rebuilds it (fresh
                         // @State + re-run .task); without this the detail
                         // column keeps showing the first recipe tapped.
-                        RecipeDetailView(recipeId: selectedRecipe.id)
+                        RecipeDetailView(recipeId: selectedRecipe.id, onDeleted: handleRecipeDeleted)
                             .id(selectedRecipe.id)
                     } else {
                         ContentUnavailableView("Select a Recipe", systemImage: "fork.knife")
@@ -33,10 +45,10 @@ struct RecipesTab: View {
             }
         } else {
             NavigationStack(path: $path) {
-                RecipeListView { recipe in path.append(recipe) }
+                RecipeListView(reloadToken: listReloadToken) { recipe in path.append(recipe) }
                     .navigationTitle("Recipes")
                     .navigationDestination(for: Recipe.self) { recipe in
-                        RecipeDetailView(recipeId: recipe.id)
+                        RecipeDetailView(recipeId: recipe.id, onDeleted: handleRecipeDeleted)
                     }
                     .toolbar { accountToolbarItem }
             }

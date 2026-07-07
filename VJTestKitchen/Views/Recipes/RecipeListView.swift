@@ -3,6 +3,9 @@ import SwiftUI
 struct RecipeListView: View {
     @State private var viewModel = RecipeListViewModel()
     @State private var showingAddRecipe = false
+    /// Changing this re-runs the initial load — the parent bumps it after a
+    /// delete so the removed recipe drops out of the list.
+    var reloadToken: UUID = UUID()
     let onSelect: (Recipe) -> Void
 
     var body: some View {
@@ -57,7 +60,7 @@ struct RecipeListView: View {
                 })
             }
         }
-        .task { await viewModel.load() }
+        .task(id: reloadToken) { await viewModel.load() }
         .alert(
             "Couldn't Load Recipes",
             isPresented: Binding(
