@@ -148,6 +148,27 @@ def recipe_statement(recipe: dict) -> str:
     return f"{with_clause}\n{final};"
 
 
+def build_backfill_image_url_sql(recipes: list[dict]) -> str:
+    """UPDATEs to populate image_url on already-imported rows (matched by title).
+
+    Non-destructive: only touches unowned rows whose image_url is still NULL, so
+    it can't overwrite a user's own recipe or clobber an already-set URL, and it
+    leaves ids / meal_plans / ratings intact (unlike a delete-and-reimport).
+    """
+    parts: list[str] = ["BEGIN;"]
+    for r in recipes:
+        title = (r.get("title") or "").strip()
+        url = (r.get("image_url") or "").strip()
+        if not title or not url:
+            continue
+        parts.append(
+            f"UPDATE recipes SET image_url = {sql_str(url)} "
+            f"WHERE title = {sql_str(title)} AND user_id IS NULL AND image_url IS NULL;"
+        )
+    parts.append("COMMIT;")
+    return "\n".join(parts) + "\n"
+
+
 def build_sql(recipes: list[dict], reset_catalog: bool) -> str:
     parts: list[str] = ["BEGIN;"]
 
@@ -186,6 +207,8 @@ def main() -> int:
     parser.add_argument("--db-url", default=DEFAULT_DB_URL, help="Postgres connection string")
     parser.add_argument("--owner", default=None, help="Attribute recipes to this auth user UUID (default: unowned)")
     parser.add_argument("--reset-catalog", action="store_true", help="Delete existing unowned recipes first")
+    parser.add_argument("--backfill-images", action="store_true",
+                        help="Don't insert; only UPDATE image_url on already-imported rows (matched by title)")
     parser.add_argument("--dry-run", action="store_true", help="Print SQL instead of running it")
     args = parser.parse_args()
 
@@ -200,13 +223,17 @@ def main() -> int:
     if args.limit > 0:
         subset = subset[: args.limit]
 
-    sql = build_sql(subset, reset_catalog=args.reset_catalog)
-    if args.owner:
-        # Simple, safe global swap: the only "(NULL, " occurrences are the
-        # recipes VALUES tuples' user_id slot.
-        sql = sql.replace("(NULL, ", f"({sql_str(args.owner)}, ")
+    if args.backfill_images:
+        sql = build_backfill_image_url_sql(subset)
+    else:
+        sql = build_sql(subset, reset_catalog=args.reset_catalog)
+        if args.owner:
+            # Simple, safe global swap: the only "(NULL, " occurrences are the
+            # recipes VALUES tuples' user_id slot.
+            sql = sql.replace("(NULL, ", f"({sql_str(args.owner)}, ")
 
-    print(f"Prepared {len(subset)} recipes ({len(sql)} bytes of SQL).", file=sys.stderr)
+    action = "backfill image_url for" if args.backfill_images else "import"
+    print(f"Prepared to {action} {len(subset)} recipes ({len(sql)} bytes of SQL).", file=sys.stderr)
 
     if args.dry_run:
         sys.stdout.write(sql)
