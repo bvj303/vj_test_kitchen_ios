@@ -1,9 +1,11 @@
 import SwiftUI
 
 /// Small square recipe image for list rows. Loads a remote `imageUrl` (the
-/// catalog import's Cloudinary URLs) via `AsyncImage`, falling back to a
-/// brand-tinted glass placeholder while loading, on failure, or when a recipe
-/// has no image yet. Supabase Storage cover photos (`image_path`, Stage 6) will
+/// catalog import's Cloudinary URLs) via the caching `RemoteImage`, falling back
+/// to a brand-tinted glass placeholder while loading, on failure, or when a
+/// recipe has no image yet. Using `RemoteImage` (not `AsyncImage`) means an
+/// image re-appearing on scroll paints instantly from the shared cache instead
+/// of re-fetching. Supabase Storage cover photos (`image_path`, Stage 6) will
 /// resolve to a URL upstream and flow through this same `imageUrl` path.
 struct RecipeThumbnail: View {
     let imageUrl: String?
@@ -18,20 +20,9 @@ struct RecipeThumbnail: View {
             .fill(.thinMaterial)
             .glassEffect(.regular.tint(Color.brandPrimary.opacity(0.22)), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay {
-                if let url {
-                    AsyncImage(url: url, transaction: Transaction(animation: .default)) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image.resizable().scaledToFill()
-                        case .failure:
-                            placeholderIcon
-                        case .empty:
-                            ProgressView()
-                        @unknown default:
-                            placeholderIcon
-                        }
-                    }
-                } else {
+                RemoteImage(url: url) { image in
+                    image.resizable().scaledToFill()
+                } placeholder: {
                     placeholderIcon
                 }
             }

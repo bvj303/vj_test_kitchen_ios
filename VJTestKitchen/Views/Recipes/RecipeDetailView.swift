@@ -72,26 +72,20 @@ struct RecipeDetailView: View {
             shape
                 .fill(.thinMaterial)
                 .glassEffect(.regular.tint(Color.brandPrimary.opacity(0.22)), in: shape)
-            if let imageUrl = detail.imageUrl, let url = URL(string: imageUrl), !imageUrl.isEmpty {
-                AsyncImage(url: url, transaction: Transaction(animation: .default)) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image.resizable().scaledToFill()
-                    case .failure:
-                        heroPlaceholder
-                    case .empty:
-                        ProgressView()
-                    @unknown default:
-                        heroPlaceholder
-                    }
-                }
-            } else {
+            RemoteImage(url: heroURL(detail)) { image in
+                image.resizable().scaledToFill()
+            } placeholder: {
                 heroPlaceholder
             }
         }
         .frame(height: 220)
         .frame(maxWidth: .infinity)
         .clipShape(shape)
+    }
+
+    private func heroURL(_ detail: RecipeDetail) -> URL? {
+        guard let imageUrl = detail.imageUrl, !imageUrl.isEmpty else { return nil }
+        return URL(string: imageUrl)
     }
 
     private var heroPlaceholder: some View {
