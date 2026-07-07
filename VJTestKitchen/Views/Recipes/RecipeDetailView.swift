@@ -40,16 +40,6 @@ struct RecipeDetailView: View {
         .navigationTitle(viewModel.detail?.title ?? "Recipe")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            if viewModel.detail != nil {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        viewModel.toggleGroceryList()
-                    } label: {
-                        Image(systemName: viewModel.isInGroceryList ? "cart.fill" : "cart.badge.plus")
-                    }
-                    .accessibilityLabel(viewModel.isInGroceryList ? "Remove All Ingredients from Grocery List" : "Add All Ingredients to Grocery List")
-                }
-            }
             if isOwnedByCurrentUser {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Edit") { showingEditSheet = true }
@@ -144,13 +134,14 @@ struct RecipeDetailView: View {
                 Text("Ingredients").font(.title3.bold()).foregroundStyle(Color.brandPrimary)
                 Spacer()
                 Button {
-                    if !viewModel.isInGroceryList { viewModel.toggleGroceryList() }
+                    Task { await viewModel.addAllIngredientsToGroceryList() }
                 } label: {
-                    Label("Add All", systemImage: "cart.badge.plus")
+                    Label(viewModel.didAddAllToGroceryList ? "Added" : "Add All",
+                          systemImage: viewModel.didAddAllToGroceryList ? "checkmark.circle.fill" : "cart.badge.plus")
                         .font(.subheadline)
                 }
                 .foregroundStyle(Color.brandSage)
-                .disabled(viewModel.isInGroceryList)
+                .disabled(viewModel.didAddAllToGroceryList)
             }
             ForEach(detail.ingredients) { ingredient in
                 HStack(alignment: .firstTextBaseline) {
@@ -160,12 +151,13 @@ struct RecipeDetailView: View {
                     Text(ingredient.name)
                     Spacer()
                     Button {
-                        viewModel.addIngredientToGroceryList(ingredient)
+                        Task { await viewModel.addIngredientToGroceryList(ingredient) }
                     } label: {
                         Image(systemName: viewModel.addedIngredientIds.contains(ingredient.id) ? "checkmark.circle.fill" : "plus.circle")
                             .foregroundStyle(Color.brandSage)
                     }
                     .buttonStyle(.plain)
+                    .disabled(viewModel.addedIngredientIds.contains(ingredient.id))
                     .accessibilityLabel("Add \(ingredient.name) to Grocery List")
                 }
                 .font(.subheadline)

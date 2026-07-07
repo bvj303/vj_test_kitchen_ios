@@ -5,8 +5,12 @@ struct AddGroceryItemSheet: View {
     @State private var name = ""
     @State private var amountText = ""
     @State private var unit = ""
+    @State private var category: GroceryCategory = .other
+    /// Once the user touches the category picker, stop auto-overwriting their
+    /// choice as they keep typing the name.
+    @State private var userPickedCategory = false
 
-    let onAdd: (_ name: String, _ amount: Double, _ unit: String) -> Void
+    let onAdd: (_ name: String, _ amount: Double, _ unit: String, _ category: GroceryCategory) -> Void
 
     private var canAdd: Bool {
         !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -27,6 +31,17 @@ struct AddGroceryItemSheet: View {
                         TextField("Unit (optional)", text: $unit)
                     }
                 }
+                Section("Category") {
+                    Picker("Category", selection: Binding(
+                        get: { category },
+                        set: { category = $0; userPickedCategory = true }
+                    )) {
+                        ForEach(GroceryCategory.allCases) { category in
+                            Label(category.displayName, systemImage: category.systemImage)
+                                .tag(category)
+                        }
+                    }
+                }
             }
             .navigationTitle("Add Item")
             .navigationBarTitleDisplayMode(.inline)
@@ -37,13 +52,19 @@ struct AddGroceryItemSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add") {
                         let amount = IngredientAmountParser.parse(amountText) ?? 0
-                        onAdd(name, amount, unit)
+                        onAdd(name, amount, unit, category)
                         dismiss()
                     }
                     .disabled(!canAdd)
                 }
             }
+            // Auto-suggest a category from the name until the user overrides it.
+            .onChange(of: name) { _, newName in
+                if !userPickedCategory {
+                    category = GroceryCategorizer.categorize(newName)
+                }
+            }
         }
-        .presentationDetents([.medium])
+        .presentationDetents([.medium, .large])
     }
 }
