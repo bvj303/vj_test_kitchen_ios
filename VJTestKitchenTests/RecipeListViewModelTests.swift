@@ -6,14 +6,17 @@ final class FakeRecipeService: RecipeServicing, @unchecked Sendable {
     var recipesToReturn: [Recipe] = []
     var errorToThrow: Error?
     private(set) var deletedIds: [Int64] = []
-    private(set) var fetchedPages: [(offset: Int, limit: Int, search: String?, tag: String?, maxPrepTime: Int?)] = []
+    private(set) var fetchedPages: [(offset: Int, limit: Int, search: String?, tag: String?, minPrepTime: Int?, maxPrepTime: Int?)] = []
 
-    func fetchPage(offset: Int, limit: Int, matching search: String?, tag: String?, maxPrepTime: Int?) async throws -> [Recipe] {
-        fetchedPages.append((offset, limit, search, tag, maxPrepTime))
+    func fetchPage(offset: Int, limit: Int, matching search: String?, tag: String?, minPrepTime: Int?, maxPrepTime: Int?) async throws -> [Recipe] {
+        fetchedPages.append((offset, limit, search, tag, minPrepTime, maxPrepTime))
         if let errorToThrow { throw errorToThrow }
         var filtered = search.map { term in
             recipesToReturn.filter { $0.title.localizedCaseInsensitiveContains(term) }
         } ?? recipesToReturn
+        if let minPrepTime {
+            filtered = filtered.filter { ($0.prepTime ?? .min) >= minPrepTime }
+        }
         if let maxPrepTime {
             filtered = filtered.filter { ($0.prepTime ?? .max) <= maxPrepTime }
         }
@@ -157,7 +160,7 @@ struct RecipeListViewModelTests {
         #expect(viewModel.hasActiveFilters)
     }
 
-    @Test func maxPrepTimeFilterNarrowsResultsAndIsPassedToServer() async {
+    @Test func upperBoundPrepTimeFilterNarrowsResultsAndIsPassedToServer() async {
         let fake = FakeRecipeService()
         fake.recipesToReturn = [
             makeRecipe(id: 1, title: "Quick Salad", prepTime: 15),
@@ -166,11 +169,29 @@ struct RecipeListViewModelTests {
         let viewModel = RecipeListViewModel(recipeService: fake, tagService: FakeTagService(), debounceDelay: .zero)
         await viewModel.load()
 
-        viewModel.maxPrepTime = 30
+        viewModel.prepTimeFilter = .under30
         try? await Task.sleep(for: .milliseconds(50))
 
+        #expect(fake.fetchedPages.last?.minPrepTime == nil)
         #expect(fake.fetchedPages.last?.maxPrepTime == 30)
         #expect(viewModel.items.map(\.title) == ["Quick Salad"])
+    }
+
+    @Test func lowerBoundPrepTimeFilterPassesMinToServer() async {
+        let fake = FakeRecipeService()
+        fake.recipesToReturn = [
+            makeRecipe(id: 1, title: "Quick Salad", prepTime: 15),
+            makeRecipe(id: 2, title: "Overnight Brisket", prepTime: 600)
+        ]
+        let viewModel = RecipeListViewModel(recipeService: fake, tagService: FakeTagService(), debounceDelay: .zero)
+        await viewModel.load()
+
+        viewModel.prepTimeFilter = .overnight
+        try? await Task.sleep(for: .milliseconds(50))
+
+        #expect(fake.fetchedPages.last?.minPrepTime == 480)
+        #expect(fake.fetchedPages.last?.maxPrepTime == nil)
+        #expect(viewModel.items.map(\.title) == ["Overnight Brisket"])
     }
 
     @Test func clearFiltersResetsTagAndPrepTimeAndReloads() async {
@@ -179,7 +200,7 @@ struct RecipeListViewModelTests {
         let viewModel = RecipeListViewModel(recipeService: fake, tagService: FakeTagService(), debounceDelay: .zero)
         await viewModel.load()
         viewModel.selectedTag = "Italian"
-        viewModel.maxPrepTime = 30
+        viewModel.prepTimeFilter = .under30
         try? await Task.sleep(for: .milliseconds(50))
         #expect(viewModel.hasActiveFilters)
 
@@ -188,7 +209,7 @@ struct RecipeListViewModelTests {
 
         #expect(!viewModel.hasActiveFilters)
         #expect(viewModel.selectedTag == nil)
-        #expect(viewModel.maxPrepTime == nil)
+        #expect(viewModel.prepTimeFilter == nil)
         #expect(fake.fetchedPages.last?.tag == nil)
         #expect(fake.fetchedPages.last?.maxPrepTime == nil)
     }
