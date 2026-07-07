@@ -6,14 +6,17 @@ final class FakeRecipeService: RecipeServicing, @unchecked Sendable {
     var recipesToReturn: [Recipe] = []
     var errorToThrow: Error?
     private(set) var deletedIds: [Int64] = []
-    private(set) var fetchedPages: [(offset: Int, limit: Int, search: String?)] = []
+    private(set) var fetchedPages: [(offset: Int, limit: Int, search: String?, tag: String?, maxPrepTime: Int?)] = []
 
-    func fetchPage(offset: Int, limit: Int, matching search: String?) async throws -> [Recipe] {
-        fetchedPages.append((offset, limit, search))
+    func fetchPage(offset: Int, limit: Int, matching search: String?, tag: String?, maxPrepTime: Int?) async throws -> [Recipe] {
+        fetchedPages.append((offset, limit, search, tag, maxPrepTime))
         if let errorToThrow { throw errorToThrow }
-        let filtered = search.map { term in
+        var filtered = search.map { term in
             recipesToReturn.filter { $0.title.localizedCaseInsensitiveContains(term) }
         } ?? recipesToReturn
+        if let maxPrepTime {
+            filtered = filtered.filter { ($0.prepTime ?? .max) <= maxPrepTime }
+        }
         let start = min(offset, filtered.count)
         let end = min(offset + limit, filtered.count)
         return Array(filtered[start..<end])
@@ -36,8 +39,8 @@ final class FakeRecipeService: RecipeServicing, @unchecked Sendable {
     }
 }
 
-private func makeRecipe(id: Int64, title: String) -> Recipe {
-    Recipe(id: id, userId: nil, title: title, description: nil, instructions: nil, imagePath: nil, prepTime: 20, servings: 2, createdAt: Date())
+private func makeRecipe(id: Int64, title: String, prepTime: Int? = 20) -> Recipe {
+    Recipe(id: id, userId: nil, title: title, description: nil, instructions: nil, imagePath: nil, prepTime: prepTime, servings: 2, createdAt: Date())
 }
 
 private struct TestError: Error, LocalizedError {
@@ -49,7 +52,7 @@ struct RecipeListViewModelTests {
     @Test func loadsRecipesOnStart() async {
         let fake = FakeRecipeService()
         fake.recipesToReturn = [makeRecipe(id: 1, title: "Carbonara"), makeRecipe(id: 2, title: "Tacos")]
-        let viewModel = RecipeListViewModel(recipeService: fake)
+        let viewModel = RecipeListViewModel(recipeService: fake, tagService: FakeTagService())
 
         await viewModel.load()
 
@@ -61,7 +64,7 @@ struct RecipeListViewModelTests {
     @Test func loadSurfacesErrorMessage() async {
         let fake = FakeRecipeService()
         fake.errorToThrow = TestError()
-        let viewModel = RecipeListViewModel(recipeService: fake)
+        let viewModel = RecipeListViewModel(recipeService: fake, tagService: FakeTagService())
 
         await viewModel.load()
 
@@ -72,7 +75,7 @@ struct RecipeListViewModelTests {
     @Test func searchTextReloadsFromServerAfterDebounce() async {
         let fake = FakeRecipeService()
         fake.recipesToReturn = [makeRecipe(id: 1, title: "Carbonara"), makeRecipe(id: 2, title: "Beef Tacos")]
-        let viewModel = RecipeListViewModel(recipeService: fake, debounceDelay: .zero)
+        let viewModel = RecipeListViewModel(recipeService: fake, tagService: FakeTagService(), debounceDelay: .zero)
         await viewModel.load()
 
         viewModel.searchText = "taco"
@@ -86,7 +89,7 @@ struct RecipeListViewModelTests {
     @Test func emptySearchTextShowsAllRecipes() async {
         let fake = FakeRecipeService()
         fake.recipesToReturn = [makeRecipe(id: 1, title: "Carbonara"), makeRecipe(id: 2, title: "Tacos")]
-        let viewModel = RecipeListViewModel(recipeService: fake, debounceDelay: .zero)
+        let viewModel = RecipeListViewModel(recipeService: fake, tagService: FakeTagService(), debounceDelay: .zero)
         await viewModel.load()
 
         viewModel.searchText = "taco"
@@ -101,7 +104,7 @@ struct RecipeListViewModelTests {
         let fake = FakeRecipeService()
         // 60 recipes so the first 50-row page is full and a second page exists.
         fake.recipesToReturn = (1...60).map { makeRecipe(id: Int64($0), title: "Recipe \($0)") }
-        let viewModel = RecipeListViewModel(recipeService: fake)
+        let viewModel = RecipeListViewModel(recipeService: fake, tagService: FakeTagService())
         await viewModel.load()
         #expect(viewModel.items.count == 50)
 
@@ -114,7 +117,7 @@ struct RecipeListViewModelTests {
     @Test func loadMoreIfNeededDoesNothingWhenFarFromEndOfList() async {
         let fake = FakeRecipeService()
         fake.recipesToReturn = (1...60).map { makeRecipe(id: Int64($0), title: "Recipe \($0)") }
-        let viewModel = RecipeListViewModel(recipeService: fake)
+        let viewModel = RecipeListViewModel(recipeService: fake, tagService: FakeTagService())
         await viewModel.load()
         let pageCountBefore = fake.fetchedPages.count
 
@@ -122,5 +125,71 @@ struct RecipeListViewModelTests {
 
         #expect(viewModel.items.count == 50)
         #expect(fake.fetchedPages.count == pageCountBefore)
+    }
+
+    // MARK: - Filtering
+
+    @Test func loadPopulatesAvailableTagsGroupedByCourseAndCuisine() async {
+        let fake = FakeRecipeService()
+        let tags = FakeTagService()
+        tags.namesToReturn = ["Appetizers", "Italian", "Main Courses", "Mexican"]
+        let viewModel = RecipeListViewModel(recipeService: fake, tagService: tags)
+
+        await viewModel.load()
+
+        #expect(viewModel.availableTags == ["Appetizers", "Italian", "Main Courses", "Mexican"])
+        // Course tags come back in the fixed menu order, not alphabetical.
+        #expect(viewModel.courseTags == ["Main Courses", "Appetizers"])
+        #expect(viewModel.cuisineTags == ["Italian", "Mexican"])
+    }
+
+    @Test func selectingTagReloadsFromServerWithThatTag() async {
+        let fake = FakeRecipeService()
+        fake.recipesToReturn = [makeRecipe(id: 1, title: "Carbonara"), makeRecipe(id: 2, title: "Tacos")]
+        let viewModel = RecipeListViewModel(recipeService: fake, tagService: FakeTagService(), debounceDelay: .zero)
+        await viewModel.load()
+
+        viewModel.selectedTag = "Italian"
+        try? await Task.sleep(for: .milliseconds(50))
+
+        #expect(fake.fetchedPages.last?.tag == "Italian")
+        #expect(fake.fetchedPages.last?.offset == 0)
+        #expect(viewModel.hasActiveFilters)
+    }
+
+    @Test func maxPrepTimeFilterNarrowsResultsAndIsPassedToServer() async {
+        let fake = FakeRecipeService()
+        fake.recipesToReturn = [
+            makeRecipe(id: 1, title: "Quick Salad", prepTime: 15),
+            makeRecipe(id: 2, title: "Slow Roast", prepTime: 90)
+        ]
+        let viewModel = RecipeListViewModel(recipeService: fake, tagService: FakeTagService(), debounceDelay: .zero)
+        await viewModel.load()
+
+        viewModel.maxPrepTime = 30
+        try? await Task.sleep(for: .milliseconds(50))
+
+        #expect(fake.fetchedPages.last?.maxPrepTime == 30)
+        #expect(viewModel.items.map(\.title) == ["Quick Salad"])
+    }
+
+    @Test func clearFiltersResetsTagAndPrepTimeAndReloads() async {
+        let fake = FakeRecipeService()
+        fake.recipesToReturn = [makeRecipe(id: 1, title: "Carbonara")]
+        let viewModel = RecipeListViewModel(recipeService: fake, tagService: FakeTagService(), debounceDelay: .zero)
+        await viewModel.load()
+        viewModel.selectedTag = "Italian"
+        viewModel.maxPrepTime = 30
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(viewModel.hasActiveFilters)
+
+        viewModel.clearFilters()
+        try? await Task.sleep(for: .milliseconds(50))
+
+        #expect(!viewModel.hasActiveFilters)
+        #expect(viewModel.selectedTag == nil)
+        #expect(viewModel.maxPrepTime == nil)
+        #expect(fake.fetchedPages.last?.tag == nil)
+        #expect(fake.fetchedPages.last?.maxPrepTime == nil)
     }
 }

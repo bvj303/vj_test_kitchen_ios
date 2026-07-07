@@ -18,15 +18,16 @@ struct RecipeListView: View {
         }
         .listStyle(.plain)
         .searchable(text: $viewModel.searchText, prompt: "Search recipes")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                filterMenu(viewModel: viewModel)
+            }
+        }
         .overlay {
             if viewModel.isLoading && viewModel.items.isEmpty {
                 ProgressView()
             } else if !viewModel.isLoading && viewModel.items.isEmpty && viewModel.errorMessage == nil {
-                ContentUnavailableView(
-                    "No Recipes Yet",
-                    systemImage: "fork.knife",
-                    description: Text("Recipes you add will show up here.")
-                )
+                emptyState(viewModel: viewModel)
             }
         }
         .task { await viewModel.load() }
@@ -41,6 +42,89 @@ struct RecipeListView: View {
             Button("OK") { viewModel.errorMessage = nil }
         } message: {
             Text(viewModel.errorMessage ?? "")
+        }
+    }
+
+    // MARK: - Filter menu
+
+    @ViewBuilder
+    private func filterMenu(viewModel: RecipeListViewModel) -> some View {
+        Menu {
+            if !viewModel.courseTags.isEmpty {
+                Section("Course") {
+                    ForEach(viewModel.courseTags, id: \.self) { tag in
+                        tagButton(tag, viewModel: viewModel)
+                    }
+                }
+            }
+            if !viewModel.cuisineTags.isEmpty {
+                Section("Cuisine") {
+                    ForEach(viewModel.cuisineTags, id: \.self) { tag in
+                        tagButton(tag, viewModel: viewModel)
+                    }
+                }
+            }
+            Section("Max Prep Time") {
+                Picker("Max Prep Time", selection: Binding(
+                    get: { viewModel.maxPrepTime },
+                    set: { viewModel.maxPrepTime = $0 }
+                )) {
+                    Text("Any").tag(Int?.none)
+                    ForEach(RecipeListViewModel.prepTimeOptions, id: \.self) { minutes in
+                        Text("\(minutes) min or less").tag(Int?.some(minutes))
+                    }
+                }
+            }
+            if viewModel.hasActiveFilters {
+                Section {
+                    Button(role: .destructive) {
+                        viewModel.clearFilters()
+                    } label: {
+                        Label("Clear Filters", systemImage: "xmark.circle")
+                    }
+                }
+            }
+        } label: {
+            Label(
+                "Filter",
+                systemImage: viewModel.hasActiveFilters
+                    ? "line.3.horizontal.decrease.circle.fill"
+                    : "line.3.horizontal.decrease.circle"
+            )
+        }
+    }
+
+    /// A single tappable category row: tapping the active tag clears it (toggle),
+    /// so the menu doubles as its own "off" switch without a separate control.
+    @ViewBuilder
+    private func tagButton(_ tag: String, viewModel: RecipeListViewModel) -> some View {
+        Button {
+            viewModel.selectedTag = (viewModel.selectedTag == tag) ? nil : tag
+        } label: {
+            if viewModel.selectedTag == tag {
+                Label(tag, systemImage: "checkmark")
+            } else {
+                Text(tag)
+            }
+        }
+    }
+
+    // MARK: - Empty state
+
+    @ViewBuilder
+    private func emptyState(viewModel: RecipeListViewModel) -> some View {
+        if viewModel.isFilteringOrSearching {
+            ContentUnavailableView(
+                "No Matching Recipes",
+                systemImage: "line.3.horizontal.decrease.circle",
+                description: Text("Try a different search or clear your filters.")
+            )
+        } else {
+            ContentUnavailableView(
+                "No Recipes Yet",
+                systemImage: "fork.knife",
+                description: Text("Recipes you add will show up here.")
+            )
         }
     }
 }
