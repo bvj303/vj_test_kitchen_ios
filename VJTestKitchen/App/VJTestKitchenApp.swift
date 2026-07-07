@@ -4,6 +4,7 @@ import SwiftUI
 struct VJTestKitchenApp: App {
     @State private var authViewModel = AuthViewModel()
     @State private var settingsViewModel = SettingsViewModel()
+    @State private var accountViewModel = AccountViewModel()
 
     init() {
         // Give `URLSession.shared` (and therefore every `RemoteImage`) a roomy
@@ -22,6 +23,7 @@ struct VJTestKitchenApp: App {
             RootView()
                 .environment(authViewModel)
                 .environment(settingsViewModel)
+                .environment(accountViewModel)
                 .preferredColorScheme(settingsViewModel.appearanceMode.colorScheme)
         }
     }
