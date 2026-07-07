@@ -12,7 +12,7 @@ final class FakeHomeRecipeService: RecipeServicing, @unchecked Sendable {
     var countToReturn = 0
     private(set) var fetchedPages: [(offset: Int, limit: Int, search: String?, tag: String?, maxPrepTime: Int?)] = []
 
-    func fetchPage(offset: Int, limit: Int, matching search: String?, tag: String?, maxPrepTime: Int?) async throws -> [Recipe] {
+    func fetchPage(offset: Int, limit: Int, matching search: String?, tag: String?, minPrepTime: Int?, maxPrepTime: Int?) async throws -> [Recipe] {
         fetchedPages.append((offset, limit, search, tag, maxPrepTime))
         return pagesByKeyword[search ?? "", default: []]
     }
