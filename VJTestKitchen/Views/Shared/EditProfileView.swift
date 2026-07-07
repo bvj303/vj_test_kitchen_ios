@@ -12,6 +12,7 @@ struct EditProfileView: View {
     // to a fresh one for standalone use / previews.
     private let viewModel: ProfileViewModel
     @State private var selectedPhoto: PhotosPickerItem?
+    @Environment(AccountViewModel.self) private var accountViewModel
     @Environment(\.dismiss) private var dismiss
     @FocusState private var focusedField: Field?
 
@@ -140,6 +141,12 @@ struct EditProfileView: View {
                 return
             }
             await viewModel.uploadAvatar(jpeg)
+            // Propagate the new picture to app chrome (the account button on
+            // every tab) so it updates without reopening Profile. On failure
+            // viewModel.avatarUrl is unchanged, so guard on no error.
+            if viewModel.errorMessage == nil {
+                accountViewModel.setAvatarUrl(viewModel.avatarUrl)
+            }
         } catch {
             viewModel.errorMessage = "Couldn't load the selected photo. Please try another."
         }
@@ -169,4 +176,5 @@ struct EditProfileView: View {
     NavigationStack {
         EditProfileView()
     }
+    .environment(AccountViewModel())
 }

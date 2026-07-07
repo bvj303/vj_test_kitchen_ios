@@ -7,6 +7,7 @@ enum AppTab: Hashable {
 }
 
 struct MainTabView: View {
+    @Environment(AccountViewModel.self) private var accountViewModel
     @State private var selection: AppTab = .home
 
     var body: some View {
@@ -27,6 +28,9 @@ struct MainTabView: View {
                 CalendarTab()
             }
         }
+        // Load the signed-in user's avatar once for the account button; runs
+        // on each sign-in since MainTabView is recreated when auth state flips.
+        .task { await accountViewModel.load() }
     }
 }
 
@@ -34,4 +38,5 @@ struct MainTabView: View {
     MainTabView()
         .environment(AuthViewModel())
         .environment(SettingsViewModel())
+        .environment(AccountViewModel())
 }
