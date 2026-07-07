@@ -17,6 +17,12 @@ struct MealCalendarView: View {
     // to the foreground — edits made on another device then show up without a
     // manual pull-to-refresh.
     @Environment(\.scenePhase) private var scenePhase
+    // The weather outlook is toggled in the Settings *sheet*, which shares this
+    // app-root view model but doesn't background the app or re-run this view's
+    // `.task`. Observe the preference directly so flipping it on immediately
+    // fetches (or clears) the forecast instead of only taking effect after a
+    // relaunch.
+    @Environment(SettingsViewModel.self) private var settingsViewModel
 
     /// Caps the agenda column's width so a landscape iPad reads as a centered
     /// schedule column rather than rows spanning the whole display.
@@ -52,6 +58,9 @@ struct MealCalendarView: View {
             if newPhase == .active {
                 Task { await viewModel.load() }
             }
+        }
+        .onChange(of: settingsViewModel.useCurrentLocationForWeather) {
+            Task { await viewModel.loadWeather() }
         }
         .alert(
             "Something Went Wrong",
