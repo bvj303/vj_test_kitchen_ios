@@ -14,32 +14,41 @@ struct RecipeFilterBar: View {
     @Bindable var viewModel: RecipeListViewModel
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                prepTimeMenu
-                courseMenu
-                if !viewModel.cuisineTags.isEmpty {
-                    cuisineMenu
-                }
-
-                if viewModel.hasActiveFilters {
-                    Button {
-                        viewModel.clearFilters()
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 20, height: 20)
-                            .padding(8)
-                            .glassEffect(.regular.tint(Color.secondary.opacity(0.12)), in: Circle())
+        HStack(spacing: 8) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    prepTimeMenu
+                    courseMenu
+                    if !viewModel.cuisineTags.isEmpty {
+                        cuisineMenu
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Clear filters")
                 }
+                .padding(.horizontal)
             }
-            .padding(.horizontal)
-            .padding(.vertical, 8)
+
+            // Pinned *outside* the scroll so it's always reachable — a long
+            // selected cuisine name can't push it off the trailing edge.
+            if viewModel.hasActiveFilters {
+                clearButton
+                    .padding(.trailing)
+            }
         }
+        .padding(.vertical, 8)
+    }
+
+    private var clearButton: some View {
+        Button {
+            viewModel.clearFilters()
+        } label: {
+            Image(systemName: "xmark")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 20, height: 20)
+                .padding(8)
+                .glassEffect(.regular.tint(Color.secondary.opacity(0.12)), in: Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Clear filters")
     }
 
     // MARK: - Menu chips
