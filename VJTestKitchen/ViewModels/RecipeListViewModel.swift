@@ -66,15 +66,18 @@ final class RecipeListViewModel {
 
     private let recipeService: RecipeServicing
     private let tagService: TagServicing
+    private let imagePrefetcher: ImagePrefetching
     private let debouncer: Debouncer
 
     init(
         recipeService: RecipeServicing = RecipeService(),
         tagService: TagServicing = TagService(),
+        imagePrefetcher: ImagePrefetching = ImagePrefetcher.shared,
         debounceDelay: Duration = .milliseconds(300)
     ) {
         self.recipeService = recipeService
         self.tagService = tagService
+        self.imagePrefetcher = imagePrefetcher
         self.debouncer = Debouncer(delay: debounceDelay)
     }
 
@@ -119,6 +122,7 @@ final class RecipeListViewModel {
             )
             items = page
             hasMorePages = page.count == Self.pageSize
+            prefetchImages(for: page)
         } catch {
             errorMessage = ErrorPresenter.message(for: error)
         }
@@ -134,9 +138,24 @@ final class RecipeListViewModel {
             )
             items.append(contentsOf: page)
             hasMorePages = page.count == Self.pageSize
+            prefetchImages(for: page)
         } catch {
             errorMessage = ErrorPresenter.message(for: error)
         }
+    }
+
+    /// Warm the image cache for a freshly-loaded page so `CachedAsyncImage`
+    /// renders each thumbnail immediately when its row scrolls in, rather than
+    /// fading in after an on-appearance fetch. Pages load ~5 rows before the
+    /// user reaches them (see `prefetchThreshold`), so this front-runs the
+    /// downloads by roughly a screen.
+    private func prefetchImages(for page: [Recipe]) {
+        let urls = page.compactMap { recipe -> URL? in
+            guard let imageUrl = recipe.imageUrl, !imageUrl.isEmpty else { return nil }
+            return URL(string: imageUrl)
+        }
+        guard !urls.isEmpty else { return }
+        imagePrefetcher.prefetch(urls)
     }
 
     private var normalizedSearch: String? {
