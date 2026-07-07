@@ -4,9 +4,12 @@ import Testing
 
 final class FakeGroceryListStore: GroceryListStoring, @unchecked Sendable {
     var ids: [Int64] = []
+    var customItems: [GroceryItem] = []
 
     func loadSelectedRecipeIds() -> [Int64] { ids }
     func saveSelectedRecipeIds(_ ids: [Int64]) { self.ids = ids }
+    func loadCustomItems() -> [GroceryItem] { customItems }
+    func saveCustomItems(_ items: [GroceryItem]) { customItems = items }
 }
 
 final class FakeGroceryRecipeService: RecipeServicing, @unchecked Sendable {
@@ -176,5 +179,75 @@ struct GroceryListViewModelTests {
         await viewModel.exportToReminders()
 
         #expect(viewModel.errorMessage == "failed")
+    }
+
+    @Test func loadReadsCustomItemsFromStore() async {
+        let store = FakeGroceryListStore()
+        store.customItems = [GroceryItem(name: "Paper Towels", amount: 1, unit: "")]
+        let viewModel = GroceryListViewModel(store: store, recipeService: FakeGroceryRecipeService(), reminderService: FakeReminderService())
+
+        await viewModel.load()
+
+        #expect(viewModel.customItems.map(\.name) == ["Paper Towels"])
+    }
+
+    @Test func addCustomItemPersistsToStoreAndUpdatesState() async {
+        let store = FakeGroceryListStore()
+        let viewModel = GroceryListViewModel(store: store, recipeService: FakeGroceryRecipeService(), reminderService: FakeReminderService())
+        await viewModel.load()
+
+        viewModel.addCustomItem(name: "Olive Oil", amount: 1, unit: "bottle")
+
+        #expect(viewModel.customItems.map(\.name) == ["Olive Oil"])
+        #expect(store.customItems.map(\.name) == ["Olive Oil"])
+    }
+
+    @Test func addCustomItemIgnoresBlankName() async {
+        let store = FakeGroceryListStore()
+        let viewModel = GroceryListViewModel(store: store, recipeService: FakeGroceryRecipeService(), reminderService: FakeReminderService())
+        await viewModel.load()
+
+        viewModel.addCustomItem(name: "   ", amount: 1, unit: "")
+
+        #expect(viewModel.customItems.isEmpty)
+        #expect(store.customItems.isEmpty)
+    }
+
+    @Test func removeCustomItemDeletesJustThatItem() async {
+        let store = FakeGroceryListStore()
+        let keep = GroceryItem(name: "Keep Me", amount: 1, unit: "")
+        let remove = GroceryItem(name: "Remove Me", amount: 1, unit: "")
+        store.customItems = [keep, remove]
+        let viewModel = GroceryListViewModel(store: store, recipeService: FakeGroceryRecipeService(), reminderService: FakeReminderService())
+        await viewModel.load()
+
+        viewModel.removeCustomItem(remove)
+
+        #expect(viewModel.customItems == [keep])
+        #expect(store.customItems == [keep])
+    }
+
+    @Test func clearListAlsoClearsCustomItems() async {
+        let store = FakeGroceryListStore()
+        store.customItems = [GroceryItem(name: "Paper Towels", amount: 1, unit: "")]
+        let viewModel = GroceryListViewModel(store: store, recipeService: FakeGroceryRecipeService(), reminderService: FakeReminderService())
+        await viewModel.load()
+
+        viewModel.clearList()
+
+        #expect(viewModel.customItems.isEmpty)
+        #expect(store.customItems.isEmpty)
+    }
+
+    @Test func exportToRemindersIncludesCustomItems() async {
+        let store = FakeGroceryListStore()
+        store.customItems = [GroceryItem(name: "Paper Towels", amount: 2, unit: "rolls")]
+        let reminders = FakeReminderService()
+        let viewModel = GroceryListViewModel(store: store, recipeService: FakeGroceryRecipeService(), reminderService: reminders)
+        await viewModel.load()
+
+        await viewModel.exportToReminders()
+
+        #expect(reminders.exportedItems?.contains("2 rolls Paper Towels") == true)
     }
 }

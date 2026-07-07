@@ -12,6 +12,11 @@ final class RecipeDetailViewModel {
     var rating: Int?
     var notes = ""
     private(set) var isInGroceryList = false
+    /// Ingredient ids added to the grocery list this session, purely for
+    /// transient checkmark feedback in the ingredients list — not reloaded
+    /// from the store, since a standalone snapshot has no lasting link back
+    /// to the ingredient it came from.
+    private(set) var addedIngredientIds: Set<Int64> = []
 
     private let recipeService: RecipeServicing
     private let ratingService: RecipeRatingServicing
@@ -55,6 +60,15 @@ final class RecipeDetailViewModel {
         }
         groceryListStore.saveSelectedRecipeIds(ids)
         isInGroceryList = ids.contains(recipeId)
+    }
+
+    /// Adds a single ingredient to the grocery list as a standalone snapshot,
+    /// independent of whether the whole recipe is also on the list.
+    func addIngredientToGroceryList(_ ingredient: Ingredient) {
+        var items = groceryListStore.loadCustomItems()
+        items.append(GroceryItem(name: ingredient.name, amount: ingredient.amount, unit: ingredient.unit))
+        groceryListStore.saveCustomItems(items)
+        addedIngredientIds.insert(ingredient.id)
     }
 
     func saveRating() async {

@@ -3,27 +3,56 @@ import SwiftUI
 struct GroceryListView: View {
     @State private var viewModel = GroceryListViewModel()
     @State private var showingClearConfirmation = false
+    @State private var showingAddItem = false
+
+    private var isListEmpty: Bool {
+        viewModel.aggregatedIngredients.isEmpty && viewModel.customItems.isEmpty
+    }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                if viewModel.aggregatedIngredients.isEmpty {
+                if isListEmpty {
                     ContentUnavailableView(
                         "Your List Is Empty",
                         systemImage: "cart",
-                        description: Text("Browse your recipes and tap \"Add to Grocery List\" to populate this view.")
+                        description: Text("Tap + to add an item, or browse your recipes and tap \"Add to Grocery List\" to populate this view.")
                     )
                     .padding(.top, 40)
                 } else {
-                    ForEach(viewModel.aggregatedIngredients) { ingredient in
-                        HStack {
-                            Text(ingredient.name)
-                            Spacer()
-                            Text(Self.formattedAmount(ingredient))
-                                .foregroundStyle(.secondary)
+                    if !viewModel.customItems.isEmpty {
+                        sectionHeader("Added Items")
+                        ForEach(viewModel.customItems) { item in
+                            HStack {
+                                Text(item.name)
+                                Spacer()
+                                Text(Self.formattedAmount(amount: item.amount, unit: item.unit))
+                                    .foregroundStyle(.secondary)
+                                Button {
+                                    viewModel.removeCustomItem(item)
+                                } label: {
+                                    Image(systemName: "minus.circle.fill")
+                                        .foregroundStyle(.red)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .padding()
+                            .glassEffect(in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                         }
-                        .padding()
-                        .glassEffect(in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+
+                    if !viewModel.aggregatedIngredients.isEmpty {
+                        sectionHeader("From Recipes")
+                        ForEach(viewModel.aggregatedIngredients) { ingredient in
+                            HStack {
+                                Text(ingredient.name)
+                                Spacer()
+                                Text(Self.formattedAmount(amount: ingredient.amount, unit: ingredient.unit))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding()
+                            .glassEffect(in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        }
                     }
                 }
 
@@ -37,16 +66,29 @@ struct GroceryListView: View {
         }
         .navigationTitle("Grocery List")
         .toolbar {
-            if viewModel.selectedRecipeCount > 0 {
+            if viewModel.selectedRecipeCount > 0 || !viewModel.customItems.isEmpty {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Clear List", role: .destructive) {
                         showingClearConfirmation = true
                     }
                 }
             }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showingAddItem = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .accessibilityLabel("Add Item")
+            }
         }
         .task { await viewModel.load() }
         .refreshable { await viewModel.load() }
+        .sheet(isPresented: $showingAddItem) {
+            AddGroceryItemSheet { name, amount, unit in
+                viewModel.addCustomItem(name: name, amount: amount, unit: unit)
+            }
+        }
         .confirmationDialog(
             "Clear all items from your grocery list?",
             isPresented: $showingClearConfirmation,
@@ -56,7 +98,7 @@ struct GroceryListView: View {
             Button("Cancel", role: .cancel) {}
         }
         .safeAreaInset(edge: .bottom) {
-            if !viewModel.aggregatedIngredients.isEmpty {
+            if !isListEmpty {
                 Button {
                     Task { await viewModel.exportToReminders() }
                 } label: {
@@ -81,10 +123,16 @@ struct GroceryListView: View {
         }
     }
 
-    private static func formattedAmount(_ ingredient: GroceryListViewModel.AggregatedIngredient) -> String {
-        let amountText = ingredient.amount == ingredient.amount.rounded()
-            ? String(Int(ingredient.amount))
-            : String(format: "%.2f", ingredient.amount)
-        return ingredient.unit.isEmpty ? amountText : "\(amountText) \(ingredient.unit)"
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.title3.bold())
+            .foregroundStyle(Color.brandPrimary)
+    }
+
+    private static func formattedAmount(amount: Double, unit: String) -> String {
+        let amountText = amount == amount.rounded()
+            ? String(Int(amount))
+            : String(format: "%.2f", amount)
+        return unit.isEmpty ? amountText : "\(amountText) \(unit)"
     }
 }
