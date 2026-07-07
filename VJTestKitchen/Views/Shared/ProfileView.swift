@@ -115,4 +115,5 @@ struct ProfileView: View {
     ProfileView()
         .environment(AuthViewModel())
         .environment(SettingsViewModel())
+        .environment(AccountViewModel())
 }
