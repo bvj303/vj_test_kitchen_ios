@@ -29,15 +29,8 @@ struct GroceryListView: View {
                         .accessibilityLabel("List Options")
                     }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        showingAddItem = true
-                    } label: {
-                        Image(systemName: "plus")
-                    }
-                    .accessibilityLabel("Add Item")
-                }
             }
+            .overlay(alignment: .bottomTrailing) { addButton }
             .task { await viewModel.load() }
             .refreshable { await viewModel.load() }
             .sheet(isPresented: $showingAddItem) {
@@ -111,6 +104,23 @@ struct GroceryListView: View {
                 .listStyle(.insetGrouped)
             }
         }
+    }
+
+    /// Large, thumb-reachable floating "add" button pinned to the bottom-trailing
+    /// corner — replaces the old top-bar "+" so it's easy to reach one-handed.
+    private var addButton: some View {
+        Button {
+            showingAddItem = true
+        } label: {
+            Image(systemName: "plus")
+                .font(.title2.weight(.semibold))
+                .frame(width: 60, height: 60)
+        }
+        .buttonStyle(.glassProminent)
+        .tint(Color.brandPrimary)
+        .clipShape(Circle())
+        .padding(20)
+        .accessibilityLabel("Add Item")
     }
 
     private func row(_ item: GroceryItem) -> some View {
