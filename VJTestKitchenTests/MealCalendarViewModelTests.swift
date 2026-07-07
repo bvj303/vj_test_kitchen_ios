@@ -84,6 +84,13 @@ struct MealCalendarViewModelTests {
         #expect(!viewModel.isToday("2026-07-06"))
     }
 
+    @Test func holidayPassesThroughToHolidayProvider() {
+        let viewModel = MealCalendarViewModel(mealPlanService: FakeMealPlanService(), recipeService: FakeMealPlanRecipeService())
+
+        #expect(viewModel.holiday(for: "2026-07-04")?.name == "Independence Day")
+        #expect(viewModel.holiday(for: "2026-07-07") == nil)
+    }
+
     @Test func selectedPlanningDateDefaultsToFirstDayOfWeek() {
         var components = DateComponents()
         components.year = 2026
