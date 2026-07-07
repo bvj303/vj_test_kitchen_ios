@@ -5,7 +5,7 @@ struct RecipeRowView: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            RecipeThumbnail(imagePath: recipe.imagePath)
+            RecipeThumbnail(imageUrl: recipe.imageUrl)
                 .frame(width: 64, height: 64)
 
             VStack(alignment: .leading, spacing: 4) {

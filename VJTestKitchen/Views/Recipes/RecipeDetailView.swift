@@ -66,17 +66,44 @@ struct RecipeDetailView: View {
     }
 
     @ViewBuilder
+    private func heroImage(_ detail: RecipeDetail) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
+        ZStack {
+            shape
+                .fill(.thinMaterial)
+                .glassEffect(.regular.tint(Color.brandPrimary.opacity(0.22)), in: shape)
+            if let imageUrl = detail.imageUrl, let url = URL(string: imageUrl), !imageUrl.isEmpty {
+                AsyncImage(url: url, transaction: Transaction(animation: .default)) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image.resizable().scaledToFill()
+                    case .failure:
+                        heroPlaceholder
+                    case .empty:
+                        ProgressView()
+                    @unknown default:
+                        heroPlaceholder
+                    }
+                }
+            } else {
+                heroPlaceholder
+            }
+        }
+        .frame(height: 220)
+        .frame(maxWidth: .infinity)
+        .clipShape(shape)
+    }
+
+    private var heroPlaceholder: some View {
+        Image(systemName: "fork.knife.circle")
+            .font(.system(size: 48))
+            .foregroundStyle(Color.brandPrimary)
+    }
+
+    @ViewBuilder
     private func header(_ detail: RecipeDetail) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(.thinMaterial)
-                .glassEffect(.regular.tint(Color.brandPrimary.opacity(0.22)), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-                .frame(height: 220)
-                .overlay {
-                    Image(systemName: "fork.knife.circle")
-                        .font(.system(size: 48))
-                        .foregroundStyle(Color.brandPrimary)
-                }
+            heroImage(detail)
 
             Text(detail.title)
                 .font(.largeTitle.bold())
@@ -174,9 +201,25 @@ struct RecipeDetailView: View {
 
     @ViewBuilder
     private func instructionsSection(_ instructions: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let steps = RecipeInstructions.steps(from: instructions)
+        VStack(alignment: .leading, spacing: 12) {
             Text("Instructions").font(.title3.bold()).foregroundStyle(Color.brandPrimary)
-            Text(instructions)
+            if steps.count > 1 {
+                ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
+                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        Text("\(index + 1)")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(Color.brandPrimary)
+                            .frame(width: 28, height: 28)
+                            .glassEffect(.regular.tint(Color.brandPrimary.opacity(0.22)), in: Circle())
+                        Text(step)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            } else {
+                // Single unbroken paragraph — nothing to number.
+                Text(steps.first ?? instructions)
+            }
         }
     }
 
