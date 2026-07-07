@@ -8,16 +8,36 @@ struct RecipeListView: View {
     var body: some View {
         @Bindable var viewModel = viewModel
 
-        List(viewModel.items) { recipe in
-            Button {
-                onSelect(recipe)
-            } label: {
-                RecipeRowView(recipe: recipe)
+        // The filter bar is a plain sibling stacked above the List rather than a
+        // `.safeAreaInset(edge: .top)`: that inset silently fails to lay out when
+        // the Recipes screen is entered as a *secondary* tab (a lazily-created
+        // TabView tab), which is exactly how it's reached now that Home is the
+        // first tab — the bar simply didn't appear. A VStack sibling always
+        // renders, so the chips show regardless of how the tab is opened.
+        VStack(spacing: 0) {
+            RecipeFilterBar(viewModel: viewModel)
+                .background(.bar)
+            Divider()
+
+            List(viewModel.items) { recipe in
+                Button {
+                    onSelect(recipe)
+                } label: {
+                    RecipeRowView(recipe: recipe)
+                }
+                .buttonStyle(.plain)
+                .onAppear { Task { await viewModel.loadMoreIfNeeded(currentItem: recipe) } }
             }
-            .buttonStyle(.plain)
-            .onAppear { Task { await viewModel.loadMoreIfNeeded(currentItem: recipe) } }
+            .listStyle(.plain)
+            .overlay {
+                if viewModel.isLoading && viewModel.items.isEmpty {
+                    ProgressView()
+                } else if !viewModel.isLoading && viewModel.items.isEmpty && viewModel.errorMessage == nil {
+                    emptyState(viewModel: viewModel)
+                }
+            }
+            .refreshable { await viewModel.load() }
         }
-        .listStyle(.plain)
         .searchable(text: $viewModel.searchText, prompt: "Search recipes")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -28,10 +48,6 @@ struct RecipeListView: View {
                 }
             }
         }
-        .safeAreaInset(edge: .top, spacing: 0) {
-            RecipeFilterBar(viewModel: viewModel)
-                .background(.bar)
-        }
         .sheet(isPresented: $showingAddRecipe) {
             NavigationStack {
                 // Reload the list on save so the new recipe appears without a
@@ -41,15 +57,7 @@ struct RecipeListView: View {
                 })
             }
         }
-        .overlay {
-            if viewModel.isLoading && viewModel.items.isEmpty {
-                ProgressView()
-            } else if !viewModel.isLoading && viewModel.items.isEmpty && viewModel.errorMessage == nil {
-                emptyState(viewModel: viewModel)
-            }
-        }
         .task { await viewModel.load() }
-        .refreshable { await viewModel.load() }
         .alert(
             "Couldn't Load Recipes",
             isPresented: Binding(
