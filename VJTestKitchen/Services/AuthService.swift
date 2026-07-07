@@ -4,7 +4,10 @@ import Supabase
 /// Abstraction over Supabase Auth so AuthViewModel can be tested without a
 /// real network/session — see AuthViewModelTests' FakeAuthService.
 protocol AuthServicing: Sendable {
-    func signUp(email: String, password: String) async throws
+    /// firstName/lastName/username are stored as auth user metadata and
+    /// copied into `profiles` by the `handle_new_user` trigger — see the
+    /// profiles_first_last_username migration.
+    func signUp(email: String, password: String, firstName: String, lastName: String, username: String) async throws
     func signIn(email: String, password: String) async throws
     func signOut() async throws
     /// Deletes the signed-in user's account (Edge Function, requires
@@ -23,8 +26,16 @@ struct AuthService: AuthServicing {
         self.client = client
     }
 
-    func signUp(email: String, password: String) async throws {
-        try await client.auth.signUp(email: email, password: password)
+    func signUp(email: String, password: String, firstName: String, lastName: String, username: String) async throws {
+        try await client.auth.signUp(
+            email: email,
+            password: password,
+            data: [
+                "first_name": .string(firstName),
+                "last_name": .string(lastName),
+                "username": .string(username),
+            ]
+        )
     }
 
     func signIn(email: String, password: String) async throws {
