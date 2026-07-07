@@ -151,6 +151,7 @@ struct HomeView: View {
                 Label(PrepTimeFormat.string(minutes: prep), systemImage: "clock")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .labelStyle(.compact)
             }
         }
     }
