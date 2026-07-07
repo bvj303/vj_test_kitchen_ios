@@ -11,15 +11,24 @@ struct RecipeFormView: View {
     /// form instead, since there's nothing to dismiss back to.
     var onSaved: (() -> Void)?
 
+    /// Called after a successful delete, before `dismiss()`. The detail screen
+    /// uses this to distinguish "sheet dismissed after delete" (pop back to the
+    /// list — the recipe is gone) from "dismissed after save/cancel" (reload the
+    /// detail). Without it the detail would reload a now-deleted recipe and its
+    /// `.single()` fetch would fail with "Cannot coerce the result to a single
+    /// JSON object."
+    var onDeleted: (() -> Void)?
+
     /// False when hosted as a tab's root, where "Cancel" doesn't make sense
     /// (there's nothing to cancel back to) and the leading toolbar slot is
     /// used for the account button instead.
     var showsCancelButton = true
 
-    init(mode: RecipeFormViewModel.Mode, showsCancelButton: Bool = true, onSaved: (() -> Void)? = nil) {
+    init(mode: RecipeFormViewModel.Mode, showsCancelButton: Bool = true, onSaved: (() -> Void)? = nil, onDeleted: (() -> Void)? = nil) {
         _viewModel = State(initialValue: RecipeFormViewModel(mode: mode))
         self.showsCancelButton = showsCancelButton
         self.onSaved = onSaved
+        self.onDeleted = onDeleted
     }
 
     var body: some View {
@@ -115,7 +124,10 @@ struct RecipeFormView: View {
         ) {
             Button("Delete", role: .destructive) {
                 Task {
-                    if await viewModel.delete() { dismiss() }
+                    if await viewModel.delete() {
+                        onDeleted?()
+                        dismiss()
+                    }
                 }
             }
             Button("Cancel", role: .cancel) {}

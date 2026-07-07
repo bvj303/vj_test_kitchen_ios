@@ -3,12 +3,21 @@ import SwiftUI
 struct RecipeDetailView: View {
     @State private var viewModel: RecipeDetailViewModel
     @Environment(AuthViewModel.self) private var authViewModel
+    @Environment(\.dismiss) private var dismiss
     @State private var showingEditSheet = false
     @State private var showingAddToCalendar = false
+    @State private var wasDeleted = false
     let recipeId: Int64
 
-    init(recipeId: Int64) {
+    /// Called when the recipe is deleted, so a coordinating parent can drop it
+    /// from its state — clearing the split-view selection and reloading the list
+    /// so the now-deleted row can't be tapped into a broken detail. Independent
+    /// of `dismiss()`, which pops this view when it was pushed (iPhone / Home).
+    var onDeleted: (() -> Void)?
+
+    init(recipeId: Int64, onDeleted: (() -> Void)? = nil) {
         self.recipeId = recipeId
+        self.onDeleted = onDeleted
         _viewModel = State(initialValue: RecipeDetailViewModel(recipeId: recipeId))
     }
 
@@ -60,9 +69,20 @@ struct RecipeDetailView: View {
                 }
             }
         }
-        .sheet(isPresented: $showingEditSheet, onDismiss: { Task { await viewModel.load() } }) {
+        .sheet(isPresented: $showingEditSheet, onDismiss: {
+            // If the recipe was deleted from the edit sheet, it's gone — tell the
+            // parent to drop it and pop back, rather than reloading a row that no
+            // longer exists (whose `.single()` fetch would fail). Otherwise
+            // refresh the detail to reflect any saved edits.
+            if wasDeleted {
+                onDeleted?()
+                dismiss()
+            } else {
+                Task { await viewModel.load() }
+            }
+        }) {
             NavigationStack {
-                RecipeFormView(mode: .edit(recipeId: recipeId))
+                RecipeFormView(mode: .edit(recipeId: recipeId), onDeleted: { wasDeleted = true })
             }
         }
         .sheet(isPresented: $showingAddToCalendar) {
