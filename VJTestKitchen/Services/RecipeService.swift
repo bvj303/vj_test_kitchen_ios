@@ -3,12 +3,18 @@ import Supabase
 
 protocol RecipeServicing: Sendable {
     /// Fetches one page of the recipe list (`id` order), optionally narrowed by
-    /// a title substring match, a tag name, and/or a maximum prep time. Selects
-    /// only list-relevant columns — `RecipeDetailView` re-fetches full detail
-    /// via `fetchDetail(id:)`, so the list never needs to pull `description`/
+    /// a title substring match, a tag name, and/or a prep-time range
+    /// (`minPrepTime`/`maxPrepTime`, either bound optional — e.g. only `max` for
+    /// "30 min or less", only `min` for "Long Cooks"). Selects only
+    /// list-relevant columns — `RecipeDetailView` re-fetches full detail via
+    /// `fetchDetail(id:)`, so the list never needs to pull `description`/
     /// `instructions` for every row. All filters are applied server-side so the
     /// list stays paginated and scalable at 15K+ rows.
-    func fetchPage(offset: Int, limit: Int, matching search: String?, tag: String?, maxPrepTime: Int?) async throws -> [Recipe]
+    func fetchPage(offset: Int, limit: Int, matching search: String?, tag: String?, minPrepTime: Int?, maxPrepTime: Int?) async throws -> [Recipe]
+    /// Total number of recipes in the catalog, for the Home tab's stat tile. A
+    /// HEAD request with an exact count — no rows transferred. Defaulted in the
+    /// protocol extension so existing test fakes don't have to implement it.
+    func totalCount() async throws -> Int
     func fetchDetail(id: Int64) async throws -> RecipeDetail
     @discardableResult
     func create(_ draft: RecipeDraft) async throws -> Recipe
@@ -21,8 +27,18 @@ extension RecipeServicing {
     /// the Calendar Quick Planner), so they don't spell out the tag/prep-time
     /// filters the Recipes list uses.
     func fetchPage(offset: Int, limit: Int, matching search: String?) async throws -> [Recipe] {
-        try await fetchPage(offset: offset, limit: limit, matching: search, tag: nil, maxPrepTime: nil)
+        try await fetchPage(offset: offset, limit: limit, matching: search, tag: nil, minPrepTime: nil, maxPrepTime: nil)
     }
+
+    /// Back-compat convenience for callers that only bound prep time from above
+    /// (e.g. the Home tab's weeknight suggestions) — forwards with no lower bound.
+    func fetchPage(offset: Int, limit: Int, matching search: String?, tag: String?, maxPrepTime: Int?) async throws -> [Recipe] {
+        try await fetchPage(offset: offset, limit: limit, matching: search, tag: tag, minPrepTime: nil, maxPrepTime: maxPrepTime)
+    }
+
+    /// Default so existing conformers (test fakes) needn't implement counting;
+    /// `RecipeService` overrides this with a real HEAD-count query.
+    func totalCount() async throws -> Int { 0 }
 }
 
 /// Reference implementation of the Service-layer pattern: one struct per
@@ -36,7 +52,7 @@ struct RecipeService: RecipeServicing {
         self.client = client
     }
 
-    func fetchPage(offset: Int, limit: Int, matching search: String?, tag: String?, maxPrepTime: Int?) async throws -> [Recipe] {
+    func fetchPage(offset: Int, limit: Int, matching search: String?, tag: String?, minPrepTime: Int?, maxPrepTime: Int?) async throws -> [Recipe] {
         // A tag filter needs an inner join to `recipe_tags`/`tags`; only pay for
         // the embed when a tag is actually selected. Recipe's Codable ignores
         // the extra `recipe_tags` key that the embed adds to each row.
@@ -55,9 +71,12 @@ struct RecipeService: RecipeServicing {
         if let tag, hasTag {
             query = query.eq("recipe_tags.tags.name", value: tag)
         }
+        // Filter values go over as String (see CLAUDE.md — Int64 doesn't
+        // conform to PostgrestFilterValue in supabase-swift 2.x).
+        if let minPrepTime {
+            query = query.gte("prep_time", value: String(minPrepTime))
+        }
         if let maxPrepTime {
-            // Filter values go over as String (see CLAUDE.md — Int64 doesn't
-            // conform to PostgrestFilterValue in supabase-swift 2.x).
             query = query.lte("prep_time", value: String(maxPrepTime))
         }
 
@@ -66,6 +85,16 @@ struct RecipeService: RecipeServicing {
             .range(from: offset, to: offset + limit - 1)
             .execute()
             .value
+    }
+
+    func totalCount() async throws -> Int {
+        // HEAD request: no rows transferred, just the Content-Range total. Exact
+        // count is fine at catalog scale (~15K rows) for a one-shot stat tile.
+        let response = try await client
+            .from("recipes")
+            .select("id", head: true, count: .exact)
+            .execute()
+        return response.count ?? 0
     }
 
     /// Escapes `ilike` wildcard characters (`%`, `_`) and the escape
