@@ -166,6 +166,28 @@ struct RecipeDetailViewModelTests {
         #expect(viewModel.didAddAllToGroceryList == true)
     }
 
+    @Test func addIngredientScalesAndNormalizesTheGroceryDraft() async {
+        let recipes = FakeRecipeDetailService()
+        // A row with the imported mixed-number bug: amount=1, unit="",
+        // name="½ teaspoons paprika" really means 1½ teaspoons paprika.
+        recipes.detailToReturn = RecipeDetail(
+            id: 1, userId: nil, title: "Rub", description: nil, instructions: nil,
+            imagePath: nil, prepTime: 5, servings: 4, createdAt: Date(),
+            ingredients: [Ingredient(id: 1, recipeId: 1, name: "½ teaspoons paprika", amount: 1, unit: "")],
+            recipeTags: []
+        )
+        let grocery = FakeGroceryItemService()
+        let viewModel = RecipeDetailViewModel(recipeId: 1, recipeService: recipes, ratingService: FakeRecipeRatingService(), groceryItemService: grocery)
+        await viewModel.load()
+
+        await viewModel.addIngredientToGroceryList(viewModel.detail!.ingredients[0], scale: 2)
+
+        let draft = grocery.addedDrafts.first
+        #expect(draft?.name == "paprika")        // fraction/unit peeled out of the name
+        #expect(draft?.unit == "teaspoons")      // unit recovered
+        #expect(draft?.amount == 3)              // (1 + ½) × 2
+    }
+
     @Test func addIngredientSurfacesErrorMessageAndDoesNotMarkAdded() async {
         let recipes = FakeRecipeDetailService()
         recipes.detailToReturn = makeDetail(id: 1)
