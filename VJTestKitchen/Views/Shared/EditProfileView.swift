@@ -12,7 +12,9 @@ struct EditProfileView: View {
     // to a fresh one for standalone use / previews.
     private let viewModel: ProfileViewModel
     @State private var selectedPhoto: PhotosPickerItem?
+    @State private var showingDeleteConfirmation = false
     @Environment(AccountViewModel.self) private var accountViewModel
+    @Environment(AuthViewModel.self) private var authViewModel
     @Environment(\.dismiss) private var dismiss
     @FocusState private var focusedField: Field?
 
@@ -71,6 +73,17 @@ struct EditProfileView: View {
                                 .foregroundStyle(usernameStatusColor)
                         }
                     }
+
+                    Section {
+                        Button(role: .destructive) {
+                            showingDeleteConfirmation = true
+                        } label: {
+                            Label("Delete Account", systemImage: "trash")
+                        }
+                        .disabled(authViewModel.isSubmitting)
+                    } footer: {
+                        Text("Permanently deletes your account and all your recipes, ratings, and meal plans. This can't be undone.")
+                    }
                 }
             }
         }
@@ -97,6 +110,32 @@ struct EditProfileView: View {
             Button("OK") { viewModel.errorMessage = nil }
         } message: {
             Text(viewModel.errorMessage ?? "")
+        }
+        .confirmationDialog(
+            "Delete your account?",
+            isPresented: $showingDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Account", role: .destructive) {
+                Task {
+                    await authViewModel.deleteAccount()
+                    if authViewModel.errorMessage == nil { dismiss() }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This permanently deletes your account and all your recipes, ratings, and meal plans. This can't be undone.")
+        }
+        .alert(
+            "Something Went Wrong",
+            isPresented: Binding(
+                get: { authViewModel.errorMessage != nil },
+                set: { if !$0 { authViewModel.errorMessage = nil } }
+            )
+        ) {
+            Button("OK") { authViewModel.errorMessage = nil }
+        } message: {
+            Text(authViewModel.errorMessage ?? "")
         }
         .task { await viewModel.load() }
         .onChange(of: selectedPhoto) { _, newItem in
@@ -177,4 +216,5 @@ struct EditProfileView: View {
         EditProfileView()
     }
     .environment(AccountViewModel())
+    .environment(AuthViewModel())
 }
