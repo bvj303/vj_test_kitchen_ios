@@ -51,6 +51,9 @@ struct HomeView: View {
                 .foregroundStyle(Color.brandPrimary)
                 .frame(width: isRegular ? 56 : 44, height: isRegular ? 56 : 44)
             VStack(alignment: .leading, spacing: 3) {
+                if let forecast = viewModel.todayForecast {
+                    weatherContext(forecast)
+                }
                 Text(viewModel.suggestion.title)
                     .font(isRegular ? .title.bold() : .title2.bold())
                 Text(viewModel.suggestion.subtitle)
@@ -62,6 +65,21 @@ struct HomeView: View {
         .padding(isRegular ? 24 : 16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .glassEffect(.regular.tint(Color.brandPrimary.opacity(0.18)), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+
+    /// A small live-weather overline shown above the suggestion title when a
+    /// forecast is available — e.g. "Rainy · 52°" — so the header visibly
+    /// reflects the real conditions it's reacting to. Temperature is localized
+    /// via the same `WeatherFormatting` helper the calendar badges use.
+    private func weatherContext(_ forecast: DailyForecast) -> some View {
+        Label(
+            "\(forecast.condition) · \(WeatherFormatting.temperatureLabel(forecast.highTemperature))",
+            systemImage: forecast.symbolName
+        )
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(Color.brandPrimary)
+        .labelStyle(.compact)
+        .accessibilityLabel("Current weather: \(forecast.condition), \(WeatherFormatting.temperatureLabel(forecast.highTemperature))")
     }
 
     // MARK: - Suggested recipes grid
