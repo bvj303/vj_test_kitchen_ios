@@ -22,12 +22,24 @@ protocol AuthServicing: Sendable {
     /// service_role — see supabase/functions/delete-account) and clears the
     /// local session. Required by App Store Guideline 5.1.1(v).
     func deleteAccount() async throws
+    /// Completes an auth deep link opened from an email (e.g. the sign-up
+    /// confirmation link redirecting to `vjtestkitchen://login-callback`): parses
+    /// the tokens/`code` out of `url` and establishes a session, which flips
+    /// `userIdChanges` to signed-in. No-op-safe to call with an unrelated URL
+    /// (it throws, which the caller ignores).
+    func handleAuthCallback(url: URL) async throws
     /// Emits the signed-in user's id (nil when signed out), including the
     /// current state as its first value on subscription.
     var userIdChanges: AsyncStream<UUID?> { get }
 }
 
 struct AuthService: AuthServicing {
+    /// Where email confirmation (and any future magic-link/recovery) links
+    /// redirect: a custom URL scheme registered in Info.plist so the OS routes
+    /// the link back into the app. Must be on the hosted project's redirect
+    /// allow-list (Auth settings) for GoTrue to honor it.
+    static let emailRedirectURL = URL(string: "vjtestkitchen://login-callback")!
+
     private let client: SupabaseClient
 
     init(client: SupabaseClient = SupabaseManager.client) {
@@ -43,7 +55,10 @@ struct AuthService: AuthServicing {
                 "first_name": .string(firstName),
                 "last_name": .string(lastName),
                 "username": .string(username),
-            ]
+            ],
+            // The confirmation email links here; the app handles it in
+            // handleAuthCallback(url:) and establishes the session.
+            redirectTo: Self.emailRedirectURL
         )
         // With email confirmation on, GoTrue returns the new user but no session
         // until the emailed link is clicked; a nil session is the signal that
@@ -66,6 +81,12 @@ struct AuthService: AuthServicing {
         // out explicitly so userIdChanges emits nil and the UI returns to
         // AuthView, same as any other sign-out.
         try await client.auth.signOut()
+    }
+
+    func handleAuthCallback(url: URL) async throws {
+        // Parses the code/tokens out of the redirect URL and stores the session;
+        // handles both PKCE (code exchange) and implicit (fragment tokens).
+        try await client.auth.session(from: url)
     }
 
     /// Pure decision for which user id to emit for a given auth event, split
