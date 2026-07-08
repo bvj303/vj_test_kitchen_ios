@@ -61,9 +61,25 @@ struct AIService: AIServicing {
     }
 
     func sendMessage(_ history: [AIChatTurn]) async throws -> AIChatResponse {
+        // Attach a freshly-resolved access token explicitly, rather than relying
+        // on the token the Functions client cached from the last auth event.
+        // Unlike PostgREST (which pulls a fresh token per request), the Functions
+        // client only updates its token via `functions.setAuth` on auth events,
+        // so at cold launch it can still hold a stale/expired token from the
+        // initial stored session — which made this function's server-side recipe
+        // search (RLS-gated to `authenticated`) run as anon and return zero rows,
+        // i.e. the Planner insisting the user has no recipes until the Recipes tab
+        // forced a refresh. Reading `session` auto-refreshes if needed, and the
+        // custom Authorization header overrides the client default (see
+        // FunctionInvokeOptions header merging). Belt-and-suspenders with the
+        // launch-time AuthViewModel.warmUpSession.
+        let accessToken = try await client.auth.session.accessToken
         let result: ResponseBody = try await client.functions.invoke(
             "ai-chat",
-            options: FunctionInvokeOptions(body: RequestBody(messages: history))
+            options: FunctionInvokeOptions(
+                headers: ["Authorization": "Bearer \(accessToken)"],
+                body: RequestBody(messages: history)
+            )
         )
         return AIChatResponse(text: result.response, recipes: result.recipes ?? [])
     }
