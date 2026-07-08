@@ -28,6 +28,11 @@ struct RecipesTab: View {
             NavigationSplitView {
                 RecipeListView(reloadToken: listReloadToken) { recipe in selectedRecipe = recipe }
                     .navigationTitle("Recipes")
+                    // Without an explicit width the sidebar collapses far too
+                    // narrow on macOS (and the roomy Mac window makes it obvious),
+                    // truncating recipe titles and cramping them against the
+                    // thumbnails. Give it a readable default that still resizes.
+                    .navigationSplitViewColumnWidth(min: 300, ideal: 340, max: 460)
             } detail: {
                 Group {
                     if let selectedRecipe {
