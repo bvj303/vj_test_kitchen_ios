@@ -8,6 +8,15 @@ import Foundation
 /// Symbols use `.fill` variants so they render nicely in `.multicolor` mode on
 /// the calendar. Codes are the standard WMO WW ranges Open-Meteo documents:
 /// https://open-meteo.com/en/docs (0 clear … 95+ thunderstorm).
+/// A coarse "what's the weather doing" bucket, collapsed from the many WMO codes
+/// into the handful of distinctions that actually change a cooking suggestion:
+/// precipitation (rain/snow/storm) overrides temperature, everything else lets
+/// the temperature drive. Kept separate from `WeatherCodeStyle.Style` (symbol +
+/// description) so adding it didn't disturb that type's equality-based tests.
+enum WeatherCategory: Sendable, Equatable {
+    case clear, cloudy, fog, rain, snow, thunderstorm
+}
+
 enum WeatherCodeStyle {
     struct Style: Equatable, Sendable {
         let symbolName: String
@@ -35,6 +44,24 @@ enum WeatherCodeStyle {
         case 95: return Style(symbolName: "cloud.bolt.rain.fill", description: "Thunderstorm")
         case 96, 99: return Style(symbolName: "cloud.bolt.rain.fill", description: "Thunderstorm with Hail")
         default: return Style(symbolName: "cloud.fill", description: "Unknown")
+        }
+    }
+
+    /// The coarse `WeatherCategory` for a WMO code — used by the Home tab to pick
+    /// a weather-aware cooking suggestion. Precipitation codes collapse to
+    /// rain/snow/thunderstorm; clear/cloudy/fog are kept apart only for display,
+    /// since the suggestion lets temperature drive when it isn't precipitating.
+    /// Unknown codes fall back to `.cloudy` (a neutral "temperature decides").
+    static func category(for code: Int) -> WeatherCategory {
+        switch code {
+        case 0, 1: return .clear
+        case 2: return .cloudy
+        case 3: return .cloudy
+        case 45, 48: return .fog
+        case 51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82: return .rain
+        case 71, 73, 75, 77, 85, 86: return .snow
+        case 95, 96, 99: return .thunderstorm
+        default: return .cloudy
         }
     }
 }

@@ -61,6 +61,7 @@ struct OpenMeteoForecastService: WeatherForecasting {
                 date: daily.time[index],
                 symbolName: style.symbolName,
                 condition: style.description,
+                category: WeatherCodeStyle.category(for: daily.weatherCode[index]),
                 highTemperature: Measurement(value: daily.temperatureMax[index], unit: .celsius),
                 lowTemperature: Measurement(value: daily.temperatureMin[index], unit: .celsius)
             )

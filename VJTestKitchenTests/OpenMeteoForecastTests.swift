@@ -17,6 +17,23 @@ struct WeatherCodeStyleTests {
         #expect(fallback.symbolName == "cloud.fill")
         #expect(fallback.description == "Unknown")
     }
+
+    @Test func categorizesCodesIntoCoarseBuckets() {
+        #expect(WeatherCodeStyle.category(for: 0) == .clear)   // clear
+        #expect(WeatherCodeStyle.category(for: 3) == .cloudy)  // overcast
+        #expect(WeatherCodeStyle.category(for: 48) == .fog)    // fog
+        #expect(WeatherCodeStyle.category(for: 63) == .rain)   // rain
+        #expect(WeatherCodeStyle.category(for: 55) == .rain)   // drizzle
+        #expect(WeatherCodeStyle.category(for: 82) == .rain)   // rain showers
+        #expect(WeatherCodeStyle.category(for: 75) == .snow)   // snow
+        #expect(WeatherCodeStyle.category(for: 86) == .snow)   // snow showers
+        #expect(WeatherCodeStyle.category(for: 95) == .thunderstorm)
+        #expect(WeatherCodeStyle.category(for: 99) == .thunderstorm)
+    }
+
+    @Test func unknownCodeCategorizesAsCloudy() {
+        #expect(WeatherCodeStyle.category(for: 1234) == .cloudy)
+    }
 }
 
 struct OpenMeteoForecastServiceTests {
@@ -52,9 +69,11 @@ struct OpenMeteoForecastServiceTests {
         #expect(forecasts[0].date == "2026-07-07")
         #expect(forecasts[0].symbolName == "sun.max.fill")
         #expect(forecasts[0].condition == "Clear")
+        #expect(forecasts[0].category == .clear)
         #expect(forecasts[0].highTemperature == Measurement(value: 31.2, unit: .celsius))
         #expect(forecasts[0].lowTemperature == Measurement(value: 18.0, unit: .celsius))
         #expect(forecasts[1].symbolName == "cloud.rain.fill")
+        #expect(forecasts[1].category == .rain)
         #expect(forecasts[1].date == "2026-07-08")
     }
 

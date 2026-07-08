@@ -13,6 +13,10 @@ struct DailyForecast: Equatable, Sendable, Identifiable {
     let symbolName: String
     /// Human-readable condition, e.g. "Partly Cloudy", for the accessibility label.
     let condition: String
+    /// Coarse precipitation/clear bucket driving the Home tab's weather-aware
+    /// cooking suggestion (`RecipeSuggester`). Derived from the WMO code at parse
+    /// time so downstream never re-inspects the raw code.
+    let category: WeatherCategory
     let highTemperature: Measurement<UnitTemperature>
     let lowTemperature: Measurement<UnitTemperature>
 

@@ -46,8 +46,18 @@ struct HomeViewModelTests {
         utcCalendar.date(from: DateComponents(year: 2026, month: 7, day: 7))!
     }
 
-    private func makeViewModel(recipes: FakeHomeRecipeService = FakeHomeRecipeService()) -> HomeViewModel {
-        HomeViewModel(referenceDate: referenceDate, calendar: utcCalendar, recipeService: recipes)
+    private func makeViewModel(
+        recipes: FakeHomeRecipeService = FakeHomeRecipeService(),
+        forecaster: FakeWeatherForecaster = FakeWeatherForecaster(),
+        store: FakeWeatherPreferenceStore = FakeWeatherPreferenceStore()
+    ) -> HomeViewModel {
+        HomeViewModel(
+            referenceDate: referenceDate,
+            calendar: utcCalendar,
+            recipeService: recipes,
+            weatherForecaster: forecaster,
+            weatherPreferenceStore: store
+        )
     }
 
     @Test func suggestionReflectsReferenceDate() {
@@ -99,6 +109,57 @@ struct HomeViewModelTests {
         #expect(viewModel.suggestedRecipes.allSatisfy { poolIds.contains($0.id) })
         // No duplicates in the shown slice.
         #expect(Set(viewModel.suggestedRecipes.map(\.id)).count == viewModel.suggestedRecipes.count)
+    }
+
+    @Test func weatherRefinesSuggestionAndQueryWhenHomeLocationSet() async {
+        // A cold forecast on a summer weeknight overrides the calendar's "salad"
+        // with weather-driven "soup", and that keyword reaches the recipe query.
+        let store = FakeWeatherPreferenceStore()
+        store.homeLocation = makeHomeLocation()
+        let forecaster = FakeWeatherForecaster()
+        forecaster.forecasts = [makeForecast(date: "2026-07-07", category: .clear, high: 2, unit: .celsius)]
+        let recipes = FakeHomeRecipeService()
+        recipes.pagesByKeyword = ["soup": [makeRecipe(1, "Chicken Soup")]]
+        let viewModel = makeViewModel(recipes: recipes, forecaster: forecaster, store: store)
+
+        await viewModel.load()
+
+        #expect(viewModel.suggestion.title == "Warm Up the Kitchen")
+        #expect(viewModel.todayForecast?.category == .clear)
+        #expect(recipes.fetchedPages.first?.search == "soup")
+        #expect(viewModel.suggestedRecipes.map(\.title) == ["Chicken Soup"])
+    }
+
+    @Test func noHomeLocationLeavesCalendarSuggestionAndNoForecast() async {
+        // Default store has no home location → suggestion stays calendar-derived
+        // and no forecast fetch happens.
+        let forecaster = FakeWeatherForecaster()
+        forecaster.forecasts = [makeForecast(date: "2026-07-07", category: .snow, high: -2, unit: .celsius)]
+        let viewModel = makeViewModel(forecaster: forecaster)
+
+        await viewModel.load()
+
+        #expect(viewModel.suggestion.title == "Light Summer Suppers")
+        #expect(viewModel.todayForecast == nil)
+        #expect(forecaster.requestedCoordinates.isEmpty)
+    }
+
+    @Test func weatherFetchFailureFallsBackToCalendarSuggestion() async {
+        // A set home location but a failing forecast → calendar suggestion, no
+        // error surfaced (weather is a nice-to-have, not a hard dependency).
+        let store = FakeWeatherPreferenceStore()
+        store.homeLocation = makeHomeLocation()
+        let forecaster = FakeWeatherForecaster()
+        forecaster.errorToThrow = WeatherError.badResponse
+        let recipes = FakeHomeRecipeService()
+        recipes.pagesByKeyword = ["salad": [makeRecipe(1, "Greek Salad")]]
+        let viewModel = makeViewModel(recipes: recipes, forecaster: forecaster, store: store)
+
+        await viewModel.load()
+
+        #expect(viewModel.suggestion.title == "Light Summer Suppers")
+        #expect(viewModel.todayForecast == nil)
+        #expect(viewModel.errorMessage == nil)
     }
 
     @Test func loadSurfacesRecipeError() async {
