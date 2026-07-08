@@ -3,6 +3,21 @@ import SwiftUI
 /// The signed-in app's top-level tabs, tracked by `MainTabView`'s `selection`.
 enum AppTab: Hashable {
     case home, recipes, grocery, planner, calendar
+
+    /// The tab a widget deep link (`vjtestkitchen://<host>`) targets, or nil for
+    /// a non-navigation URL (e.g. the auth `login-callback`), so
+    /// `VJTestKitchenApp.onOpenURL` can tell a widget tap from an auth redirect.
+    /// Kinds map through `WidgetSharedConfig.DeepLink`.
+    init?(deepLinkHost host: String?) {
+        switch host {
+        case "home": self = .home
+        case "recipes", "recipe": self = .recipes
+        case "grocery": self = .grocery
+        case "planner": self = .planner
+        case "calendar": self = .calendar
+        default: return nil
+        }
+    }
 }
 
 struct MainTabView: View {
