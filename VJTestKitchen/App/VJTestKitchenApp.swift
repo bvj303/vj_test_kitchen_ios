@@ -38,11 +38,19 @@ struct VJTestKitchenApp: App {
                 .onOpenURL { url in
                     Task { await authViewModel.handleAuthCallback(url: url) }
                 }
+                #if os(macOS)
+                // Floor the window size so it can't collapse to a screen's
+                // intrinsic size (e.g. the compact auth view); it still resizes
+                // freely above this.
+                .frame(minWidth: 900, idealWidth: 1100, minHeight: 620, idealHeight: 760)
+                #endif
         }
         #if os(macOS)
-        // A real Mac window: resizable, with a sensible first-run size.
-        .windowResizability(.contentSize)
-        .defaultSize(width: 1100, height: 720)
+        // A real Mac window: opens at the ideal size, resizable down to the
+        // content minimum (not the content's fitting size — that's what made it
+        // open tiny).
+        .windowResizability(.contentMinSize)
+        .defaultSize(width: 1100, height: 760)
         #endif
         // Menu-bar commands. Cross-platform: on macOS this is the menu bar; on
         // iPadOS it powers hardware-keyboard shortcuts + the ⌘ discoverability HUD.
