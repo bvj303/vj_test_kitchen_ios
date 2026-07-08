@@ -400,4 +400,24 @@ struct AuthViewModelTests {
 
         #expect(viewModel.canProceedToAccountStep == true)
     }
+
+    @Test func canSubmitSignUpRequiresProfileEmailAndValidPassword() async {
+        let fakeProfile = FakeProfileService()
+        let viewModel = AuthViewModel(authService: FakeAuthService(), profileService: fakeProfile, usernameDebounceDelay: .zero)
+
+        #expect(viewModel.canSubmitSignUp == false)
+
+        viewModel.firstName = "Ada"
+        viewModel.lastName = "Lovelace"
+        viewModel.username = "adalovelace"
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(viewModel.canSubmitSignUp == false, "email/password not set yet")
+
+        viewModel.email = "ada@example.com"
+        viewModel.password = "short7!"  // 7 chars, below the minimum
+        #expect(viewModel.canSubmitSignUp == false, "password too short")
+
+        viewModel.password = String(repeating: "a", count: AuthViewModel.minimumPasswordLength)
+        #expect(viewModel.canSubmitSignUp == true)
+    }
 }
