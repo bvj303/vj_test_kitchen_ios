@@ -8,6 +8,7 @@ enum AppTab: Hashable {
 struct MainTabView: View {
     @Environment(AccountViewModel.self) private var accountViewModel
     @Environment(HomeLocationViewModel.self) private var homeLocationViewModel
+    @Environment(AppCommands.self) private var appCommands
     @State private var selection: AppTab = .home
     @State private var showLocationPrompt = false
 
@@ -41,6 +42,12 @@ struct MainTabView: View {
         .sheet(isPresented: $showLocationPrompt) {
             HomeLocationPromptView()
         }
+        // Menu-bar / keyboard-shortcut tab switches (see AppCommands).
+        .onChange(of: appCommands.pendingTab) { _, requested in
+            guard let requested else { return }
+            selection = requested
+            appCommands.pendingTab = nil
+        }
     }
 }
 
@@ -50,4 +57,5 @@ struct MainTabView: View {
         .environment(SettingsViewModel())
         .environment(AccountViewModel())
         .environment(HomeLocationViewModel())
+        .environment(AppCommands())
 }

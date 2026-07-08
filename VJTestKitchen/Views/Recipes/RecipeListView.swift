@@ -1,8 +1,10 @@
 import SwiftUI
 
 struct RecipeListView: View {
+    @Environment(AppCommands.self) private var appCommands
     @State private var viewModel = RecipeListViewModel()
     @State private var showingAddRecipe = false
+    @FocusState private var searchFieldFocused: Bool
     /// Changing this re-runs the initial load — the parent bumps it after a
     /// delete so the removed recipe drops out of the list.
     var reloadToken: UUID = UUID()
@@ -29,9 +31,13 @@ struct RecipeListView: View {
                     RecipeRowView(recipe: recipe, isFavorite: viewModel.isFavorite(recipe))
                 }
                 .buttonStyle(.plain)
+                #if os(iOS)
+                // Touch affordance; the same favorite action lives in the
+                // context menu below, so macOS/iPad pointer reach it too.
                 .swipeActions(edge: .leading, allowsFullSwipe: true) {
                     favoriteAction(recipe)
                 }
+                #endif
                 .contextMenu {
                     favoriteAction(recipe)
                 }
@@ -48,8 +54,9 @@ struct RecipeListView: View {
             .refreshable { await viewModel.load() }
         }
         .searchable(text: $viewModel.searchText, prompt: "Search recipes")
+        .searchFocused($searchFieldFocused)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .platformPrimaryAction) {
                 Button {
                     showingAddRecipe = true
                 } label: {
@@ -67,6 +74,13 @@ struct RecipeListView: View {
             }
         }
         .task(id: reloadToken) { await viewModel.load() }
+        // Menu-bar / keyboard-shortcut commands (⌘N new recipe, ⌘F find).
+        .onChange(of: appCommands.newRecipeRequests) { _, _ in
+            showingAddRecipe = true
+        }
+        .onChange(of: appCommands.searchRequests) { _, _ in
+            searchFieldFocused = true
+        }
         .alert(
             "Couldn't Load Recipes",
             isPresented: Binding(
