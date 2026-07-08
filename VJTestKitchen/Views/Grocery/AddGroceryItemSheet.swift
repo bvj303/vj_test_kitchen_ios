@@ -73,5 +73,10 @@ struct AddGroceryItemSheet: View {
             .onAppear { nameFieldFocused = true }
         }
         .platformMediumLargeDetents()
+        // macOS sheets size to their content; a bare Form collapses to a cramped
+        // box, so pin a comfortable minimum. No-op on iOS (detents drive size).
+        #if os(macOS)
+        .frame(minWidth: 420, minHeight: 460)
+        #endif
     }
 }
