@@ -30,6 +30,7 @@ final class FakeRecipeDetailService: RecipeServicing, @unchecked Sendable {
 
 final class FakeRecipeRatingService: RecipeRatingServicing, @unchecked Sendable {
     var ratingToReturn: RecipeRating?
+    var reviewsToReturn: [RecipeReview] = []
     private(set) var upsertedRating: Int?
     private(set) var upsertedNotes: String?
     var upsertError: Error?
@@ -43,6 +44,31 @@ final class FakeRecipeRatingService: RecipeRatingServicing, @unchecked Sendable 
         upsertedRating = rating
         upsertedNotes = notes
     }
+
+    func fetchReviews(recipeId: Int64) async throws -> [RecipeReview] {
+        reviewsToReturn
+    }
+}
+
+final class FakeFavoritesService: FavoritesServicing, @unchecked Sendable {
+    var favoriteIds: Set<Int64> = []
+    var setError: Error?
+    private(set) var setCalls: [(recipeId: Int64, isFavorite: Bool)] = []
+
+    func fetchMyFavoriteIds() async throws -> Set<Int64> { favoriteIds }
+
+    func setFavorite(recipeId: Int64, isFavorite: Bool) async throws {
+        if let setError { throw setError }
+        setCalls.append((recipeId, isFavorite))
+        if isFavorite { favoriteIds.insert(recipeId) } else { favoriteIds.remove(recipeId) }
+    }
+}
+
+private func makeReview(userId: UUID = UUID(), rating: Int? = nil, notes: String? = nil, name: String = "Sam") -> RecipeReview {
+    RecipeReview(
+        userId: userId, rating: rating, notes: notes, updatedAt: Date(),
+        profile: .init(displayName: name, username: nil, avatarUrl: nil)
+    )
 }
 
 private func makeDetail(id: Int64 = 1, title: String = "Carbonara") -> RecipeDetail {
@@ -201,5 +227,75 @@ struct RecipeDetailViewModelTests {
 
         #expect(viewModel.errorMessage == "failed")
         #expect(viewModel.addedIngredientIds.isEmpty)
+    }
+
+    // MARK: - Favorites
+
+    @Test func loadReflectsFavoriteState() async {
+        let recipes = FakeRecipeDetailService()
+        recipes.detailToReturn = makeDetail(id: 7)
+        let favorites = FakeFavoritesService()
+        favorites.favoriteIds = [7]
+
+        let viewModel = RecipeDetailViewModel(recipeId: 7, recipeService: recipes, ratingService: FakeRecipeRatingService(), favoritesService: favorites)
+        await viewModel.load()
+
+        #expect(viewModel.isFavorite == true)
+    }
+
+    @Test func toggleFavoriteOptimisticallyPersists() async {
+        let recipes = FakeRecipeDetailService()
+        recipes.detailToReturn = makeDetail(id: 7)
+        let favorites = FakeFavoritesService()
+
+        let viewModel = RecipeDetailViewModel(recipeId: 7, recipeService: recipes, ratingService: FakeRecipeRatingService(), favoritesService: favorites)
+        await viewModel.load()
+        #expect(viewModel.isFavorite == false)
+
+        await viewModel.toggleFavorite()
+
+        #expect(viewModel.isFavorite == true)
+        #expect(favorites.setCalls.last?.isFavorite == true)
+        #expect(favorites.favoriteIds.contains(7))
+    }
+
+    @Test func toggleFavoriteRevertsOnError() async {
+        let recipes = FakeRecipeDetailService()
+        recipes.detailToReturn = makeDetail(id: 7)
+        let favorites = FakeFavoritesService()
+        favorites.setError = TestError()
+
+        let viewModel = RecipeDetailViewModel(recipeId: 7, recipeService: recipes, ratingService: FakeRecipeRatingService(), favoritesService: favorites)
+        await viewModel.load()
+
+        await viewModel.toggleFavorite()
+
+        #expect(viewModel.isFavorite == false)
+        #expect(viewModel.errorMessage == "failed")
+    }
+
+    // MARK: - Community ratings
+
+    @Test func communitySummaryAveragesAllAndOtherReviewsExcludeSelf() async {
+        let me = UUID()
+        let recipes = FakeRecipeDetailService()
+        recipes.detailToReturn = makeDetail(id: 1)
+        let ratings = FakeRecipeRatingService()
+        ratings.reviewsToReturn = [
+            makeReview(userId: me, rating: 5, notes: "mine", name: "Me"),
+            makeReview(rating: 4, notes: "solid", name: "Ada"),
+            makeReview(rating: 3, notes: nil, name: "Bo"),
+        ]
+
+        let viewModel = RecipeDetailViewModel(recipeId: 1, recipeService: recipes, ratingService: ratings)
+        viewModel.currentUserId = me
+        await viewModel.load()
+
+        // Average across all three raters (5+4+3)/3 = 4.0, count 3.
+        #expect(viewModel.communitySummary.count == 3)
+        #expect(viewModel.communitySummary.average == 4.0)
+        // The current user's own review is omitted from the "others" list.
+        #expect(viewModel.otherReviews.count == 2)
+        #expect(viewModel.otherReviews.allSatisfy { $0.userId != me })
     }
 }
