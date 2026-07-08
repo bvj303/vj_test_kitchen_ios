@@ -18,7 +18,7 @@ struct MainTabView: View {
             Tab("Recipes", systemImage: "fork.knife", value: AppTab.recipes) {
                 RecipesTab()
             }
-            Tab("Grocery List", systemImage: "cart", value: AppTab.grocery) {
+            Tab("Groceries", systemImage: "cart", value: AppTab.grocery) {
                 GroceryListTab()
             }
             Tab("AI Planner", systemImage: "sparkles", value: AppTab.planner) {
