@@ -235,6 +235,82 @@ struct GroceryListViewModelTests {
         #expect(viewModel.groups.map(\.title) == ["Produce", "Dairy & Eggs"])
     }
 
+    @Test func categoryGroupingCombinesLikeItemsButRecipeGroupingKeepsThemSeparate() async {
+        let service = FakeGroceryItemService()
+        service.items = [
+            makeItem(name: "Lemons", amount: 2, category: .produce, recipeTitle: "Lemonade"),
+            makeItem(name: "Lemon", amount: 1, category: .produce, recipeTitle: "Pie"),
+        ]
+        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService())
+        await viewModel.load()
+
+        // By recipe: one row under each recipe, uncombined.
+        viewModel.grouping = .byRecipe
+        #expect(viewModel.groups.flatMap(\.rows).count == 2)
+
+        // By category: a single combined "3" row in Produce.
+        viewModel.grouping = .byCategory
+        let produce = viewModel.groups.first { $0.title == "Produce" }
+        #expect(produce?.rows.count == 1)
+        #expect(produce?.rows.first?.quantityText == "3")
+    }
+
+    @Test func togglingCombinedRowChecksAllUnderlyingItems() async {
+        let service = FakeGroceryItemService()
+        service.items = [
+            makeItem(name: "Lemons", amount: 2, category: .produce),
+            makeItem(name: "Lemon", amount: 1, category: .produce),
+        ]
+        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService())
+        await viewModel.load()
+        viewModel.grouping = .byCategory
+        let combined = viewModel.groups[0].rows[0]
+
+        await viewModel.toggleChecked(combined)
+
+        let vmAllChecked = viewModel.items.allSatisfy(\.isChecked)
+        let serviceAllChecked = service.items.allSatisfy(\.isChecked)
+        #expect(vmAllChecked)
+        #expect(serviceAllChecked)
+    }
+
+    @Test func deletingCombinedRowDeletesAllUnderlyingItems() async {
+        let service = FakeGroceryItemService()
+        service.items = [
+            makeItem(name: "Lemons", amount: 2, category: .produce),
+            makeItem(name: "Lemon", amount: 1, category: .produce),
+            makeItem(name: "Milk", category: .dairy),
+        ]
+        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService())
+        await viewModel.load()
+        viewModel.grouping = .byCategory
+        let combined = viewModel.groups.first { $0.title == "Produce" }!.rows[0]
+
+        await viewModel.delete(combined)
+
+        #expect(viewModel.items.map(\.name) == ["Milk"])
+        #expect(service.items.map(\.name) == ["Milk"])
+    }
+
+    @Test func recategorizingCombinedRowMovesAllUnderlyingItems() async {
+        let service = FakeGroceryItemService()
+        service.items = [
+            makeItem(name: "Lemons", amount: 2, category: .produce),
+            makeItem(name: "Lemon", amount: 1, category: .produce),
+        ]
+        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService())
+        await viewModel.load()
+        viewModel.grouping = .byCategory
+        let combined = viewModel.groups[0].rows[0]
+
+        await viewModel.setCategory(combined, to: .beverages)
+
+        let vmAllBeverages = viewModel.items.allSatisfy { $0.category == .beverages }
+        let serviceAllBeverages = service.items.allSatisfy { $0.category == .beverages }
+        #expect(vmAllBeverages)
+        #expect(serviceAllBeverages)
+    }
+
     @Test func exportSendsUncheckedItemsFormattedWithAmountUnitName() async {
         let service = FakeGroceryItemService()
         service.items = [

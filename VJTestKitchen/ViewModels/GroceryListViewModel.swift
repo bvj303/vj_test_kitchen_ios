@@ -20,12 +20,13 @@ final class GroceryListViewModel {
     /// One rendered section of the list — a recipe (or "Other Items") when
     /// grouping by recipe, or a `GroceryCategory` aisle when grouping by
     /// category. Named `ItemGroup` (not `Section`) so it doesn't shadow
-    /// SwiftUI's `Section` in the view.
+    /// SwiftUI's `Section` in the view. Holds display *rows*, not raw items:
+    /// a category row may combine several like-named items into one summed line.
     struct ItemGroup: Identifiable {
         let id: String
         let title: String
         let systemImage: String
-        var items: [GroceryItem]
+        var rows: [GroceryDisplayRow]
     }
 
     private(set) var items: [GroceryItem] = []
@@ -56,7 +57,8 @@ final class GroceryListViewModel {
 
     /// Grouped by originating recipe (title snapshot), recipe groups first in
     /// alphabetical order, with manually-added items collected under "Other
-    /// Items" last.
+    /// Items" last. Each item stays its own row here (no combining) — the point
+    /// of this view is to see what each recipe calls for.
     private var recipeGroups: [ItemGroup] {
         var byTitle: [String: [GroceryItem]] = [:]
         var others: [GroceryItem] = []
@@ -70,15 +72,17 @@ final class GroceryListViewModel {
         var result = byTitle.keys
             .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
             .map { title in
-                ItemGroup(id: "recipe:\(title)", title: title, systemImage: "fork.knife", items: displayOrdered(byTitle[title] ?? []))
+                ItemGroup(id: "recipe:\(title)", title: title, systemImage: "fork.knife", rows: displayOrdered(singleRows(byTitle[title] ?? [])))
             }
         if !others.isEmpty {
-            result.append(ItemGroup(id: "recipe:__other", title: "Other Items", systemImage: "cart", items: displayOrdered(others)))
+            result.append(ItemGroup(id: "recipe:__other", title: "Other Items", systemImage: "cart", rows: displayOrdered(singleRows(others))))
         }
         return result
     }
 
     /// Grouped by food category, in aisle order (`GroceryCategory.allCases`).
+    /// Within a category, like ingredients from different recipes are *combined*
+    /// into a single summed row (2 lemons + 1 lemon → "3") via `GroceryAggregator`.
     private var categoryGroups: [ItemGroup] {
         var byCategory: [GroceryCategory: [GroceryItem]] = [:]
         for item in items {
@@ -86,14 +90,18 @@ final class GroceryListViewModel {
         }
         return GroceryCategory.allCases.compactMap { category in
             guard let group = byCategory[category], !group.isEmpty else { return nil }
-            return ItemGroup(id: "cat:\(category.rawValue)", title: category.displayName, systemImage: category.systemImage, items: displayOrdered(group))
+            return ItemGroup(id: "cat:\(category.rawValue)", title: category.displayName, systemImage: category.systemImage, rows: displayOrdered(GroceryAggregator.combine(group)))
         }
     }
 
-    /// Within a section: unchecked items first (still to buy), then checked,
-    /// each alphabetical — so crossed-off items sink to the bottom.
-    private func displayOrdered(_ items: [GroceryItem]) -> [GroceryItem] {
-        items.sorted { lhs, rhs in
+    private func singleRows(_ items: [GroceryItem]) -> [GroceryDisplayRow] {
+        items.map(GroceryDisplayRow.init(single:))
+    }
+
+    /// Within a section: unchecked rows first (still to buy), then checked, each
+    /// alphabetical — so crossed-off rows sink to the bottom.
+    private func displayOrdered(_ rows: [GroceryDisplayRow]) -> [GroceryDisplayRow] {
+        rows.sorted { lhs, rhs in
             if lhs.isChecked != rhs.isChecked { return !lhs.isChecked }
             return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
         }
@@ -131,39 +139,61 @@ final class GroceryListViewModel {
         }
     }
 
-    func toggleChecked(_ item: GroceryItem) async {
-        guard let index = items.firstIndex(where: { $0.id == item.id }) else { return }
-        let newValue = !items[index].isChecked
-        items[index].isChecked = newValue // optimistic
+    // MARK: - Row mutations
+    //
+    // The primitives operate on a *row*, fanning the mutation out to every
+    // underlying item — so toggling/deleting/recategorizing a combined
+    // "by category" line (2 lemons + 1 lemon) affects all of its sources at
+    // once. The single-item overloads (used by callers holding a bare
+    // `GroceryItem`) just wrap it in a one-item row.
+
+    func toggleChecked(_ row: GroceryDisplayRow) async {
+        let newValue = !row.isChecked
+        let ids = Set(row.items.map(\.id))
+        let snapshot = items
+        for i in items.indices where ids.contains(items[i].id) { items[i].isChecked = newValue } // optimistic
         do {
-            try await service.setChecked(id: item.id, isChecked: newValue)
+            for id in ids { try await service.setChecked(id: id, isChecked: newValue) }
         } catch {
-            if let i = items.firstIndex(where: { $0.id == item.id }) { items[i].isChecked = !newValue }
+            items = snapshot
+            errorMessage = ErrorPresenter.message(for: error)
+        }
+    }
+
+    func toggleChecked(_ item: GroceryItem) async {
+        await toggleChecked(GroceryDisplayRow(single: item))
+    }
+
+    func setCategory(_ row: GroceryDisplayRow, to category: GroceryCategory) async {
+        let ids = Set(row.items.map(\.id))
+        let snapshot = items
+        for i in items.indices where ids.contains(items[i].id) { items[i].category = category } // optimistic
+        do {
+            for id in ids { try await service.setCategory(id: id, category: category) }
+        } catch {
+            items = snapshot
             errorMessage = ErrorPresenter.message(for: error)
         }
     }
 
     func setCategory(_ item: GroceryItem, to category: GroceryCategory) async {
-        guard let index = items.firstIndex(where: { $0.id == item.id }) else { return }
-        let previous = items[index].category
-        items[index].category = category // optimistic
+        await setCategory(GroceryDisplayRow(single: item), to: category)
+    }
+
+    func delete(_ row: GroceryDisplayRow) async {
+        let ids = Set(row.items.map(\.id))
+        let snapshot = items
+        items.removeAll { ids.contains($0.id) } // optimistic
         do {
-            try await service.setCategory(id: item.id, category: category)
+            for id in ids { try await service.delete(id: id) }
         } catch {
-            if let i = items.firstIndex(where: { $0.id == item.id }) { items[i].category = previous }
+            items = snapshot
             errorMessage = ErrorPresenter.message(for: error)
         }
     }
 
     func delete(_ item: GroceryItem) async {
-        let snapshot = items
-        items.removeAll { $0.id == item.id } // optimistic
-        do {
-            try await service.delete(id: item.id)
-        } catch {
-            items = snapshot
-            errorMessage = ErrorPresenter.message(for: error)
-        }
+        await delete(GroceryDisplayRow(single: item))
     }
 
     func clearList() async {
@@ -194,7 +224,9 @@ final class GroceryListViewModel {
     }
 
     /// "200 g" / "1" / "" (blank for a zero/"to taste" amount with no unit).
-    static func formattedQuantity(amount: Double, unit: String) -> String {
+    /// `nonisolated` so pure helpers like `GroceryAggregator` can reuse it as the
+    /// single source of quantity formatting without hopping to the main actor.
+    nonisolated static func formattedQuantity(amount: Double, unit: String) -> String {
         guard amount > 0 else { return unit.trimmingCharacters(in: .whitespaces) }
         let amountText = amount == amount.rounded()
             ? String(Int(amount))
@@ -202,7 +234,7 @@ final class GroceryListViewModel {
         return unit.isEmpty ? amountText : "\(amountText) \(unit)"
     }
 
-    static func formatItem(name: String, amount: Double, unit: String) -> String {
+    nonisolated static func formatItem(name: String, amount: Double, unit: String) -> String {
         let qty = formattedQuantity(amount: amount, unit: unit)
         return qty.isEmpty ? name : "\(qty) \(name)"
     }
