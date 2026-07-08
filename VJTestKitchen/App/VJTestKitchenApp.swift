@@ -55,10 +55,18 @@ struct VJTestKitchenApp: App {
         // Menu-bar commands. Cross-platform: on macOS this is the menu bar; on
         // iPadOS it powers hardware-keyboard shortcuts + the ⌘ discoverability HUD.
         .commands {
-            // Replace the default File ▸ New with recipe creation (⌘N).
+            // Replace the default File ▸ New with a context-aware create (⌘N):
+            // the title tracks the current tab ("New Recipe" vs "New Grocery
+            // Item"), and `requestNew()` routes to that tab's add action.
             CommandGroup(replacing: .newItem) {
-                Button("New Recipe") { appCommands.requestNewRecipe() }
+                Button(appCommands.newItemTitle) { appCommands.requestNew() }
                     .keyboardShortcut("n", modifiers: .command)
+            }
+            // Reload the visible screen (⌘R) — the app has no system refresh
+            // command, so add one next to the standard toolbar/window items.
+            CommandGroup(after: .toolbar) {
+                Button("Refresh") { appCommands.requestRefresh() }
+                    .keyboardShortcut("r", modifiers: .command)
             }
             // App navigation + search.
             CommandMenu("Go") {

@@ -23,6 +23,8 @@ struct MealCalendarView: View {
     // location directly so setting/changing/clearing it immediately fetches (or
     // clears) the forecast instead of only taking effect after a relaunch.
     @Environment(HomeLocationViewModel.self) private var homeLocationViewModel
+    // Menu-bar / keyboard-shortcut command bus — ⌘R reloads the agenda.
+    @Environment(AppCommands.self) private var appCommands
 
     /// Caps the agenda column's width so a landscape iPad reads as a centered
     /// schedule column rather than rows spanning the whole display.
@@ -61,6 +63,10 @@ struct MealCalendarView: View {
         }
         .onChange(of: homeLocationViewModel.homeLocation) {
             Task { await viewModel.loadWeather() }
+        }
+        // ⌘R reloads the agenda when Calendar is the visible tab.
+        .onChange(of: appCommands.refreshRequests) { _, _ in
+            Task { await viewModel.load() }
         }
         .alert(
             "Something Went Wrong",

@@ -74,12 +74,15 @@ struct RecipeListView: View {
             }
         }
         .task(id: reloadToken) { await viewModel.load() }
-        // Menu-bar / keyboard-shortcut commands (⌘N new recipe, ⌘F find).
+        // Menu-bar / keyboard-shortcut commands (⌘N new recipe, ⌘F find, ⌘R reload).
         .onChange(of: appCommands.newRecipeRequests) { _, _ in
             showingAddRecipe = true
         }
         .onChange(of: appCommands.searchRequests) { _, _ in
             searchFieldFocused = true
+        }
+        .onChange(of: appCommands.refreshRequests) { _, _ in
+            Task { await viewModel.load() }
         }
         .alert(
             "Couldn't Load Recipes",

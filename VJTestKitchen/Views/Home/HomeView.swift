@@ -7,6 +7,7 @@ import SwiftUI
 /// scrolling.
 struct HomeView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(AppCommands.self) private var appCommands
     @State private var viewModel = HomeViewModel()
 
     /// Cap + center the content on very wide screens so a landscape iPad reads
@@ -29,6 +30,10 @@ struct HomeView: View {
         .navigationTitle("Home")
         .task { await viewModel.load() }
         .refreshable { await viewModel.load() }
+        // ⌘R reloads the dashboard when Home is the visible tab.
+        .onChange(of: appCommands.refreshRequests) { _, _ in
+            Task { await viewModel.load() }
+        }
         .alert(
             "Couldn't Load Home",
             isPresented: Binding(
