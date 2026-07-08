@@ -10,6 +10,9 @@ final class FakeGroceryItemService: GroceryItemServicing, @unchecked Sendable {
     var fetchError: Error?
     var addError: Error?
     var mutationError: Error?
+    /// Ids whose per-item mutation should throw, so tests can exercise a
+    /// *partial* failure of a multi-item row (some writes succeed, some don't).
+    var failingIds: Set<UUID> = []
     private(set) var addedDrafts: [GroceryItemDraft] = []
 
     func fetchAll() async throws -> [GroceryItem] {
@@ -35,16 +38,19 @@ final class FakeGroceryItemService: GroceryItemServicing, @unchecked Sendable {
 
     func setChecked(id: UUID, isChecked: Bool) async throws {
         if let mutationError { throw mutationError }
+        if failingIds.contains(id) { throw TestError() }
         if let i = items.firstIndex(where: { $0.id == id }) { items[i].isChecked = isChecked }
     }
 
     func setCategory(id: UUID, category: GroceryCategory) async throws {
         if let mutationError { throw mutationError }
+        if failingIds.contains(id) { throw TestError() }
         if let i = items.firstIndex(where: { $0.id == id }) { items[i].category = category }
     }
 
     func delete(id: UUID) async throws {
         if let mutationError { throw mutationError }
+        if failingIds.contains(id) { throw TestError() }
         items.removeAll { $0.id == id }
     }
 
@@ -167,6 +173,49 @@ struct GroceryListViewModelTests {
         await viewModel.toggleChecked(viewModel.items[0])
 
         #expect(viewModel.items[0].isChecked == false)
+        #expect(viewModel.errorMessage == "failed")
+    }
+
+    @Test func toggleCheckedOnCombinedRowKeepsSuccessesWhenOneItemFails() async {
+        // Two like-named produce items combine into one "by category" row, so
+        // toggling it fans out to both underlying ids. When only one server
+        // write fails, the successful one must stay checked (reconcile reverts
+        // just the failure) rather than the whole row snapping back.
+        let service = FakeGroceryItemService()
+        let good = makeItem(name: "Lemon", category: .produce)
+        let bad = makeItem(name: "Lemon", category: .produce)
+        service.items = [good, bad]
+        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService())
+        viewModel.grouping = .byCategory
+        await viewModel.load()
+        service.failingIds = [bad.id]
+
+        let combinedRow = viewModel.groups.first { $0.title == GroceryCategory.produce.displayName }!.rows.first!
+        #expect(combinedRow.items.count == 2)
+
+        await viewModel.toggleChecked(combinedRow)
+
+        #expect(viewModel.items.first { $0.id == good.id }?.isChecked == true)   // success kept
+        #expect(viewModel.items.first { $0.id == bad.id }?.isChecked == false)   // failure reverted
+        #expect(viewModel.errorMessage == "failed")
+    }
+
+    @Test func deleteOnCombinedRowReinsertsOnlyTheFailedItem() async {
+        let service = FakeGroceryItemService()
+        let good = makeItem(name: "Lemon", category: .produce)
+        let bad = makeItem(name: "Lemon", category: .produce)
+        service.items = [good, bad]
+        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService())
+        viewModel.grouping = .byCategory
+        await viewModel.load()
+        service.failingIds = [bad.id]
+
+        let combinedRow = viewModel.groups.first { $0.title == GroceryCategory.produce.displayName }!.rows.first!
+        await viewModel.delete(combinedRow)
+
+        // The deleted-successfully item is gone; the failed one is restored.
+        #expect(viewModel.items.contains { $0.id == good.id } == false)
+        #expect(viewModel.items.contains { $0.id == bad.id })
         #expect(viewModel.errorMessage == "failed")
     }
 
