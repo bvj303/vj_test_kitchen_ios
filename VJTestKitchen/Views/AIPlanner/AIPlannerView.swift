@@ -3,6 +3,8 @@ import SwiftUI
 struct AIPlannerView: View {
     @State private var viewModel = AIPlannerViewModel()
     @FocusState private var isInputFocused: Bool
+    /// The recipe whose "Add to Calendar" sheet is open, if any.
+    @State private var calendarTarget: AIRecipeRef?
 
     private static let suggestions: [(label: String, prompt: String, icon: String)] = [
         ("Plan healthy dinners", "Plan a 3-day healthy dinner menu", "calendar"),
@@ -48,6 +50,10 @@ struct AIPlannerView: View {
         }
         .navigationTitle("AI Planner")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(item: $calendarTarget) { recipe in
+            AddToCalendarSheet(recipeId: recipe.id, recipeTitle: recipe.title)
+                .presentationDetents([.medium, .large])
+        }
         .alert(
             "Something Went Wrong",
             isPresented: Binding(
@@ -71,7 +77,7 @@ struct AIPlannerView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("Kitchen Concierge").font(.headline)
-                Text("Gemini 3.1 Flash Lite")
+                Text("Your recipe & meal-planning assistant")
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(Color.accentColor)
             }
@@ -122,13 +128,54 @@ struct AIPlannerView: View {
     private func messageBubble(_ message: AIPlannerViewModel.ChatMessage) -> some View {
         HStack {
             if message.role == .assistant {
-                bubbleText(message)
+                VStack(alignment: .leading, spacing: 10) {
+                    bubbleText(message)
+                    if !message.recipes.isEmpty {
+                        ForEach(message.recipes) { recipe in
+                            recipeCard(recipe)
+                        }
+                    }
+                }
                 Spacer(minLength: 40)
             } else {
                 Spacer(minLength: 40)
                 bubbleText(message)
             }
         }
+    }
+
+    /// A tappable card for a recipe the assistant recommended: open its detail,
+    /// or add it straight to the calendar — so the chat isn't a dead end.
+    private func recipeCard(_ recipe: AIRecipeRef) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            NavigationLink(value: recipe.id) {
+                HStack(spacing: 10) {
+                    Image(systemName: "book.pages")
+                        .foregroundStyle(Color.brandPrimary)
+                    Text(recipe.title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                calendarTarget = recipe
+            } label: {
+                Label("Add to Calendar", systemImage: "calendar.badge.plus")
+                    .font(.caption.weight(.semibold))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Color.brandSage)
+        }
+        .padding(12)
+        .glassEffect(.regular.tint(Color.brandPrimary.opacity(0.10)), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     private func bubbleText(_ message: AIPlannerViewModel.ChatMessage) -> some View {

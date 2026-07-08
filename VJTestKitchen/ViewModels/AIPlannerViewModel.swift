@@ -13,6 +13,9 @@ final class AIPlannerViewModel {
         let id = UUID()
         var role: Role
         var content: String
+        /// Recipes the assistant named in this message — rendered as tappable
+        /// cards. Empty for user messages and replies that don't cite a recipe.
+        var recipes: [AIRecipeRef] = []
     }
 
     private(set) var messages: [ChatMessage] = []
@@ -38,7 +41,11 @@ final class AIPlannerViewModel {
 
         do {
             let response = try await aiService.sendMessage(prompt)
-            messages.append(ChatMessage(role: .assistant, content: response))
+            messages.append(ChatMessage(
+                role: .assistant,
+                content: response.text,
+                recipes: Self.recipesReferenced(in: response.text, from: response.recipes)
+            ))
         } catch {
             errorMessage = ErrorPresenter.message(for: error)
         }
@@ -46,5 +53,20 @@ final class AIPlannerViewModel {
 
     func clearChat() {
         messages = []
+    }
+
+    /// Filters the tool-surfaced recipes down to the ones the assistant actually
+    /// names in its reply (case-insensitive title match), so the cards match the
+    /// recommendation rather than everything the tool happened to return.
+    static func recipesReferenced(in text: String, from recipes: [AIRecipeRef]) -> [AIRecipeRef] {
+        guard !recipes.isEmpty else { return [] }
+        var seen = Set<Int64>()
+        return recipes.filter { recipe in
+            guard !recipe.title.isEmpty,
+                  text.localizedCaseInsensitiveContains(recipe.title),
+                  !seen.contains(recipe.id) else { return false }
+            seen.insert(recipe.id)
+            return true
+        }
     }
 }

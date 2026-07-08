@@ -102,7 +102,7 @@ Deno.test("runGeminiWithTools returns Gemini's text directly when it never calls
     fetchImpl,
   });
 
-  assertEquals(result, { text: "Try the Carbonara.", finishReason: "STOP", blocked: false, roundCapHit: false });
+  assertEquals(result, { text: "Try the Carbonara.", finishReason: "STOP", blocked: false, roundCapHit: false, recipes: [] });
 });
 
 Deno.test("runGeminiWithTools executes a tool call and feeds the result back for a final answer", async () => {
@@ -134,6 +134,8 @@ Deno.test("runGeminiWithTools executes a tool call and feeds the result back for
 
   assertEquals(result.text, "The Beef Tacos recipe fits.");
   assertEquals(result.roundCapHit, false);
+  // Recipes surfaced by the tool are returned for the client to render as cards.
+  assertEquals(result.recipes, [{ id: 2, title: "Beef Tacos" }]);
 });
 
 Deno.test("runGeminiWithTools stops after MAX_TOOL_ROUNDS and reports roundCapHit instead of looping forever", async () => {
