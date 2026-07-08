@@ -11,7 +11,7 @@
 // so RLS applies exactly as it does everywhere else in the app (recipes are
 // shared-readable by any authenticated user — see DECISIONS.md). No
 // service_role/admin access is used here.
-import { GeminiRequestError, runGeminiWithTools, type ToolLoopResult } from "./search.ts";
+import { GeminiRequestError, normalizeChatTurns, runGeminiWithTools, type ToolLoopResult } from "./search.ts";
 
 Deno.serve(async (req: Request) => {
   const authHeader = req.headers.get("Authorization");
@@ -19,26 +19,19 @@ Deno.serve(async (req: Request) => {
     return Response.json({ error: "Missing Authorization header." }, { status: 401 });
   }
 
-  let prompt: unknown;
+  let body: unknown;
   try {
-    ({ prompt } = await req.json());
+    body = await req.json();
   } catch {
     return Response.json({ error: "Invalid request body." }, { status: 400 });
   }
 
-  if (typeof prompt !== "string" || prompt.trim().length === 0) {
-    return Response.json({ error: "prompt is required." }, { status: 400 });
-  }
-
-  // Cap prompt size to bound per-call token cost — any authenticated user can
-  // reach this function, so an unbounded prompt is a denial-of-wallet vector
-  // against the Gemini quota.
-  const MAX_PROMPT_CHARS = 4000;
-  if (prompt.length > MAX_PROMPT_CHARS) {
-    return Response.json(
-      { error: `That message is too long (max ${MAX_PROMPT_CHARS} characters). Please shorten it.` },
-      { status: 413 },
-    );
+  // Accepts the full-history `{ messages }` shape or the legacy `{ prompt }`
+  // shape, and enforces per-message / whole-conversation size caps (the
+  // denial-of-wallet guard against the Gemini quota now that history is sent).
+  const messages = normalizeChatTurns(body);
+  if (!Array.isArray(messages)) {
+    return Response.json({ error: messages.error }, { status: messages.status });
   }
 
   const apiKey = Deno.env.get("GEMINI_API_KEY");
@@ -59,7 +52,7 @@ Deno.serve(async (req: Request) => {
 
   let result: ToolLoopResult;
   try {
-    result = await runGeminiWithTools({ apiKey, userPrompt: prompt, authHeader, supabaseUrl, anonKey });
+    result = await runGeminiWithTools({ apiKey, messages, authHeader, supabaseUrl, anonKey });
   } catch (err) {
     if (err instanceof GeminiRequestError) {
       const status = err.status === 429 ? 429 : 502;
