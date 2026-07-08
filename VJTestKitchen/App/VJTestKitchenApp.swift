@@ -5,6 +5,9 @@ struct VJTestKitchenApp: App {
     @State private var authViewModel = AuthViewModel()
     @State private var settingsViewModel = SettingsViewModel()
     @State private var accountViewModel = AccountViewModel()
+    // Shared so the first-login prompt (MainTabView) and Settings both read and
+    // write the same saved home location, and the calendar picks up changes.
+    @State private var homeLocationViewModel = HomeLocationViewModel()
 
     init() {
         // Give `URLSession.shared` (and therefore every `RemoteImage`) a roomy
@@ -24,6 +27,7 @@ struct VJTestKitchenApp: App {
                 .environment(authViewModel)
                 .environment(settingsViewModel)
                 .environment(accountViewModel)
+                .environment(homeLocationViewModel)
                 .preferredColorScheme(settingsViewModel.appearanceMode.colorScheme)
         }
     }

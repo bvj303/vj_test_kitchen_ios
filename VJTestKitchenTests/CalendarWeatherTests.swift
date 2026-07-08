@@ -39,9 +39,35 @@ final class FakeLocationProvider: LocationProviding, @unchecked Sendable {
 }
 
 final class FakeWeatherPreferenceStore: WeatherPreferenceStoring, @unchecked Sendable {
-    var enabled = false
-    func loadUseCurrentLocation() -> Bool { enabled }
-    func saveUseCurrentLocation(_ enabled: Bool) { self.enabled = enabled }
+    var homeLocation: HomeLocation?
+    var didPrompt = false
+    func loadHomeLocation() -> HomeLocation? { homeLocation }
+    func saveHomeLocation(_ location: HomeLocation?) { homeLocation = location }
+    func loadDidPromptForLocation() -> Bool { didPrompt }
+    func saveDidPromptForLocation(_ didPrompt: Bool) { self.didPrompt = didPrompt }
+}
+
+final class FakeGeocoder: GeocodingProviding, @unchecked Sendable {
+    var postalCodeToReturn: String? = "02139"
+    var coordinateToReturn = Coordinate(latitude: 42.36, longitude: -71.10)
+    var forwardError: Error?
+    private(set) var reverseGeocodedCoordinates: [Coordinate] = []
+    private(set) var forwardGeocodedCodes: [String] = []
+
+    func postalCode(for coordinate: Coordinate) async -> String? {
+        reverseGeocodedCoordinates.append(coordinate)
+        return postalCodeToReturn
+    }
+
+    func coordinate(for postalCode: String) async throws -> Coordinate {
+        forwardGeocodedCodes.append(postalCode)
+        if let forwardError { throw forwardError }
+        return coordinateToReturn
+    }
+}
+
+func makeHomeLocation(zip: String? = "02139", lat: Double = 42.36, lon: Double = -71.10) -> HomeLocation {
+    HomeLocation(postalCode: zip, coordinate: Coordinate(latitude: lat, longitude: lon))
 }
 
 func makeForecast(date: String, symbol: String = "sun.max.fill", high: Double = 80, low: Double = 60) -> DailyForecast {
@@ -58,74 +84,61 @@ func makeForecast(date: String, symbol: String = "sun.max.fill", high: Double = 
 
 @MainActor
 struct CalendarWeatherTests {
-    @Test func loadWeatherPopulatesForecastWhenEnabled() async {
-        let store = FakeWeatherPreferenceStore()
-        store.enabled = true
-        let location = FakeLocationProvider()
-        location.authorization = .authorized
-        let forecaster = FakeWeatherForecaster()
-        forecaster.forecasts = [makeForecast(date: "2026-07-05"), makeForecast(date: "2026-07-06")]
-
-        let viewModel = MealCalendarViewModel(
+    private func makeViewModel(
+        forecaster: FakeWeatherForecaster,
+        store: FakeWeatherPreferenceStore
+    ) -> MealCalendarViewModel {
+        MealCalendarViewModel(
             mealPlanService: FakeMealPlanService(),
             recipeService: FakeMealPlanRecipeService(),
             weatherForecaster: forecaster,
-            locationProvider: location,
             weatherPreferenceStore: store
         )
+    }
 
+    @Test func loadWeatherPopulatesForecastForSavedHomeLocation() async {
+        let store = FakeWeatherPreferenceStore()
+        store.homeLocation = makeHomeLocation(lat: 42.36, lon: -71.10)
+        let forecaster = FakeWeatherForecaster()
+        forecaster.forecasts = [makeForecast(date: "2026-07-05"), makeForecast(date: "2026-07-06")]
+
+        let viewModel = makeViewModel(forecaster: forecaster, store: store)
         await viewModel.loadWeather()
 
         #expect(viewModel.forecast(for: "2026-07-05")?.symbolName == "sun.max.fill")
         #expect(viewModel.forecast(for: "2026-07-06") != nil)
         #expect(viewModel.forecast(for: "2026-07-07") == nil)
-        #expect(forecaster.requestedCoordinates.first == location.coordinateToReturn)
+        // Uses the stored home coordinate — no live GPS fix.
+        #expect(forecaster.requestedCoordinates.first == store.homeLocation?.coordinate)
     }
 
-    @Test func loadWeatherClearsAndSkipsFetchWhenDisabled() async {
+    @Test func loadWeatherClearsAndSkipsFetchWhenNoHomeLocation() async {
         let store = FakeWeatherPreferenceStore()
-        store.enabled = false
+        store.homeLocation = nil
         let forecaster = FakeWeatherForecaster()
         forecaster.forecasts = [makeForecast(date: "2026-07-05")]
 
-        let viewModel = MealCalendarViewModel(
-            mealPlanService: FakeMealPlanService(),
-            recipeService: FakeMealPlanRecipeService(),
-            weatherForecaster: forecaster,
-            locationProvider: FakeLocationProvider(),
-            weatherPreferenceStore: store
-        )
-
+        let viewModel = makeViewModel(forecaster: forecaster, store: store)
         await viewModel.loadWeather()
 
         #expect(viewModel.forecast(for: "2026-07-05") == nil)
         #expect(forecaster.requestedCoordinates.isEmpty)
     }
 
-    @Test func loadWeatherRefetchesWhenPreferenceFlipsOnAfterEmptyLoad() async {
-        // Mirrors the real flow: the calendar first loads with weather off (empty
-        // forecast), then the user enables it in the Settings sheet. The view's
-        // `.onChange(of: settingsViewModel.useCurrentLocationForWeather)` calls
+    @Test func loadWeatherPopulatesAfterHomeLocationIsSet() async {
+        // Mirrors the real flow: the calendar first loads with no home location
+        // (empty forecast), then the user sets one in Settings / the prompt. The
+        // view's `.onChange(of: homeLocationViewModel.homeLocation)` calls
         // `loadWeather()` again — which must now populate, not stay empty.
         let store = FakeWeatherPreferenceStore()
-        store.enabled = false
-        let location = FakeLocationProvider()
-        location.authorization = .authorized
         let forecaster = FakeWeatherForecaster()
         forecaster.forecasts = [makeForecast(date: "2026-07-05")]
 
-        let viewModel = MealCalendarViewModel(
-            mealPlanService: FakeMealPlanService(),
-            recipeService: FakeMealPlanRecipeService(),
-            weatherForecaster: forecaster,
-            locationProvider: location,
-            weatherPreferenceStore: store
-        )
-
+        let viewModel = makeViewModel(forecaster: forecaster, store: store)
         await viewModel.loadWeather()
         #expect(viewModel.forecastByDate.isEmpty)
 
-        store.enabled = true
+        store.homeLocation = makeHomeLocation()
         await viewModel.loadWeather()
 
         #expect(viewModel.forecast(for: "2026-07-05") != nil)
@@ -133,19 +146,11 @@ struct CalendarWeatherTests {
 
     @Test func loadWeatherSwallowsErrorsWithoutRaisingTheMealPlanAlert() async {
         let store = FakeWeatherPreferenceStore()
-        store.enabled = true
-        let location = FakeLocationProvider()
-        location.authorization = .authorized
-        location.errorToThrow = LocationError.denied
+        store.homeLocation = makeHomeLocation()
+        let forecaster = FakeWeatherForecaster()
+        forecaster.errorToThrow = WeatherError.badResponse
 
-        let viewModel = MealCalendarViewModel(
-            mealPlanService: FakeMealPlanService(),
-            recipeService: FakeMealPlanRecipeService(),
-            weatherForecaster: FakeWeatherForecaster(),
-            locationProvider: location,
-            weatherPreferenceStore: store
-        )
-
+        let viewModel = makeViewModel(forecaster: forecaster, store: store)
         await viewModel.loadWeather()
 
         #expect(viewModel.forecast(for: "2026-07-05") == nil)
