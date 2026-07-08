@@ -28,6 +28,16 @@ protocol AuthServicing: Sendable {
     /// `userIdChanges` to signed-in. No-op-safe to call with an unrelated URL
     /// (it throws, which the caller ignores).
     func handleAuthCallback(url: URL) async throws
+    /// Proactively resolves (and refreshes, if stale) the stored session at
+    /// launch. Accessing `client.auth.session` auto-refreshes an expired access
+    /// token, which fires the SDK's `.tokenRefreshed` event and re-pushes the
+    /// fresh token to the Functions client (`functions.setAuth`). Without this,
+    /// the Functions client can keep serving a stale/anon token from the initial
+    /// stored session until some *other* PostgREST call happens to trigger a
+    /// refresh — which is why the AI Planner's server-side recipe search returned
+    /// zero rows ("you have no recipes") until the Recipes tab was opened. See
+    /// the per-call safety net in `AIService.sendMessage` too.
+    func warmUpSession() async throws
     /// Emits the signed-in user's id (nil when signed out), including the
     /// current state as its first value on subscription.
     var userIdChanges: AsyncStream<UUID?> { get }
@@ -87,6 +97,13 @@ struct AuthService: AuthServicing {
         // Parses the code/tokens out of the redirect URL and stores the session;
         // handles both PKCE (code exchange) and implicit (fragment tokens).
         try await client.auth.session(from: url)
+    }
+
+    func warmUpSession() async throws {
+        // Getting `session` refreshes an expired access token and, via the SDK's
+        // `.tokenRefreshed` event, re-pushes it to the Functions client — see the
+        // protocol doc comment. Discarded: we only want the side effect.
+        _ = try await client.auth.session
     }
 
     /// Pure decision for which user id to emit for a given auth event, split

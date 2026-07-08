@@ -10,6 +10,7 @@ final class FakeAuthService: AuthServicing, @unchecked Sendable {
     private(set) var signInCallCount = 0
     private(set) var signOutCallCount = 0
     private(set) var deleteAccountCallCount = 0
+    private(set) var warmUpSessionCallCount = 0
     private(set) var handleAuthCallbackCallCount = 0
     private(set) var lastCallbackURL: URL?
     private(set) var lastEmail: String?
@@ -63,6 +64,11 @@ final class FakeAuthService: AuthServicing, @unchecked Sendable {
     func handleAuthCallback(url: URL) async throws {
         handleAuthCallbackCallCount += 1
         lastCallbackURL = url
+        if let errorToThrow { throw errorToThrow }
+    }
+
+    func warmUpSession() async throws {
+        warmUpSessionCallCount += 1
         if let errorToThrow { throw errorToThrow }
     }
 
@@ -307,6 +313,29 @@ struct AuthViewModelTests {
         await viewModel.signOut()
 
         #expect(fake.signOutCallCount == 1)
+    }
+
+    @Test func warmUpSessionCallsService() async {
+        let fake = FakeAuthService()
+        let viewModel = AuthViewModel(authService: fake)
+
+        await viewModel.warmUpSession()
+
+        #expect(fake.warmUpSessionCallCount == 1)
+    }
+
+    @Test func warmUpSessionSwallowsErrorsWithoutSurfacingThem() async {
+        // A launch-time refresh that fails (e.g. offline) must stay silent — it's
+        // proactive housekeeping, not a user action, so it should never flash an
+        // error alert over the UI.
+        let fake = FakeAuthService()
+        fake.errorToThrow = TestError()
+        let viewModel = AuthViewModel(authService: fake)
+
+        await viewModel.warmUpSession()
+
+        #expect(fake.warmUpSessionCallCount == 1)
+        #expect(viewModel.errorMessage == nil)
     }
 
     @Test func deleteAccountCallsService() async {

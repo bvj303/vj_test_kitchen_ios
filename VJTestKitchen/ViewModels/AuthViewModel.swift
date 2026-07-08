@@ -135,6 +135,18 @@ final class AuthViewModel {
         await perform { try await authService.signOut() }
     }
 
+    /// Proactively refreshes the stored session at launch so a valid auth token
+    /// is attached to every Supabase sub-client (notably the Functions client,
+    /// which caches its token from auth events rather than fetching one per
+    /// request) before the user reaches any feature. Fixes the AI Planner
+    /// returning "you have no recipes" on a cold launch until the Recipes tab
+    /// was opened — see `AuthServicing.warmUpSession`. Failures are swallowed:
+    /// this is background housekeeping, not a user action, so it must never
+    /// surface an error or disturb the current auth state.
+    func warmUpSession() async {
+        try? await authService.warmUpSession()
+    }
+
     /// Handles an auth deep link opened from an email (the sign-up confirmation
     /// link). On success the session is established and `userIdChanges` moves the
     /// app to signed-in; the awaiting-confirmation state is cleared. A URL that
