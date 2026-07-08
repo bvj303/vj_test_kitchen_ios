@@ -5,7 +5,7 @@ struct CalendarTab: View {
         NavigationStack {
             MealCalendarView()
                 .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
+                    ToolbarItem(placement: .platformPrimaryAction) {
                         AccountButton()
                     }
                 }

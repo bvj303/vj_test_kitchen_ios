@@ -45,12 +45,12 @@ struct AddToCalendarSheet: View {
                 }
             }
             .navigationTitle("Add to Calendar")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineNavigationTitle()
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
+                ToolbarItem(placement: .platformCancellation) {
                     Button("Cancel") { dismiss() }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .platformPrimaryAction) {
                     Button("Add") {
                         Task {
                             await viewModel.add()

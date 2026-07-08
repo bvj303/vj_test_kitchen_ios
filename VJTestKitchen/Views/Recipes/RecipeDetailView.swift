@@ -55,17 +55,17 @@ struct RecipeDetailView: View {
             .padding()
         }
         .navigationTitle(viewModel.detail?.title ?? "Recipe")
-        .navigationBarTitleDisplayMode(.inline)
+        .inlineNavigationTitle()
         .toolbar {
             // Any signed-in user can schedule any recipe onto their own
             // (RLS-scoped) calendar — this isn't gated on ownership the way
             // Edit is. Shown once the recipe has loaded, since the sheet needs
             // its title.
             if viewModel.detail != nil {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .platformPrimaryAction) {
                     scaleMenu
                 }
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .platformPrimaryAction) {
                     Button {
                         showingAddToCalendar = true
                     } label: {
@@ -74,7 +74,7 @@ struct RecipeDetailView: View {
                 }
             }
             if isOwnedByCurrentUser {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .platformPrimaryAction) {
                     Button("Edit") { showingEditSheet = true }
                 }
             }
@@ -98,10 +98,10 @@ struct RecipeDetailView: View {
         .sheet(isPresented: $showingAddToCalendar) {
             if let detail = viewModel.detail {
                 AddToCalendarSheet(recipeId: recipeId, recipeTitle: detail.title)
-                    .presentationDetents([.medium, .large])
+                    .platformMediumLargeDetents()
             }
         }
-        .fullScreenCover(isPresented: $showingCookMode) {
+        .platformFullScreenCover(isPresented: $showingCookMode) {
             if let detail = viewModel.detail {
                 CookModeView(detail: detail, scale: scale)
             }

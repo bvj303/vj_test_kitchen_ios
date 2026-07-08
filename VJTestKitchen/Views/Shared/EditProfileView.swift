@@ -47,14 +47,14 @@ struct EditProfileView: View {
                     Section {
                         TextField("First Name", text: $viewModel.firstName)
                             .textContentType(.givenName)
-                            .textInputAutocapitalization(.words)
+                            .platformAutocapitalization(.words)
                             .focused($focusedField, equals: .firstName)
                             .submitLabel(.next)
                             .onSubmit { focusedField = .lastName }
 
                         TextField("Last Name", text: $viewModel.lastName)
                             .textContentType(.familyName)
-                            .textInputAutocapitalization(.words)
+                            .platformAutocapitalization(.words)
                             .focused($focusedField, equals: .lastName)
                             .submitLabel(.next)
                             .onSubmit { focusedField = .username }
@@ -63,7 +63,7 @@ struct EditProfileView: View {
                     Section {
                         TextField("Username", text: $viewModel.username)
                             .textContentType(.username)
-                            .textInputAutocapitalization(.never)
+                            .platformAutocapitalization(.never)
                             .autocorrectionDisabled()
                             .focused($focusedField, equals: .username)
                             .submitLabel(.done)
@@ -88,7 +88,7 @@ struct EditProfileView: View {
             }
         }
         .navigationTitle("Edit Profile")
-        .navigationBarTitleDisplayMode(.inline)
+        .inlineNavigationTitle()
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Save") {
