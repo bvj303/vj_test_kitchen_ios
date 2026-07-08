@@ -45,6 +45,13 @@ final class AuthViewModel {
     var errorMessage: String?
     private(set) var isSubmitting = false
 
+    /// Set after a successful sign-up when the project requires email
+    /// confirmation (see `AuthService.signUp`): the account exists but no
+    /// session is created until the user clicks the emailed link, so the UI
+    /// shows a "check your email" message instead of appearing to hang on the
+    /// sign-up screen. Cleared when they leave the flow or sign in.
+    private(set) var awaitingEmailConfirmation = false
+
     /// Gates the Create Profile screen's "Next" button — first/last name are
     /// required, and the username must have passed the availability check.
     var canProceedToAccountStep: Bool {
@@ -90,14 +97,24 @@ final class AuthViewModel {
             errorMessage = "Password must be at least \(Self.minimumPasswordLength) characters."
             return
         }
-        await perform {
-            try await authService.signUp(
+        errorMessage = nil
+        isSubmitting = true
+        defer { isSubmitting = false }
+        do {
+            let needsConfirmation = try await authService.signUp(
                 email: email,
                 password: password,
                 firstName: firstName.trimmingCharacters(in: .whitespaces),
                 lastName: lastName.trimmingCharacters(in: .whitespaces),
                 username: username
             )
+            // When confirmation is required there's no session yet, so
+            // `userIdChanges` won't move us off the sign-up screen — flip the
+            // flag so the view can tell the user to check their email. When it's
+            // not required, the auth-state stream drives the transition as before.
+            awaitingEmailConfirmation = needsConfirmation
+        } catch {
+            errorMessage = ErrorPresenter.message(for: error)
         }
     }
 

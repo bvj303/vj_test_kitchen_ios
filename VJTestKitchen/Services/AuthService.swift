@@ -7,7 +7,15 @@ protocol AuthServicing: Sendable {
     /// firstName/lastName/username are stored as auth user metadata and
     /// copied into `profiles` by the `handle_new_user` trigger — see the
     /// profiles_first_last_username migration.
-    func signUp(email: String, password: String, firstName: String, lastName: String, username: String) async throws
+    ///
+    /// Returns `true` when the project requires email confirmation
+    /// (`enable_confirmations`, see config.toml) — the sign-up succeeded but no
+    /// session is established until the user clicks the emailed link, so the
+    /// caller should show a "check your email" state rather than expecting to
+    /// land on the signed-in UI. Returns `false` when a session was created
+    /// immediately (confirmations off).
+    @discardableResult
+    func signUp(email: String, password: String, firstName: String, lastName: String, username: String) async throws -> Bool
     func signIn(email: String, password: String) async throws
     func signOut() async throws
     /// Deletes the signed-in user's account (Edge Function, requires
@@ -26,8 +34,9 @@ struct AuthService: AuthServicing {
         self.client = client
     }
 
-    func signUp(email: String, password: String, firstName: String, lastName: String, username: String) async throws {
-        try await client.auth.signUp(
+    @discardableResult
+    func signUp(email: String, password: String, firstName: String, lastName: String, username: String) async throws -> Bool {
+        let response = try await client.auth.signUp(
             email: email,
             password: password,
             data: [
@@ -36,6 +45,10 @@ struct AuthService: AuthServicing {
                 "username": .string(username),
             ]
         )
+        // With email confirmation on, GoTrue returns the new user but no session
+        // until the emailed link is clicked; a nil session is the signal that
+        // the user must confirm before they can sign in.
+        return response.session == nil
     }
 
     func signIn(email: String, password: String) async throws {
