@@ -31,11 +31,14 @@ targets:
       - path: VJTestKitchen
         excludes:
           - "Resources/Info.plist"
-          # The macOS target's plist + entitlements must not be copied into the
-          # iOS app (Info-macOS.plist is consumed via INFOPLIST_FILE on the mac
-          # target, not as a resource).
+          # The macOS target's plist must not be copied into the iOS app
+          # (Info-macOS.plist is consumed via INFOPLIST_FILE on the mac target,
+          # not as a resource). Entitlements files (iOS/macOS app + widget) are
+          # consumed via CODE_SIGN_ENTITLEMENTS, never bundled as resources.
           - "Resources/Info-macOS.plist"
-          - "Resources/VJTestKitchen-macOS.entitlements"
+          - "Resources/*.entitlements"
+      # Snapshot models + the App Group store shared with the widget extension.
+      - path: Shared
     preBuildScripts:
       # Fail the build (with a clear fix) if project.yml has drifted ahead of
       # this generated project — e.g. after a pull that changed the spec. This
@@ -55,6 +58,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.bvj303.vjtestkitchen
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: VJTestKitchen/Resources/Info.plist
+        # App Group so the app can publish widget snapshots (see WidgetDataStore).
+        CODE_SIGN_ENTITLEMENTS: VJTestKitchen/Resources/VJTestKitchen-iOS.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         # On-device signing. Baked into the spec (not Xcode's Signing & Capabilities
@@ -69,6 +74,9 @@ targets:
     dependencies:
       - package: Supabase
         product: Supabase
+      # Embed the iOS widget extension into the app bundle.
+      - target: VJTestKitchenWidgets
+        embed: true
 
   # Native macOS app. Shares the SAME VJTestKitchen/ source glob as the iOS
   # target (so all shared code + the Platform/ shims are picked up automatically)
@@ -86,7 +94,9 @@ targets:
         excludes:
           - "Resources/Info.plist"
           - "Resources/Info-macOS.plist"
-          - "Resources/VJTestKitchen-macOS.entitlements"
+          - "Resources/*.entitlements"
+      # Snapshot models + the App Group store shared with the widget extension.
+      - path: Shared
     preBuildScripts:
       - name: "Guard: project.yml in sync with generated project"
         basedOnDependencyAnalysis: false
@@ -118,6 +128,52 @@ targets:
     dependencies:
       - package: Supabase
         product: Supabase
+      # Embed the macOS (desktop) widget extension into the app bundle.
+      - target: VJTestKitchenMacWidgets
+        embed: true
+
+  # Widget extensions. Both share the SAME VJTestKitchenWidgets/ + Shared/ source
+  # glob (like the two app targets), differing only in platform, entitlements,
+  # and the App Group id form (bare group. on iOS, Team-ID-prefixed on macOS —
+  # see WidgetSharedConfig). Display-only: they read snapshots the app publishes
+  # to the App Group container, so they need no Supabase/network dependency.
+  VJTestKitchenWidgets:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: VJTestKitchenWidgets
+        excludes:
+          - "Info.plist"
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.bvj303.vjtestkitchen.widgets
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: VJTestKitchenWidgets/Info.plist
+        CODE_SIGN_ENTITLEMENTS: VJTestKitchen/Resources/VJTestKitchenWidgets-iOS.entitlements
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 89R449GG5Z
+
+  VJTestKitchenMacWidgets:
+    type: app-extension
+    platform: macOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: VJTestKitchenWidgets
+        excludes:
+          - "Info.plist"
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.bvj303.vjtestkitchen.widgets
+        # Distinct module name from the iOS widget target, same as the app pair.
+        PRODUCT_MODULE_NAME: VJTestKitchenWidgets
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: VJTestKitchenWidgets/Info.plist
+        CODE_SIGN_ENTITLEMENTS: VJTestKitchen/Resources/VJTestKitchenWidgets-macOS.entitlements
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 89R449GG5Z
 
   VJTestKitchenTests:
     type: bundle.unit-test
