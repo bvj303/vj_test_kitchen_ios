@@ -80,7 +80,7 @@ struct AuthView: View {
                             .padding(.top, 4)
 
                             NavigationLink("Create Account") {
-                                CreateProfileView()
+                                CreateAccountView()
                             }
                             .disabled(viewModel.isSubmitting)
                         }
