@@ -12,6 +12,27 @@ final class RecipeDetailViewModel {
     var rating: Int?
     var notes = ""
 
+    /// Whether the current user has favorited this recipe (heart beside the
+    /// rating). Optimistically flipped by `toggleFavorite()`.
+    private(set) var isFavorite = false
+
+    /// Every household member's rating/notes for this recipe (including the
+    /// current user's). `communitySummary` aggregates them; `otherReviews`
+    /// filters out the signed-in user's own row (shown in the personal editor).
+    private(set) var reviews: [RecipeReview] = []
+
+    /// Set by the view from the signed-in auth state so `otherReviews` can omit
+    /// the current user's own review from the community list.
+    var currentUserId: UUID?
+
+    var communitySummary: CommunityRatingSummary { CommunityRatingSummary.from(reviews) }
+
+    /// Other members' reviews (not the current user's), newest first — already
+    /// ordered by the service.
+    var otherReviews: [RecipeReview] {
+        reviews.filter { $0.userId != currentUserId }
+    }
+
     /// Transient per-session feedback for the ingredient "add to grocery list"
     /// buttons — which ingredients have been added this visit, and whether the
     /// "Add All" action has run. Not reloaded from the server (a standalone
@@ -23,17 +44,20 @@ final class RecipeDetailViewModel {
     private let recipeService: RecipeServicing
     private let ratingService: RecipeRatingServicing
     private let groceryItemService: GroceryItemServicing
+    private let favoritesService: FavoritesServicing
 
     init(
         recipeId: Int64,
         recipeService: RecipeServicing = RecipeService(),
         ratingService: RecipeRatingServicing = RecipeRatingService(),
-        groceryItemService: GroceryItemServicing = GroceryItemService()
+        groceryItemService: GroceryItemServicing = GroceryItemService(),
+        favoritesService: FavoritesServicing = FavoritesService()
     ) {
         self.recipeId = recipeId
         self.recipeService = recipeService
         self.ratingService = ratingService
         self.groceryItemService = groceryItemService
+        self.favoritesService = favoritesService
     }
 
     func load() async {
@@ -43,11 +67,31 @@ final class RecipeDetailViewModel {
         do {
             async let detailTask = recipeService.fetchDetail(id: recipeId)
             async let ratingTask = ratingService.fetchMine(recipeId: recipeId)
-            let (detail, myRating) = try await (detailTask, ratingTask)
+            async let reviewsTask = ratingService.fetchReviews(recipeId: recipeId)
+            let (detail, myRating, reviews) = try await (detailTask, ratingTask, reviewsTask)
             self.detail = detail
             self.rating = myRating?.rating
             self.notes = myRating?.notes ?? ""
+            self.reviews = reviews
         } catch {
+            errorMessage = ErrorPresenter.message(for: error)
+        }
+        // Favorites load independently — a favorites failure shouldn't blank the
+        // recipe (it just leaves the heart unfilled).
+        if let ids = try? await favoritesService.fetchMyFavoriteIds() {
+            isFavorite = ids.contains(recipeId)
+        }
+    }
+
+    /// Toggles this recipe's favorite state (heart beside the rating).
+    /// Optimistic — reverts on failure.
+    func toggleFavorite() async {
+        let newValue = !isFavorite
+        isFavorite = newValue
+        do {
+            try await favoritesService.setFavorite(recipeId: recipeId, isFavorite: newValue)
+        } catch {
+            isFavorite = !newValue
             errorMessage = ErrorPresenter.message(for: error)
         }
     }
@@ -100,6 +144,11 @@ final class RecipeDetailViewModel {
         errorMessage = nil
         do {
             try await ratingService.upsertMine(recipeId: recipeId, rating: rating, notes: notes.isEmpty ? nil : notes)
+            // Refresh the community list so the household average + my own row
+            // reflect the just-saved rating without a full reload.
+            if let refreshed = try? await ratingService.fetchReviews(recipeId: recipeId) {
+                reviews = refreshed
+            }
         } catch {
             errorMessage = ErrorPresenter.message(for: error)
         }

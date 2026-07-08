@@ -5,12 +5,13 @@ import Testing
 final class FakeAIService: AIServicing, @unchecked Sendable {
     private(set) var receivedPrompts: [String] = []
     var responseToReturn = "Here's a plan!"
+    var recipesToReturn: [AIRecipeRef] = []
     var errorToThrow: Error?
 
-    func sendMessage(_ prompt: String) async throws -> String {
+    func sendMessage(_ prompt: String) async throws -> AIChatResponse {
         receivedPrompts.append(prompt)
         if let errorToThrow { throw errorToThrow }
-        return responseToReturn
+        return AIChatResponse(text: responseToReturn, recipes: recipesToReturn)
     }
 }
 
@@ -64,6 +65,32 @@ struct AIPlannerViewModelTests {
         #expect(viewModel.messages.count == 1)
         #expect(viewModel.messages[0].role == .user)
         #expect(viewModel.errorMessage == "failed")
+    }
+
+    @Test func assistantReplyAttachesOnlyRecipesItNames() async {
+        let ai = FakeAIService()
+        ai.responseToReturn = "I'd go with the Beef Tacos tonight."
+        ai.recipesToReturn = [
+            AIRecipeRef(id: 2, title: "Beef Tacos"),      // named in the reply
+            AIRecipeRef(id: 9, title: "Chicken Alfredo"), // searched but not named
+        ]
+        let viewModel = AIPlannerViewModel(aiService: ai)
+        viewModel.inputText = "tacos please"
+
+        await viewModel.send()
+
+        #expect(viewModel.messages[1].recipes == [AIRecipeRef(id: 2, title: "Beef Tacos")])
+    }
+
+    @Test func recipesReferencedIsCaseInsensitiveAndDeduped() {
+        let text = "The beef TACOS are great, and beef tacos again."
+        let refs = [
+            AIRecipeRef(id: 2, title: "Beef Tacos"),
+            AIRecipeRef(id: 2, title: "Beef Tacos"),
+            AIRecipeRef(id: 5, title: "Sushi"),
+        ]
+        let result = AIPlannerViewModel.recipesReferenced(in: text, from: refs)
+        #expect(result == [AIRecipeRef(id: 2, title: "Beef Tacos")])
     }
 
     @Test func clearChatRemovesAllMessages() async {

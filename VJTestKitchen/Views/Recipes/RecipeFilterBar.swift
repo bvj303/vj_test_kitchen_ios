@@ -17,6 +17,7 @@ struct RecipeFilterBar: View {
         HStack(spacing: 8) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
+                    favoritesChip
                     prepTimeMenu
                     courseMenu
                     if !viewModel.cuisineTags.isEmpty {
@@ -52,6 +53,21 @@ struct RecipeFilterBar: View {
     }
 
     // MARK: - Menu chips
+
+    /// Toggle chip that narrows the list to the user's favorited recipes.
+    private var favoritesChip: some View {
+        Button {
+            viewModel.showFavoritesOnly.toggle()
+        } label: {
+            chipLabel(
+                "Favorites",
+                systemImage: viewModel.showFavoritesOnly ? "heart.fill" : "heart",
+                isOn: viewModel.showFavoritesOnly,
+                tint: .brandPrimary
+            )
+        }
+        .buttonStyle(.plain)
+    }
 
     private var prepTimeMenu: some View {
         Menu {

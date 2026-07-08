@@ -6,6 +6,7 @@ struct RecipeDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showingEditSheet = false
     @State private var showingAddToCalendar = false
+    @State private var showingCookMode = false
     /// Serving multiplier applied to ingredient quantities and the servings
     /// tile. 1 = original.
     @State private var scale: Double = 1
@@ -37,6 +38,9 @@ struct RecipeDetailView: View {
                 if let detail = viewModel.detail {
                     header(detail)
                     statsRow(detail)
+                    if hasCookableContent(detail) {
+                        cookButton(detail)
+                    }
                     if !detail.ingredients.isEmpty {
                         ingredientsSection(detail)
                     }
@@ -44,6 +48,7 @@ struct RecipeDetailView: View {
                         instructionsSection(instructions)
                     }
                     ratingSection
+                    communitySection
                 } else if viewModel.isLoading {
                     ProgressView().padding(.top, 80)
                 }
@@ -97,7 +102,19 @@ struct RecipeDetailView: View {
                     .presentationDetents([.medium, .large])
             }
         }
-        .task { await viewModel.load() }
+        .fullScreenCover(isPresented: $showingCookMode) {
+            if let detail = viewModel.detail {
+                CookModeView(detail: detail, scale: scale)
+            }
+        }
+        .task {
+            // Give the community list the signed-in user so it can omit the
+            // user's own review (shown in the personal editor above it).
+            if case .signedIn(let userId) = authViewModel.state {
+                viewModel.currentUserId = userId
+            }
+            await viewModel.load()
+        }
         .alert(
             "Something Went Wrong",
             isPresented: Binding(
@@ -330,7 +347,11 @@ struct RecipeDetailView: View {
 
     private var ratingSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("My Rating & Notes").font(.title3.bold()).foregroundStyle(Color.brandPrimary)
+            HStack {
+                Text("My Rating & Notes").font(.title3.bold()).foregroundStyle(Color.brandPrimary)
+                Spacer()
+                favoriteButton
+            }
 
             HStack(spacing: 4) {
                 ForEach(1...5, id: \.self) { star in
@@ -341,7 +362,9 @@ struct RecipeDetailView: View {
             }
             .font(.title3)
 
-            TextField("Notes (e.g. substitutions, tips)", text: $viewModel.notes, axis: .vertical)
+            // Notes are now visible to other household members (they power the
+            // "Household Ratings" comments below), so the field says so.
+            TextField("Notes & tips — visible to your household", text: $viewModel.notes, axis: .vertical)
                 .textFieldStyle(.roundedBorder)
                 .lineLimit(3...6)
 
@@ -352,5 +375,103 @@ struct RecipeDetailView: View {
         }
         .padding()
         .glassEffect(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+
+    /// Heart toggle beside the rating — the "favorites" affordance.
+    private var favoriteButton: some View {
+        Button {
+            Task { await viewModel.toggleFavorite() }
+        } label: {
+            Image(systemName: viewModel.isFavorite ? "heart.fill" : "heart")
+                .font(.title3)
+                .foregroundStyle(viewModel.isFavorite ? Color.brandPrimary : Color.secondary)
+                .symbolRenderingMode(.hierarchical)
+                .contentTransition(.symbolEffect(.replace))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(viewModel.isFavorite ? "Remove from Favorites" : "Add to Favorites")
+    }
+
+    // MARK: - Household ratings & comments (community)
+
+    @ViewBuilder
+    private var communitySection: some View {
+        let summary = viewModel.communitySummary
+        let others = viewModel.otherReviews
+        if summary.hasRatings || !others.isEmpty {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Household Ratings").font(.title3.bold()).foregroundStyle(Color.brandPrimary)
+                    Spacer()
+                    if summary.hasRatings {
+                        HStack(spacing: 4) {
+                            Image(systemName: "star.fill").foregroundStyle(Color.brandSaffron)
+                            Text(summary.averageText).font(.subheadline.weight(.semibold))
+                            Text("· \(summary.count) \(summary.count == 1 ? "rating" : "ratings")")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
+                if others.isEmpty {
+                    Text("No one else in your household has weighed in yet.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(others) { review in
+                        reviewRow(review)
+                    }
+                }
+            }
+            .padding()
+            .glassEffect(.regular.tint(Color.brandSaffron.opacity(0.08)), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        }
+    }
+
+    private func reviewRow(_ review: RecipeReview) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            AvatarView(avatarUrl: review.profile?.avatarUrl, name: review.reviewerName, size: 36)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    Text(review.reviewerName)
+                        .font(.subheadline.weight(.semibold))
+                    if let rating = review.rating {
+                        HStack(spacing: 1) {
+                            ForEach(1...5, id: \.self) { star in
+                                Image(systemName: star <= rating ? "star.fill" : "star")
+                                    .font(.caption2)
+                                    .foregroundStyle(Color.brandSaffron)
+                            }
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+                if review.hasComment, let notes = review.notes {
+                    Text(notes)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    // MARK: - Cook Mode
+
+    private func hasCookableContent(_ detail: RecipeDetail) -> Bool {
+        !detail.ingredients.isEmpty || (detail.instructions?.isEmpty == false)
+    }
+
+    private func cookButton(_ detail: RecipeDetail) -> some View {
+        Button {
+            showingCookMode = true
+        } label: {
+            Label("Start Cooking", systemImage: "flame.fill")
+                .font(.headline)
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.glassProminent)
+        .tint(Color.brandPrimary)
     }
 }

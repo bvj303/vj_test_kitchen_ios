@@ -21,7 +21,7 @@ struct PlanMealIntent: AppIntent {
     func perform() async throws -> some IntentResult & ProvidesDialog {
         do {
             let response = try await AIService().sendMessage(query)
-            return .result(dialog: IntentDialog(stringLiteral: response))
+            return .result(dialog: IntentDialog(stringLiteral: response.text))
         } catch {
             return .result(dialog: IntentDialog(
                 stringLiteral: "Sorry, I couldn't reach Kitchen Concierge. Open VJ Test Kitchen and make sure you're signed in, then try again."

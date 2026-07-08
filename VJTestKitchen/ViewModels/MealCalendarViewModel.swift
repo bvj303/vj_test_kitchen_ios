@@ -6,11 +6,20 @@ import Observation
 final class MealCalendarViewModel {
     static let mealTypes = ["Breakfast", "Lunch", "Dinner", "Snack"]
 
-    let weekDates: [String]
-    /// The "yyyy-MM-dd" string for today — always `weekDates.first`, since the
-    /// week is computed starting at the reference date. Kept explicit so the view
-    /// can highlight today without re-deriving it from `Date()`.
+    /// The 7 "yyyy-MM-dd" days currently shown. Starts at the reference date and
+    /// shifts a week at a time via the navigation methods, so the user can plan
+    /// ahead (or look back) instead of being stuck on the current week.
+    private(set) var weekDates: [String]
+    /// Whole weeks the visible window is offset from the reference week (0 = the
+    /// week containing today). Drives the ‹/› navigation and the "This Week" jump.
+    private(set) var weekOffset = 0
+    /// The "yyyy-MM-dd" string for the real today (from the reference date),
+    /// independent of which week is shown — so "today" only highlights when the
+    /// current week is in view.
     let todayDate: String
+
+    /// True when the visible window is the week containing today.
+    var isCurrentWeek: Bool { weekOffset == 0 }
     private(set) var matchingRecipes: [Recipe] = []
     private(set) var isLoading = false
     var errorMessage: String?
@@ -31,6 +40,8 @@ final class MealCalendarViewModel {
     private(set) var forecastByDate: [String: DailyForecast] = [:]
 
     private var mealPlansByDate: [String: [MealPlanWithRecipe]] = [:]
+    /// Kept so the week window can be recomputed for a new offset.
+    private let referenceDate: Date
     private let mealPlanService: MealPlanServicing
     private let recipeService: RecipeServicing
     private let weatherForecaster: WeatherForecasting
@@ -56,10 +67,33 @@ final class MealCalendarViewModel {
         self.locationProvider = locationProvider
         self.weatherPreferenceStore = weatherPreferenceStore
         self.debouncer = Debouncer(delay: debounceDelay)
-        let dates = Self.computeWeekDates(from: referenceDate)
+        self.referenceDate = referenceDate
+        let dates = Self.computeWeekDates(from: referenceDate, weekOffset: 0)
         weekDates = dates
         todayDate = dates[0]
         selectedPlanningDate = dates[0]
+    }
+
+    // MARK: - Week navigation
+
+    /// Move the visible window one week earlier.
+    func goToPreviousWeek() { shiftWeek(to: weekOffset - 1) }
+    /// Move the visible window one week later.
+    func goToNextWeek() { shiftWeek(to: weekOffset + 1) }
+    /// Jump back to the week containing today.
+    func goToThisWeek() { shiftWeek(to: 0) }
+
+    private func shiftWeek(to newOffset: Int) {
+        guard newOffset != weekOffset else { return }
+        weekOffset = newOffset
+        weekDates = Self.computeWeekDates(from: referenceDate, weekOffset: newOffset)
+        // Keep the Quick Planner's target day inside the visible week.
+        if !weekDates.contains(selectedPlanningDate) {
+            selectedPlanningDate = weekDates[0]
+        }
+        // Refresh the weather outlook for the newly-visible week (a no-op when
+        // weather is off; other weeks simply have no forecast data).
+        Task { await loadWeather() }
     }
 
     /// The forecast (if any) for the given "yyyy-MM-dd" string, so the schedule
@@ -161,11 +195,12 @@ final class MealCalendarViewModel {
         }
     }
 
-    private static func computeWeekDates(from date: Date) -> [String] {
+    private static func computeWeekDates(from date: Date, weekOffset: Int) -> [String] {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "UTC")!
+        let start = calendar.date(byAdding: .day, value: weekOffset * 7, to: date)!
         return (0..<7).map { offset in
-            let day = calendar.date(byAdding: .day, value: offset, to: date)!
+            let day = calendar.date(byAdding: .day, value: offset, to: start)!
             return MealPlan.dateFormatter.string(from: day)
         }
     }

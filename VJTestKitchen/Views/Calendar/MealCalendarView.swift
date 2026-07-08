@@ -117,16 +117,49 @@ struct MealCalendarView: View {
     // MARK: - Week header
 
     private var weekHeader: some View {
-        HStack {
+        HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Schedule")
+                Text(viewModel.isCurrentWeek ? "This Week" : "Schedule")
                     .font(.title2.weight(.bold))
                 Text(weekRangeLabel)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
-            Spacer()
+            Spacer(minLength: 0)
+            weekNavigation
         }
+    }
+
+    /// ‹ / › week stepper with a "Today" jump that appears only when the visible
+    /// window has moved off the current week.
+    private var weekNavigation: some View {
+        HStack(spacing: 8) {
+            weekArrow("chevron.left", label: "Previous week") { viewModel.goToPreviousWeek() }
+            if !viewModel.isCurrentWeek {
+                Button { viewModel.goToThisWeek() } label: {
+                    Text("Today")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Color.brandPrimary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .glassEffect(.regular.tint(Color.brandPrimary.opacity(0.22)), in: Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+            weekArrow("chevron.right", label: "Next week") { viewModel.goToNextWeek() }
+        }
+    }
+
+    private func weekArrow(_ systemImage: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Color.brandPrimary)
+                .frame(width: 34, height: 34)
+                .glassEffect(.regular.tint(Color.brandPrimary.opacity(0.12)), in: Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
     }
 
     // MARK: - Agenda list

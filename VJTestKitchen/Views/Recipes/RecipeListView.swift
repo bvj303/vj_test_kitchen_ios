@@ -26,9 +26,15 @@ struct RecipeListView: View {
                 Button {
                     onSelect(recipe)
                 } label: {
-                    RecipeRowView(recipe: recipe)
+                    RecipeRowView(recipe: recipe, isFavorite: viewModel.isFavorite(recipe))
                 }
                 .buttonStyle(.plain)
+                .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                    favoriteAction(recipe)
+                }
+                .contextMenu {
+                    favoriteAction(recipe)
+                }
                 .onAppear { Task { await viewModel.loadMoreIfNeeded(currentItem: recipe) } }
             }
             .listStyle(.plain)
@@ -74,11 +80,31 @@ struct RecipeListView: View {
         }
     }
 
+    /// Favorite/unfavorite button used by both the leading swipe and the
+    /// long-press context menu, so the action is discoverable two ways.
+    @ViewBuilder
+    private func favoriteAction(_ recipe: Recipe) -> some View {
+        let isFavorite = viewModel.isFavorite(recipe)
+        Button {
+            Task { await viewModel.toggleFavorite(recipe) }
+        } label: {
+            Label(isFavorite ? "Unfavorite" : "Favorite",
+                  systemImage: isFavorite ? "heart.slash" : "heart")
+        }
+        .tint(Color.brandPrimary)
+    }
+
     // MARK: - Empty state
 
     @ViewBuilder
     private func emptyState(viewModel: RecipeListViewModel) -> some View {
-        if viewModel.isFilteringOrSearching {
+        if viewModel.showFavoritesOnly {
+            ContentUnavailableView(
+                "No Favorites Yet",
+                systemImage: "heart",
+                description: Text("Tap the heart on a recipe (or swipe a row) to add it here.")
+            )
+        } else if viewModel.isFilteringOrSearching {
             ContentUnavailableView(
                 "No Matching Recipes",
                 systemImage: "line.3.horizontal.decrease.circle",
