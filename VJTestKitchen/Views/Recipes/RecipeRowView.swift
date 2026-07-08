@@ -25,8 +25,8 @@ struct RecipeRowView: View {
                 }
 
                 HStack(spacing: 12) {
-                    if let prepTime = recipe.prepTime {
-                        Label(PrepTimeFormat.string(minutes: prepTime), systemImage: "clock")
+                    if let prepLabel = PrepTimeFormat.label(minutes: recipe.prepTime) {
+                        Label(prepLabel, systemImage: "clock")
                     }
                     if let servings = recipe.servings {
                         Label("\(servings)", systemImage: "person.2")
