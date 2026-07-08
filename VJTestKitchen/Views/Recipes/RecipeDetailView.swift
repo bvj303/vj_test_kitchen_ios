@@ -47,8 +47,7 @@ struct RecipeDetailView: View {
                     if let instructions = detail.instructions, !instructions.isEmpty {
                         instructionsSection(instructions)
                     }
-                    ratingSection
-                    communitySection
+                    reviewsSection
                 } else if viewModel.isLoading {
                     ProgressView().padding(.top, 80)
                 }
@@ -345,39 +344,81 @@ struct RecipeDetailView: View {
         }
     }
 
-    private var ratingSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+    /// One unified "Ratings & Reviews" card: the current user's editable rating
+    /// and notes at the top, then — directly below, in the same card — the rest
+    /// of the household's comments, so your review and everyone else's read as a
+    /// single streamlined thread rather than two separate boxes.
+    private var reviewsSection: some View {
+        let summary = viewModel.communitySummary
+        let others = viewModel.otherReviews
+        return VStack(alignment: .leading, spacing: 16) {
             HStack {
-                Text("My Rating & Notes").font(.title3.bold()).foregroundStyle(Color.brandPrimary)
+                Text("Ratings & Reviews").font(.title3.bold()).foregroundStyle(Color.brandPrimary)
                 Spacer()
                 favoriteButton
             }
 
-            HStack(spacing: 4) {
-                ForEach(1...5, id: \.self) { star in
-                    Image(systemName: star <= (viewModel.rating ?? 0) ? "star.fill" : "star")
-                        .foregroundStyle(Color.brandSaffron)
-                        .onTapGesture { viewModel.rating = star }
+            // Your own review.
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 4) {
+                    ForEach(1...5, id: \.self) { star in
+                        Image(systemName: star <= (viewModel.rating ?? 0) ? "star.fill" : "star")
+                            .foregroundStyle(Color.brandSaffron)
+                            .onTapGesture { viewModel.rating = star }
+                    }
+                }
+                .font(.title3)
+
+                // Notes are visible to other household members (they show as the
+                // comments below), so the field says so.
+                TextField("Notes & tips — visible to your household", text: $viewModel.notes, axis: .vertical)
+                    .textFieldStyle(.roundedBorder)
+                    .lineLimit(3...6)
+
+                Button("Save") {
+                    Task { await viewModel.saveRating() }
+                }
+                .buttonStyle(.glassProminent)
+            }
+
+            // The rest of the household, streamlined right beneath your review.
+            if summary.hasRatings || !others.isEmpty {
+                Divider()
+
+                HStack(alignment: .firstTextBaseline) {
+                    Text("From your household")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    if summary.hasRatings {
+                        HStack(spacing: 4) {
+                            Image(systemName: "star.fill").font(.caption).foregroundStyle(Color.brandSaffron)
+                            Text(summary.averageText).font(.subheadline.weight(.semibold))
+                            Text("· \(summary.count) \(summary.count == 1 ? "rating" : "ratings")")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
+                if others.isEmpty {
+                    Text("No one else has weighed in yet.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                } else {
+                    VStack(alignment: .leading, spacing: 16) {
+                        ForEach(others) { review in
+                            reviewRow(review)
+                        }
+                    }
                 }
             }
-            .font(.title3)
-
-            // Notes are now visible to other household members (they power the
-            // "Household Ratings" comments below), so the field says so.
-            TextField("Notes & tips — visible to your household", text: $viewModel.notes, axis: .vertical)
-                .textFieldStyle(.roundedBorder)
-                .lineLimit(3...6)
-
-            Button("Save") {
-                Task { await viewModel.saveRating() }
-            }
-            .buttonStyle(.glassProminent)
         }
         .padding()
         .glassEffect(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
-    /// Heart toggle beside the rating — the "favorites" affordance.
+    /// Heart toggle beside the ratings — the "favorites" affordance.
     private var favoriteButton: some View {
         Button {
             Task { await viewModel.toggleFavorite() }
@@ -392,43 +433,7 @@ struct RecipeDetailView: View {
         .accessibilityLabel(viewModel.isFavorite ? "Remove from Favorites" : "Add to Favorites")
     }
 
-    // MARK: - Household ratings & comments (community)
-
-    @ViewBuilder
-    private var communitySection: some View {
-        let summary = viewModel.communitySummary
-        let others = viewModel.otherReviews
-        if summary.hasRatings || !others.isEmpty {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text("Household Ratings").font(.title3.bold()).foregroundStyle(Color.brandPrimary)
-                    Spacer()
-                    if summary.hasRatings {
-                        HStack(spacing: 4) {
-                            Image(systemName: "star.fill").foregroundStyle(Color.brandSaffron)
-                            Text(summary.averageText).font(.subheadline.weight(.semibold))
-                            Text("· \(summary.count) \(summary.count == 1 ? "rating" : "ratings")")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-
-                if others.isEmpty {
-                    Text("No one else in your household has weighed in yet.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(others) { review in
-                        reviewRow(review)
-                    }
-                }
-            }
-            .padding()
-            .glassEffect(.regular.tint(Color.brandSaffron.opacity(0.08)), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        }
-    }
-
+    /// One household member's comment: avatar, name + inline stars, then their note.
     private func reviewRow(_ review: RecipeReview) -> some View {
         HStack(alignment: .top, spacing: 12) {
             AvatarView(avatarUrl: review.profile?.avatarUrl, name: review.reviewerName, size: 36)
