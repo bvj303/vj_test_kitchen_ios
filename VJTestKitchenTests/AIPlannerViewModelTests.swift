@@ -3,13 +3,17 @@ import Testing
 @testable import VJTestKitchen
 
 final class FakeAIService: AIServicing, @unchecked Sendable {
-    private(set) var receivedPrompts: [String] = []
+    /// The full conversation sent on each call.
+    private(set) var receivedHistories: [[AIChatTurn]] = []
+    /// Convenience view: the latest user message content of each call, so existing
+    /// assertions that only care about "what did the user ask" stay simple.
+    var receivedPrompts: [String] { receivedHistories.map { $0.last?.content ?? "" } }
     var responseToReturn = "Here's a plan!"
     var recipesToReturn: [AIRecipeRef] = []
     var errorToThrow: Error?
 
-    func sendMessage(_ prompt: String) async throws -> AIChatResponse {
-        receivedPrompts.append(prompt)
+    func sendMessage(_ history: [AIChatTurn]) async throws -> AIChatResponse {
+        receivedHistories.append(history)
         if let errorToThrow { throw errorToThrow }
         return AIChatResponse(text: responseToReturn, recipes: recipesToReturn)
     }
@@ -41,6 +45,38 @@ struct AIPlannerViewModelTests {
         #expect(viewModel.messages[1].content == "Try the Carbonara!")
         #expect(viewModel.inputText.isEmpty)
         #expect(viewModel.errorMessage == nil)
+    }
+
+    @Test func sendPassesFullConversationHistorySoFollowUpsHaveContext() async {
+        let ai = FakeAIService()
+        ai.responseToReturn = "Try the Kale Salad."
+        let viewModel = AIPlannerViewModel(aiService: ai)
+
+        viewModel.inputText = "something healthy"
+        await viewModel.send()
+
+        viewModel.inputText = "something else"
+        await viewModel.send()
+
+        // First call carries just the opening user turn…
+        #expect(ai.receivedHistories[0] == [.user("something healthy")])
+        // …the second carries the whole conversation so far, ending on the new
+        // user turn — this is what lets the concierge avoid repeating itself.
+        #expect(ai.receivedHistories[1] == [
+            .user("something healthy"),
+            .assistant("Try the Kale Salad."),
+            .user("something else"),
+        ])
+    }
+
+    @Test func historyPayloadCapsToMostRecentTurns() {
+        let messages = (1...20).map { i in
+            AIPlannerViewModel.ChatMessage(role: .user, content: "msg \(i)")
+        }
+        let payload = AIPlannerViewModel.historyPayload(from: messages, maxTurns: 12)
+        #expect(payload.count == 12)
+        #expect(payload.first == .user("msg 9"))
+        #expect(payload.last == .user("msg 20"))
     }
 
     @Test func sendIgnoresBlankInput() async {
