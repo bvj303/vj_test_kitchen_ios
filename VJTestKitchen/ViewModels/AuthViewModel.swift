@@ -52,12 +52,22 @@ final class AuthViewModel {
     /// sign-up screen. Cleared when they leave the flow or sign in.
     private(set) var awaitingEmailConfirmation = false
 
-    /// Gates the Create Profile screen's "Next" button — first/last name are
-    /// required, and the username must have passed the availability check.
+    /// True once the profile fields are valid — first/last name present and the
+    /// username has passed the availability check. Building block for
+    /// `canSubmitSignUp` (and previously the multi-step flow's "Next" gate).
     var canProceedToAccountStep: Bool {
         !firstName.trimmingCharacters(in: .whitespaces).isEmpty
             && !lastName.trimmingCharacters(in: .whitespaces).isEmpty
             && usernameAvailability == .available
+    }
+
+    /// Gates the consolidated Create Account form's submit button: the profile
+    /// fields above plus a non-empty email and a password meeting the minimum
+    /// length. The single-page sign-up form replaces the old two-step flow.
+    var canSubmitSignUp: Bool {
+        canProceedToAccountStep
+            && !email.trimmingCharacters(in: .whitespaces).isEmpty
+            && password.count >= Self.minimumPasswordLength
     }
 
     private let authService: AuthServicing
