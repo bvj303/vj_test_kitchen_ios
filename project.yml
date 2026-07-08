@@ -51,6 +51,13 @@ targets:
         INFOPLIST_FILE: VJTestKitchen/Resources/Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        # On-device signing. Baked into the spec (not Xcode's Signing & Capabilities
+        # UI) because the .xcodeproj is generated from this file and any UI change
+        # would be lost on the next `xcodegen generate`. 89R449GG5Z is Brendan's
+        # free Personal Team — swap for the paid Developer Program team ID once
+        # active (year-long vs. 7-day provisioning). Simulator builds ignore this.
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 89R449GG5Z
     dependencies:
       - package: Supabase
         product: Supabase
