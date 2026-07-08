@@ -29,8 +29,23 @@ struct GroceryListView: View {
                         .accessibilityLabel("List Options")
                     }
                 }
+                #if os(macOS)
+                // macOS has no thumb-reach argument for a floating FAB, and the
+                // bottom-trailing overlay anchors to the centered empty-state
+                // view — landing the "+" in the middle of the window. Use a
+                // standard toolbar button instead, matching the Recipes list.
+                ToolbarItem(placement: .platformPrimaryAction) {
+                    Button {
+                        showingAddItem = true
+                    } label: {
+                        Label("Add Item", systemImage: "plus")
+                    }
+                }
+                #endif
             }
+            #if os(iOS)
             .overlay(alignment: .bottomTrailing) { addButton }
+            #endif
             .task { await viewModel.load() }
             .refreshable { await viewModel.load() }
             .sheet(isPresented: $showingAddItem) {
