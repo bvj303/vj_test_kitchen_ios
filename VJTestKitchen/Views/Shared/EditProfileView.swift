@@ -3,8 +3,8 @@ import PhotosUI
 
 /// Pushed from ProfileView's "Edit Profile" row. Loads the signed-in user's
 /// current first/last name and username, and lets them change any of the
-/// three — mirrors CreateProfileView's fields, but as an edit rather than
-/// the first step of sign-up. Also lets them set a profile picture, which
+/// three — mirrors the profile fields on the Create Account form, but as an
+/// edit rather than sign-up. Also lets them set a profile picture, which
 /// uploads immediately on selection (independent of Save).
 struct EditProfileView: View {
     // Injected so ProfileView can share one instance — an avatar uploaded here
