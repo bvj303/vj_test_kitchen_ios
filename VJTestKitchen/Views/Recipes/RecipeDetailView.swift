@@ -3,15 +3,24 @@ import SwiftUI
 struct RecipeDetailView: View {
     @State private var viewModel: RecipeDetailViewModel
     @Environment(AuthViewModel.self) private var authViewModel
+    @Environment(\.dismiss) private var dismiss
     @State private var showingEditSheet = false
     @State private var showingAddToCalendar = false
     /// Serving multiplier applied to ingredient quantities and the servings
     /// tile. 1 = original.
     @State private var scale: Double = 1
+    @State private var wasDeleted = false
     let recipeId: Int64
 
-    init(recipeId: Int64) {
+    /// Called when the recipe is deleted, so a coordinating parent can drop it
+    /// from its state — clearing the split-view selection and reloading the list
+    /// so the now-deleted row can't be tapped into a broken detail. Independent
+    /// of `dismiss()`, which pops this view when it was pushed (iPhone / Home).
+    var onDeleted: (() -> Void)?
+
+    init(recipeId: Int64, onDeleted: (() -> Void)? = nil) {
         self.recipeId = recipeId
+        self.onDeleted = onDeleted
         _viewModel = State(initialValue: RecipeDetailViewModel(recipeId: recipeId))
     }
 
@@ -66,9 +75,20 @@ struct RecipeDetailView: View {
                 }
             }
         }
-        .sheet(isPresented: $showingEditSheet, onDismiss: { Task { await viewModel.load() } }) {
+        .sheet(isPresented: $showingEditSheet, onDismiss: {
+            // If the recipe was deleted from the edit sheet, it's gone — tell the
+            // parent to drop it and pop back, rather than reloading a row that no
+            // longer exists (whose `.single()` fetch would fail). Otherwise
+            // refresh the detail to reflect any saved edits.
+            if wasDeleted {
+                onDeleted?()
+                dismiss()
+            } else {
+                Task { await viewModel.load() }
+            }
+        }) {
             NavigationStack {
-                RecipeFormView(mode: .edit(recipeId: recipeId))
+                RecipeFormView(mode: .edit(recipeId: recipeId), onDeleted: { wasDeleted = true })
             }
         }
         .sheet(isPresented: $showingAddToCalendar) {
@@ -251,26 +271,59 @@ struct RecipeDetailView: View {
         }
     }
 
+    /// A single rendered instruction row: either a component subheading (from an
+    /// ATK `**FOR THE X:**` marker) or a numbered step. Step numbers restart at 1
+    /// after each header, so a multi-component recipe reads as distinct sections.
+    private enum InstructionRow {
+        case header(String)
+        case step(number: Int, text: String)
+    }
+
+    private func instructionRows(_ instructions: String) -> [(id: Int, row: InstructionRow)] {
+        var rows: [(id: Int, row: InstructionRow)] = []
+        var stepNumber = 0
+        for element in RecipeInstructions.elements(from: instructions) {
+            switch element {
+            case let .header(title):
+                stepNumber = 0
+                rows.append((rows.count, .header(title)))
+            case let .step(text):
+                stepNumber += 1
+                rows.append((rows.count, .step(number: stepNumber, text: text)))
+            }
+        }
+        return rows
+    }
+
     @ViewBuilder
     private func instructionsSection(_ instructions: String) -> some View {
-        let steps = RecipeInstructions.steps(from: instructions)
+        let rows = instructionRows(instructions)
+        let stepCount = rows.filter { if case .step = $0.row { return true } else { return false } }.count
         VStack(alignment: .leading, spacing: 12) {
             Text("Instructions").font(.title3.bold()).foregroundStyle(Color.brandPrimary)
-            if steps.count > 1 {
-                ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
-                    HStack(alignment: .firstTextBaseline, spacing: 12) {
-                        Text("\(index + 1)")
-                            .font(.subheadline.weight(.bold))
+            if stepCount > 1 || rows.contains(where: { if case .header = $0.row { return true } else { return false } }) {
+                ForEach(rows, id: \.id) { entry in
+                    switch entry.row {
+                    case let .header(title):
+                        Text(title)
+                            .font(.headline)
                             .foregroundStyle(Color.brandPrimary)
-                            .frame(width: 28, height: 28)
-                            .glassEffect(.regular.tint(Color.brandPrimary.opacity(0.22)), in: Circle())
-                        Text(step)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.top, 4)
+                    case let .step(number, text):
+                        HStack(alignment: .firstTextBaseline, spacing: 12) {
+                            Text("\(number)")
+                                .font(.subheadline.weight(.bold))
+                                .foregroundStyle(Color.brandPrimary)
+                                .frame(width: 28, height: 28)
+                                .glassEffect(.regular.tint(Color.brandPrimary.opacity(0.22)), in: Circle())
+                            Text(text)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
                     }
                 }
             } else {
                 // Single unbroken paragraph — nothing to number.
-                Text(steps.first ?? instructions)
+                Text(rows.first.flatMap { if case let .step(_, text) = $0.row { return text } else { return nil } } ?? instructions)
             }
         }
     }

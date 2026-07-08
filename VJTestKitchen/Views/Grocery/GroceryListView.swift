@@ -92,8 +92,8 @@ struct GroceryListView: View {
                 List {
                     ForEach(viewModel.groups) { group in
                         Section {
-                            ForEach(group.items) { item in
-                                row(item)
+                            ForEach(group.rows) { row in
+                                rowView(row)
                             }
                         } header: {
                             Label(group.title, systemImage: group.systemImage)
@@ -123,19 +123,19 @@ struct GroceryListView: View {
         .accessibilityLabel("Add Item")
     }
 
-    private func row(_ item: GroceryItem) -> some View {
+    private func rowView(_ row: GroceryDisplayRow) -> some View {
         Button {
-            Task { await viewModel.toggleChecked(item) }
+            Task { await viewModel.toggleChecked(row) }
         } label: {
             HStack(spacing: 12) {
-                Image(systemName: item.isChecked ? "checkmark.circle.fill" : "circle")
+                Image(systemName: row.isChecked ? "checkmark.circle.fill" : "circle")
                     .font(.title3)
-                    .foregroundStyle(item.isChecked ? Color.brandSage : Color.secondary)
-                Text(item.name)
-                    .strikethrough(item.isChecked)
-                    .foregroundStyle(item.isChecked ? .secondary : .primary)
+                    .foregroundStyle(row.isChecked ? Color.brandSage : Color.secondary)
+                Text(row.name)
+                    .strikethrough(row.isChecked)
+                    .foregroundStyle(row.isChecked ? .secondary : .primary)
                 Spacer()
-                Text(GroceryListViewModel.formattedQuantity(amount: item.amount, unit: item.unit))
+                Text(row.quantityText)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -144,7 +144,7 @@ struct GroceryListView: View {
         .buttonStyle(.plain)
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button(role: .destructive) {
-                Task { await viewModel.delete(item) }
+                Task { await viewModel.delete(row) }
             } label: {
                 Label("Delete", systemImage: "trash")
             }
@@ -153,7 +153,7 @@ struct GroceryListView: View {
             Menu {
                 ForEach(GroceryCategory.allCases) { category in
                     Button {
-                        Task { await viewModel.setCategory(item, to: category) }
+                        Task { await viewModel.setCategory(row, to: category) }
                     } label: {
                         Label(category.displayName, systemImage: category.systemImage)
                     }
@@ -162,11 +162,11 @@ struct GroceryListView: View {
                 Label("Move to Category", systemImage: "tray.full")
             }
             Button(role: .destructive) {
-                Task { await viewModel.delete(item) }
+                Task { await viewModel.delete(row) }
             } label: {
                 Label("Delete", systemImage: "trash")
             }
         }
-        .accessibilityLabel("\(item.name), \(item.isChecked ? "checked" : "not checked")")
+        .accessibilityLabel("\(row.name), \(row.isChecked ? "checked" : "not checked")")
     }
 }
