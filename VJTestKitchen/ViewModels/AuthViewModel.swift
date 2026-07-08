@@ -135,6 +135,20 @@ final class AuthViewModel {
         await perform { try await authService.signOut() }
     }
 
+    /// Handles an auth deep link opened from an email (the sign-up confirmation
+    /// link). On success the session is established and `userIdChanges` moves the
+    /// app to signed-in; the awaiting-confirmation state is cleared. A URL that
+    /// isn't a valid/current auth callback is ignored rather than surfacing a
+    /// scary error (e.g. a link tapped twice, or an unrelated deep link).
+    func handleAuthCallback(url: URL) async {
+        do {
+            try await authService.handleAuthCallback(url: url)
+            awaitingEmailConfirmation = false
+        } catch {
+            // Intentionally silent — see doc comment.
+        }
+    }
+
     func deleteAccount() async {
         await perform { try await authService.deleteAccount() }
     }
