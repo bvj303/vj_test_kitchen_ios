@@ -55,10 +55,12 @@ final class RecipeDetailViewModel {
     /// Adds a single ingredient to the account-synced grocery list as a
     /// standalone item, tagged with this recipe as its source so the grocery
     /// screen's "by recipe" view can group it. Category is auto-guessed.
-    func addIngredientToGroceryList(_ ingredient: Ingredient) async {
+    /// `scale` mirrors the detail screen's serving scaler so the shopping
+    /// quantity matches what the user is actually cooking.
+    func addIngredientToGroceryList(_ ingredient: Ingredient, scale: Double = 1) async {
         guard let detail else { return }
         do {
-            _ = try await groceryItemService.add(draft(for: ingredient, in: detail))
+            _ = try await groceryItemService.add(draft(for: ingredient, in: detail, scale: scale))
             addedIngredientIds.insert(ingredient.id)
         } catch {
             errorMessage = ErrorPresenter.message(for: error)
@@ -66,9 +68,9 @@ final class RecipeDetailViewModel {
     }
 
     /// Adds every ingredient at once, each tagged to this recipe.
-    func addAllIngredientsToGroceryList() async {
+    func addAllIngredientsToGroceryList(scale: Double = 1) async {
         guard let detail, !detail.ingredients.isEmpty else { return }
-        let drafts = detail.ingredients.map { draft(for: $0, in: detail) }
+        let drafts = detail.ingredients.map { draft(for: $0, in: detail, scale: scale) }
         do {
             _ = try await groceryItemService.addMany(drafts)
             didAddAllToGroceryList = true
@@ -78,12 +80,17 @@ final class RecipeDetailViewModel {
         }
     }
 
-    private func draft(for ingredient: Ingredient, in detail: RecipeDetail) -> GroceryItemDraft {
-        GroceryItemDraft(
-            name: ingredient.name,
-            amount: ingredient.amount,
-            unit: ingredient.unit,
-            category: GroceryCategorizer.categorize(ingredient.name),
+    private func draft(for ingredient: Ingredient, in detail: RecipeDetail, scale: Double) -> GroceryItemDraft {
+        // Normalize through IngredientAmount so the imported mixed-number bug
+        // (fraction + unit stuck in `name`) doesn't leak into the grocery list,
+        // and categorization runs on the clean name.
+        let amount = IngredientAmount(amount: ingredient.amount, unit: ingredient.unit, name: ingredient.name)
+            .scaled(by: scale)
+        return GroceryItemDraft(
+            name: amount.name,
+            amount: amount.value,
+            unit: amount.unit,
+            category: GroceryCategorizer.categorize(amount.name),
             sourceRecipeId: detail.id,
             sourceRecipeTitle: detail.title
         )

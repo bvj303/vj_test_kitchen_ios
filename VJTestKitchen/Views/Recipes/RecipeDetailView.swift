@@ -6,6 +6,9 @@ struct RecipeDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showingEditSheet = false
     @State private var showingAddToCalendar = false
+    /// Serving multiplier applied to ingredient quantities and the servings
+    /// tile. 1 = original.
+    @State private var scale: Double = 1
     @State private var wasDeleted = false
     let recipeId: Int64
 
@@ -56,6 +59,9 @@ struct RecipeDetailView: View {
             // its title.
             if viewModel.detail != nil {
                 ToolbarItem(placement: .topBarTrailing) {
+                    scaleMenu
+                }
+                ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         showingAddToCalendar = true
                     } label: {
@@ -105,6 +111,34 @@ struct RecipeDetailView: View {
         }
     }
 
+    /// Short "×N" label for the current scale, e.g. "½×", "1×", "2×".
+    private var scaleLabel: String {
+        "\(IngredientAmount.format(scale))×"
+    }
+
+    /// Top-right menu to halve/double/triple the recipe. Scaling multiplies
+    /// ingredient quantities and the servings tile live.
+    private var scaleMenu: some View {
+        Menu {
+            Picker("Scale Recipe", selection: $scale) {
+                Text("Half (½×)").tag(0.5)
+                Text("Original (1×)").tag(1.0)
+                Text("Double (2×)").tag(2.0)
+                Text("Triple (3×)").tag(3.0)
+            }
+        } label: {
+            if scale == 1 {
+                Label("Scale Recipe", systemImage: "slider.horizontal.3")
+            } else {
+                // Show the active multiplier so it's clear the recipe is scaled.
+                Text(scaleLabel)
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(Color.brandPrimary)
+            }
+        }
+        .accessibilityLabel("Scale Recipe")
+    }
+
     @ViewBuilder
     private func heroImage(_ detail: RecipeDetail) -> some View {
         let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
@@ -145,9 +179,8 @@ struct RecipeDetailView: View {
         VStack(alignment: .leading, spacing: 12) {
             heroImage(detail)
 
-            Text(detail.title)
-                .font(.largeTitle.bold())
-
+            // The recipe title lives in the (inline) navigation bar — no second
+            // large title here, which keeps the header from feeling cramped.
             if !detail.tagNames.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
@@ -177,7 +210,11 @@ struct RecipeDetailView: View {
                 statTile(icon: "clock", value: PrepTimeFormat.string(minutes: prepTime), label: "Prep Time")
             }
             if let servings = detail.servings {
-                statTile(icon: "person.2", value: "\(servings)", label: "Servings")
+                statTile(
+                    icon: "person.2",
+                    value: IngredientAmount.format(Double(servings) * scale),
+                    label: scale == 1 ? "Servings" : "Servings (\(scaleLabel))"
+                )
             }
         }
     }
@@ -201,7 +238,7 @@ struct RecipeDetailView: View {
                 Text("Ingredients").font(.title3.bold()).foregroundStyle(Color.brandPrimary)
                 Spacer()
                 Button {
-                    Task { await viewModel.addAllIngredientsToGroceryList() }
+                    Task { await viewModel.addAllIngredientsToGroceryList(scale: scale) }
                 } label: {
                     Label(viewModel.didAddAllToGroceryList ? "Added" : "Add All",
                           systemImage: viewModel.didAddAllToGroceryList ? "checkmark.circle.fill" : "cart.badge.plus")
@@ -211,32 +248,27 @@ struct RecipeDetailView: View {
                 .disabled(viewModel.didAddAllToGroceryList)
             }
             ForEach(detail.ingredients) { ingredient in
+                let amount = IngredientAmount(amount: ingredient.amount, unit: ingredient.unit, name: ingredient.name)
+                    .scaled(by: scale)
                 HStack(alignment: .firstTextBaseline) {
-                    Text(formattedAmount(ingredient))
+                    Text(amount.formatted)
                         .foregroundStyle(.secondary)
-                        .frame(width: 90, alignment: .leading)
-                    Text(ingredient.name)
+                        .frame(width: 96, alignment: .leading)
+                    Text(amount.name)
                     Spacer()
                     Button {
-                        Task { await viewModel.addIngredientToGroceryList(ingredient) }
+                        Task { await viewModel.addIngredientToGroceryList(ingredient, scale: scale) }
                     } label: {
                         Image(systemName: viewModel.addedIngredientIds.contains(ingredient.id) ? "checkmark.circle.fill" : "plus.circle")
                             .foregroundStyle(Color.brandSage)
                     }
                     .buttonStyle(.plain)
                     .disabled(viewModel.addedIngredientIds.contains(ingredient.id))
-                    .accessibilityLabel("Add \(ingredient.name) to Grocery List")
+                    .accessibilityLabel("Add \(amount.name) to Grocery List")
                 }
                 .font(.subheadline)
             }
         }
-    }
-
-    private func formattedAmount(_ ingredient: Ingredient) -> String {
-        let amountText = ingredient.amount == ingredient.amount.rounded()
-            ? String(Int(ingredient.amount))
-            : String(format: "%.2f", ingredient.amount)
-        return ingredient.unit.isEmpty ? amountText : "\(amountText) \(ingredient.unit)"
     }
 
     /// A single rendered instruction row: either a component subheading (from an
