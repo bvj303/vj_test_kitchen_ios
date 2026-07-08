@@ -48,6 +48,12 @@ struct MainTabView: View {
             selection = requested
             appCommands.pendingTab = nil
         }
+        // Mirror the visible tab into the command bus so context-aware commands
+        // (⌘N) know which screen to act on. Seed it once on appear, then track.
+        .onAppear { appCommands.currentTab = selection }
+        .onChange(of: selection) { _, newValue in
+            appCommands.currentTab = newValue
+        }
     }
 }
 
