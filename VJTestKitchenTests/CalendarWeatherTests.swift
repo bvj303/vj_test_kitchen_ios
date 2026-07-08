@@ -70,13 +70,22 @@ func makeHomeLocation(zip: String? = "02139", lat: Double = 42.36, lon: Double =
     HomeLocation(postalCode: zip, coordinate: Coordinate(latitude: lat, longitude: lon))
 }
 
-func makeForecast(date: String, symbol: String = "sun.max.fill", high: Double = 80, low: Double = 60) -> DailyForecast {
+func makeForecast(
+    date: String,
+    symbol: String = "sun.max.fill",
+    condition: String = "Clear",
+    category: WeatherCategory = .clear,
+    high: Double = 80,
+    low: Double = 60,
+    unit: UnitTemperature = .fahrenheit
+) -> DailyForecast {
     DailyForecast(
         date: date,
         symbolName: symbol,
-        condition: "Clear",
-        highTemperature: Measurement(value: high, unit: .fahrenheit),
-        lowTemperature: Measurement(value: low, unit: .fahrenheit)
+        condition: condition,
+        category: category,
+        highTemperature: Measurement(value: high, unit: unit),
+        lowTemperature: Measurement(value: low, unit: unit)
     )
 }
 
