@@ -10,6 +10,22 @@
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
+	<!-- Custom URL scheme so Supabase email-confirmation links redirect back
+	     into the app (vjtestkitchen://login-callback) instead of a dead web
+	     page. Handled in VJTestKitchenApp's .onOpenURL. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.bvj303.vjtestkitchen.auth</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>vjtestkitchen</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleName</key>
 	<string>$(PRODUCT_NAME)</string>
 	<key>CFBundlePackageType</key>
