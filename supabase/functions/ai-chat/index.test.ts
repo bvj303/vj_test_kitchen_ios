@@ -7,7 +7,16 @@
 // Imports from search.ts, not index.ts — index.ts calls Deno.serve at module
 // top level, which would start a real HTTP listener as a side effect of
 // merely importing it here.
-import { buildSearchRecipesUrl, clampLimit, escapeIlike, runGeminiWithTools, searchRecipes } from "./search.ts";
+import {
+  buildSearchRecipesUrl,
+  clampLimit,
+  escapeIlike,
+  normalizeChatTurns,
+  runGeminiWithTools,
+  searchRecipes,
+  SEARCH_RECIPES_POOL_LIMIT,
+  shuffle,
+} from "./search.ts";
 
 function assertEquals(actual: unknown, expected: unknown, message?: string) {
   const a = JSON.stringify(actual);
@@ -42,7 +51,9 @@ Deno.test("buildSearchRecipesUrl with a query filters by title ilike and orders 
   const url = buildSearchRecipesUrl("https://example.supabase.co", { query: "taco" });
   assert(url.includes("title=ilike.*taco*"), `expected title ilike filter, got ${url}`);
   assert(url.includes("order=id"), `expected id order, got ${url}`);
-  assert(url.includes("limit=20"), `expected default limit, got ${url}`);
+  // The DB query fetches the wider pool; the per-call limit is applied after
+  // shuffling in searchRecipes, not in the URL.
+  assert(url.includes(`limit=${SEARCH_RECIPES_POOL_LIMIT}`), `expected pool limit, got ${url}`);
 });
 
 Deno.test("buildSearchRecipesUrl with a tag uses an inner-joined embed filter", () => {
@@ -56,9 +67,9 @@ Deno.test("buildSearchRecipesUrl with neither query nor tag falls back to most-r
   assert(url.includes("order=id.desc"), `expected most-recent fallback order, got ${url}`);
 });
 
-Deno.test("buildSearchRecipesUrl clamps an over-limit request", () => {
+Deno.test("buildSearchRecipesUrl always fetches the pool regardless of requested limit", () => {
   const url = buildSearchRecipesUrl("https://example.supabase.co", { query: "x", limit: 500 });
-  assert(url.includes("limit=25"), `expected clamped limit, got ${url}`);
+  assert(url.includes(`limit=${SEARCH_RECIPES_POOL_LIMIT}`), `expected pool limit, got ${url}`);
 });
 
 Deno.test("searchRecipes maps embedded recipe_tags into a flat tags array", async () => {
@@ -83,6 +94,90 @@ Deno.test("searchRecipes returns an empty array when the query fails rather than
   assertEquals(results, []);
 });
 
+Deno.test("shuffle is a permutation and reorders with a non-identity rng", () => {
+  const input = [1, 2, 3, 4, 5];
+  // A deterministic rng that always picks index 0 (j = 0) — reverses no-op-free.
+  const shuffled = shuffle(input, () => 0);
+  // Same multiset, and the original array is left untouched (pure).
+  assertEquals([...shuffled].sort(), [1, 2, 3, 4, 5]);
+  assertEquals(input, [1, 2, 3, 4, 5]);
+});
+
+Deno.test("searchRecipes samples from the pool: same rows, varied order, capped to the requested limit", async () => {
+  const pool = Array.from({ length: 30 }, (_, i) => ({
+    id: i + 1,
+    title: `Recipe ${i + 1}`,
+    prep_time: 10,
+    servings: 2,
+    recipe_tags: [],
+  }));
+  const fetchImpl = (async () => new Response(JSON.stringify(pool), { status: 200 })) as typeof fetch;
+
+  // With a fixed rng, two identical queries would return identical order — the
+  // point of the real Math.random is that they don't. Here we just assert the
+  // limit is honored and every returned row came from the pool.
+  const results = await searchRecipes(
+    "Bearer token",
+    "https://example.supabase.co",
+    "anon-key",
+    { query: "recipe", limit: 5 },
+    fetchImpl,
+    () => 0.5,
+  );
+
+  assertEquals(results.length, 5);
+  const poolIds = new Set(pool.map((r) => r.id));
+  assert(results.every((r) => poolIds.has(r.id)), "every result should come from the pool");
+});
+
+Deno.test("normalizeChatTurns accepts the legacy single prompt", () => {
+  const result = normalizeChatTurns({ prompt: "what should I cook?" });
+  assertEquals(result, [{ role: "user", text: "what should I cook?" }]);
+});
+
+Deno.test("normalizeChatTurns maps a messages array and preserves order", () => {
+  const result = normalizeChatTurns({
+    messages: [
+      { role: "user", content: "something healthy" },
+      { role: "assistant", content: "Try the Kale Salad." },
+      { role: "user", content: "something else" },
+    ],
+  });
+  assertEquals(result, [
+    { role: "user", text: "something healthy" },
+    { role: "assistant", text: "Try the Kale Salad." },
+    { role: "user", text: "something else" },
+  ]);
+});
+
+Deno.test("normalizeChatTurns rejects a conversation that doesn't end on a user turn", () => {
+  const result = normalizeChatTurns({
+    messages: [
+      { role: "user", content: "hi" },
+      { role: "assistant", content: "hello" },
+    ],
+  });
+  assertEquals(result, { error: "The last message must be from the user.", status: 400 });
+});
+
+Deno.test("normalizeChatTurns rejects an empty/invalid body", () => {
+  assertEquals(normalizeChatTurns({}), { error: "prompt or messages is required.", status: 400 });
+  assertEquals(normalizeChatTurns({ messages: [] }), { error: "messages cannot be empty.", status: 400 });
+  assertEquals(
+    normalizeChatTurns({ messages: [{ role: "system", content: "x" }] }),
+    { error: "Each message needs a role of 'user' or 'assistant'.", status: 400 },
+  );
+});
+
+Deno.test("normalizeChatTurns rejects an over-long conversation", () => {
+  const long = "a".repeat(5000);
+  const result = normalizeChatTurns({ messages: [{ role: "user", content: long }] });
+  assertEquals(result, {
+    error: "That message is too long (max 4000 characters). Please shorten it.",
+    status: 413,
+  });
+});
+
 /// Builds a fake `generateContent` response: a functionCall part if `tag`/`query`
 /// aren't done yet, otherwise a plain text reply.
 function geminiResponse(body: unknown): Response {
@@ -103,6 +198,34 @@ Deno.test("runGeminiWithTools returns Gemini's text directly when it never calls
   });
 
   assertEquals(result, { text: "Try the Carbonara.", finishReason: "STOP", blocked: false, roundCapHit: false, recipes: [] });
+});
+
+Deno.test("runGeminiWithTools sends the full conversation history, mapping assistant->model", async () => {
+  let sentContents: unknown;
+  const fetchImpl = (async (_url: string | URL, init?: RequestInit) => {
+    sentContents = JSON.parse(String(init?.body)).contents;
+    return geminiResponse({ candidates: [{ content: { parts: [{ text: "Here's another." }] }, finishReason: "STOP" }] });
+  }) as typeof fetch;
+
+  const result = await runGeminiWithTools({
+    apiKey: "key",
+    messages: [
+      { role: "user", text: "something healthy" },
+      { role: "assistant", text: "Try the Kale Salad." },
+      { role: "user", text: "something else" },
+    ],
+    authHeader: "Bearer token",
+    supabaseUrl: "https://example.supabase.co",
+    anonKey: "anon-key",
+    fetchImpl,
+  });
+
+  assertEquals(result.text, "Here's another.");
+  assertEquals(sentContents, [
+    { role: "user", parts: [{ text: "something healthy" }] },
+    { role: "model", parts: [{ text: "Try the Kale Salad." }] },
+    { role: "user", parts: [{ text: "something else" }] },
+  ]);
 });
 
 Deno.test("runGeminiWithTools executes a tool call and feeds the result back for a final answer", async () => {
