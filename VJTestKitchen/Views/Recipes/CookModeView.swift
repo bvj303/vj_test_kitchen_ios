@@ -1,5 +1,4 @@
 import SwiftUI
-import UIKit
 
 /// Full-screen, at-the-stove cooking view: large checkable ingredients and
 /// step-by-step instructions, with the screen kept awake so it doesn't sleep
@@ -15,6 +14,9 @@ struct CookModeView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var checkedIngredients: Set<Int64> = []
     @State private var checkedSteps: Set<Int> = []
+    /// Holds the display-sleep assertion for the duration of the session
+    /// (see `Platform/KeepAwake.swift`).
+    @State private var keepAwake = KeepAwake()
 
     /// Instruction steps (numbered) and section headers, derived once.
     private var rows: [Row] {
@@ -51,17 +53,17 @@ struct CookModeView: View {
                 .padding()
             }
             .navigationTitle(detail.title)
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineNavigationTitle()
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .platformPrimaryAction) {
                     Button("Done") { dismiss() }
                         .font(.headline)
                 }
             }
         }
         // Keep the screen awake while cooking; restore on exit.
-        .onAppear { UIApplication.shared.isIdleTimerDisabled = true }
-        .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
+        .onAppear { keepAwake.enable() }
+        .onDisappear { keepAwake.disable() }
     }
 
     // MARK: - Ingredients

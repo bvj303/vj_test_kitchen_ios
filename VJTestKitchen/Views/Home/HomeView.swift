@@ -25,7 +25,7 @@ struct HomeView: View {
             .frame(maxWidth: .infinity)
             .padding(isRegular ? 24 : 16)
         }
-        .background(Color(.systemGroupedBackground))
+        .background(Color.platformGroupedBackground)
         .navigationTitle("Home")
         .task { await viewModel.load() }
         .refreshable { await viewModel.load() }

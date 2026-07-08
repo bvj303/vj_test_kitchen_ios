@@ -49,10 +49,10 @@ struct RecipeFormView: View {
             Section("Quick Stats") {
                 HStack {
                     TextField("Prep time (min)", text: $viewModel.prepTimeText)
-                        .keyboardType(.numberPad)
+                        .platformKeyboardType(.numberPad)
                     Divider()
                     TextField("Servings", text: $viewModel.servingsText)
-                        .keyboardType(.numberPad)
+                        .platformKeyboardType(.numberPad)
                 }
             }
 
@@ -60,7 +60,7 @@ struct RecipeFormView: View {
                 ForEach($viewModel.ingredientRows) { $row in
                     HStack {
                         TextField("Qty", text: $row.amount)
-                            .keyboardType(.decimalPad)
+                            .platformKeyboardType(.decimalPad)
                             .frame(width: 50)
                         TextField("Unit", text: $row.unit)
                             .frame(width: 60)
@@ -96,7 +96,7 @@ struct RecipeFormView: View {
             }
         }
         .navigationTitle(viewModel.isEditing ? "Edit Recipe" : "New Recipe")
-        .navigationBarTitleDisplayMode(.inline)
+        .inlineNavigationTitle()
         .toolbar {
             if showsCancelButton {
                 ToolbarItem(placement: .cancellationAction) {

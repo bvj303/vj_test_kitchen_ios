@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<!-- Custom URL scheme so Supabase email-confirmation links redirect back
+	     into the app (vjtestkitchen://login-callback) instead of a dead web
+	     page. Handled in VJTestKitchenApp's .onOpenURL. Works identically on
+	     macOS. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.bvj303.vjtestkitchen.auth</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>vjtestkitchen</string>
+			</array>
+		</dict>
+	</array>
+	<key>CFBundleName</key>
+	<string>VJ Test Kitchen</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<!-- macOS counterpart of the iOS plist. Deliberately DROPS the iOS-only
+	     keys: LSRequiresIPhoneOS, UILaunchScreen, and the
+	     UISupportedInterfaceOrientations~* arrays (meaningless on macOS). -->
+	<key>LSMinimumSystemVersion</key>
+	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+	<!-- Injected from Config/Secrets.xcconfig (shared with the iOS target via
+	     project-level configFiles); resolves on macOS the same way. -->
+	<key>SUPABASE_URL</key>
+	<string>$(SUPABASE_URL)</string>
+	<key>SUPABASE_ANON_KEY</key>
+	<string>$(SUPABASE_ANON_KEY)</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>VJ Test Kitchen exports your grocery list to a Reminders list so you can check items off while shopping.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>VJ Test Kitchen uses your location to show a local weather outlook on your meal calendar, so you can plan meals around the forecast.</string>
+</dict>
+</plist>

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- App Sandbox. Beyond being required for Mac App Store distribution, it
+	     gives the app its own per-app (data-protection) keychain, which stops
+	     the repeated "allow keychain access" prompts an unsandboxed app gets
+	     for its Supabase session token. -->
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+
+	<!-- Outbound network: Supabase (auth, Postgres, Storage) + Open-Meteo +
+	     remote recipe/avatar images. Without this, all networking silently
+	     fails under the sandbox. -->
+	<key>com.apple.security.network.client</key>
+	<true/>
+
+	<!-- CoreLocation for the meal-calendar weather outlook. Paired with
+	     NSLocationWhenInUseUsageDescription in Info-macOS.plist. -->
+	<key>com.apple.security.personal-information.location</key>
+	<true/>
+
+	<!-- EventKit / Reminders for the grocery-list export. Reminders shares the
+	     Calendars sandbox entitlement domain (there is no separate "reminders"
+	     key). Paired with NSRemindersFullAccessUsageDescription. -->
+	<key>com.apple.security.personal-information.calendars</key>
+	<true/>
+</dict>
+</plist>
