@@ -1,7 +1,6 @@
 import SwiftUI
 
-/// The signed-in app's top-level tabs. `selection` is bound so the Home tab's
-/// stat tiles / quick actions can jump straight to another tab.
+/// The signed-in app's top-level tabs, tracked by `MainTabView`'s `selection`.
 enum AppTab: Hashable {
     case home, recipes, grocery, planner, calendar
 }
@@ -13,7 +12,7 @@ struct MainTabView: View {
     var body: some View {
         TabView(selection: $selection) {
             Tab("Home", systemImage: "house", value: AppTab.home) {
-                HomeTab(selection: $selection)
+                HomeTab()
             }
             Tab("Recipes", systemImage: "fork.knife", value: AppTab.recipes) {
                 RecipesTab()
