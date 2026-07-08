@@ -71,6 +71,20 @@ def sql_int(value) -> str:
         return "NULL"
 
 
+def prep_time_or_none(value):
+    """Treat a 0 (or missing) prep time as *unknown*, not "0 minutes".
+
+    ~2,900 of the 14,601 ATK recipes (drinks, salads, no-cook sauces) carry
+    prep_time == 0 in the source dump because a time was never recorded. Storing
+    that as NULL — rather than 0 — lets the app omit the label entirely instead
+    of showing a meaningless "0 min".
+    """
+    try:
+        return None if int(value) <= 0 else value
+    except (TypeError, ValueError):
+        return None
+
+
 def sql_float(value) -> str:
     try:
         f = float(value)
@@ -107,7 +121,7 @@ def recipe_statement(recipe: dict) -> str:
         f"{sql_str((recipe.get('instructions') or '').strip())}, "
         f"{sql_str((recipe.get('image_path') or '').strip())}, "
         f"{sql_str((recipe.get('image_url') or '').strip())}, "
-        f"{sql_int(recipe.get('prep_time'))}, "
+        f"{sql_int(prep_time_or_none(recipe.get('prep_time')))}, "
         f"{sql_int(recipe.get('servings'))})"
     )
 
