@@ -29,7 +29,7 @@ struct AddGroceryItemSheet: View {
                 Section("Amount") {
                     HStack {
                         TextField("Qty", text: $amountText)
-                            .keyboardType(.decimalPad)
+                            .platformKeyboardType(.decimalPad)
                             .frame(width: 60)
                         Divider()
                         TextField("Unit (optional)", text: $unit)
@@ -48,7 +48,7 @@ struct AddGroceryItemSheet: View {
                 }
             }
             .navigationTitle("Add Item")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineNavigationTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -72,6 +72,6 @@ struct AddGroceryItemSheet: View {
             // already up — no second tap needed to start typing.
             .onAppear { nameFieldFocused = true }
         }
-        .presentationDetents([.medium, .large])
+        .platformMediumLargeDetents()
     }
 }

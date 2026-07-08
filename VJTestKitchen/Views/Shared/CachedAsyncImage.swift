@@ -27,7 +27,7 @@ struct CachedAsyncImage<Content: View>: View {
         // Seed synchronously from the cache so a prefetched image is already
         // `.success` on first render — this is what removes the pop-in.
         if let url, let cached = cache.image(for: url) {
-            _phase = State(initialValue: .success(Image(uiImage: cached)))
+            _phase = State(initialValue: .success(Image(platformImage: cached)))
         } else {
             _phase = State(initialValue: .empty)
         }
@@ -45,17 +45,17 @@ struct CachedAsyncImage<Content: View>: View {
             return
         }
         if let cached = cache.image(for: url) {
-            phase = .success(Image(uiImage: cached))
+            phase = .success(Image(platformImage: cached))
             return
         }
         do {
             let data = try await loader.data(for: url)
-            guard let image = UIImage(data: data) else {
+            guard let image = PlatformImage(data: data) else {
                 phase = .failure(URLError(.cannotDecodeContentData))
                 return
             }
             cache.insert(image, for: url)
-            phase = .success(Image(uiImage: image))
+            phase = .success(Image(platformImage: image))
         } catch {
             phase = .failure(error)
         }

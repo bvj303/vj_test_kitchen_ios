@@ -53,7 +53,7 @@ struct HomeLocationPromptView: View {
             .frame(maxWidth: 420)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .platformPrimaryAction) {
                     Button("Not now") { dismiss() }
                 }
             }
@@ -87,7 +87,7 @@ struct HomeLocationPromptView: View {
         @Bindable var viewModel = viewModel
         return VStack(spacing: 12) {
             TextField("ZIP code", text: $viewModel.zipInput)
-                .keyboardType(.numbersAndPunctuation)
+                .platformKeyboardType(.numbersAndPunctuation)
                 .textContentType(.postalCode)
                 .textFieldStyle(.roundedBorder)
                 .submitLabel(.done)

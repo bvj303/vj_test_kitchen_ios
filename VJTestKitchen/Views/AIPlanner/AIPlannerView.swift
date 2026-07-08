@@ -49,10 +49,10 @@ struct AIPlannerView: View {
             inputBar
         }
         .navigationTitle("AI Planner")
-        .navigationBarTitleDisplayMode(.inline)
+        .inlineNavigationTitle()
         .sheet(item: $calendarTarget) { recipe in
             AddToCalendarSheet(recipeId: recipe.id, recipeTitle: recipe.title)
-                .presentationDetents([.medium, .large])
+                .platformMediumLargeDetents()
         }
         .alert(
             "Something Went Wrong",

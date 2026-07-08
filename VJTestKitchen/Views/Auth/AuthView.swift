@@ -14,7 +14,7 @@ struct AuthView: View {
         NavigationStack {
             ZStack {
                 LinearGradient(
-                    colors: [Color.accentColor.opacity(0.18), Color(.systemBackground)],
+                    colors: [Color.accentColor.opacity(0.18), Color.platformBackground],
                     startPoint: .top,
                     endPoint: .bottom
                 )
@@ -40,8 +40,8 @@ struct AuthView: View {
                         VStack(spacing: 14) {
                             TextField("Email", text: $viewModel.email)
                                 .textContentType(.emailAddress)
-                                .keyboardType(.emailAddress)
-                                .textInputAutocapitalization(.never)
+                                .platformKeyboardType(.emailAddress)
+                                .platformAutocapitalization(.never)
                                 .autocorrectionDisabled()
                                 .focused($focusedField, equals: .email)
                                 .submitLabel(.next)

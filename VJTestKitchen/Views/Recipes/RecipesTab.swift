@@ -56,7 +56,7 @@ struct RecipesTab: View {
     }
 
     private var accountToolbarItem: some ToolbarContent {
-        ToolbarItem(placement: .topBarTrailing) {
+        ToolbarItem(placement: .platformPrimaryAction) {
             AccountButton()
         }
     }

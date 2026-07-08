@@ -11,7 +11,7 @@ struct HomeTab: View {
                     RecipeDetailView(recipeId: recipeId)
                 }
                 .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
+                    ToolbarItem(placement: .platformPrimaryAction) {
                         AccountButton()
                     }
                 }

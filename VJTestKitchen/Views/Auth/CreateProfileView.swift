@@ -29,7 +29,7 @@ struct CreateProfileView: View {
                 VStack(spacing: 14) {
                     TextField("First Name", text: $viewModel.firstName)
                         .textContentType(.givenName)
-                        .textInputAutocapitalization(.words)
+                        .platformAutocapitalization(.words)
                         .focused($focusedField, equals: .firstName)
                         .submitLabel(.next)
                         .onSubmit { focusedField = .lastName }
@@ -37,7 +37,7 @@ struct CreateProfileView: View {
 
                     TextField("Last Name", text: $viewModel.lastName)
                         .textContentType(.familyName)
-                        .textInputAutocapitalization(.words)
+                        .platformAutocapitalization(.words)
                         .focused($focusedField, equals: .lastName)
                         .submitLabel(.next)
                         .onSubmit { focusedField = .username }
@@ -46,7 +46,7 @@ struct CreateProfileView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         TextField("Username", text: $viewModel.username)
                             .textContentType(.username)
-                            .textInputAutocapitalization(.never)
+                            .platformAutocapitalization(.never)
                             .autocorrectionDisabled()
                             .focused($focusedField, equals: .username)
                             .submitLabel(.done)
@@ -77,7 +77,7 @@ struct CreateProfileView: View {
             .frame(maxWidth: .infinity)
         }
         .navigationTitle("Create Account")
-        .navigationBarTitleDisplayMode(.inline)
+        .inlineNavigationTitle()
     }
 
     private var usernameStatusText: String? {
