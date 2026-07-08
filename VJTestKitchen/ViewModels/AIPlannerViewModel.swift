@@ -40,7 +40,10 @@ final class AIPlannerViewModel {
         defer { isSending = false }
 
         do {
-            let response = try await aiService.sendMessage(prompt)
+            // Send the whole conversation (the user turn was just appended above),
+            // not just this prompt, so the concierge can vary its answer when the
+            // user asks again / for "something else" — see AIChatTurn.
+            let response = try await aiService.sendMessage(Self.historyPayload(from: messages))
             messages.append(ChatMessage(
                 role: .assistant,
                 content: response.text,
@@ -48,6 +51,17 @@ final class AIPlannerViewModel {
             ))
         } catch {
             errorMessage = ErrorPresenter.message(for: error)
+        }
+    }
+
+    /// Most recent turns of the chat, mapped to the wire format. Capped to bound
+    /// token cost on long conversations (the server also enforces its own cap).
+    static func historyPayload(from messages: [ChatMessage], maxTurns: Int = 12) -> [AIChatTurn] {
+        messages.suffix(maxTurns).map { message in
+            switch message.role {
+            case .user: return .user(message.content)
+            case .assistant: return .assistant(message.content)
+            }
         }
     }
 
