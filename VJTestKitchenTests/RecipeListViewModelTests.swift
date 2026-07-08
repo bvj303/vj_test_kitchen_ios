@@ -25,6 +25,12 @@ final class FakeRecipeService: RecipeServicing, @unchecked Sendable {
         return Array(filtered[start..<end])
     }
 
+    func fetchByIds(_ ids: [Int64]) async throws -> [Recipe] {
+        if let errorToThrow { throw errorToThrow }
+        let set = Set(ids)
+        return recipesToReturn.filter { set.contains($0.id) }
+    }
+
     func fetchDetail(id: Int64) async throws -> RecipeDetail {
         fatalError("not used by RecipeListViewModelTests")
     }
@@ -212,5 +218,67 @@ struct RecipeListViewModelTests {
         #expect(viewModel.prepTimeFilter == nil)
         #expect(fake.fetchedPages.last?.tag == nil)
         #expect(fake.fetchedPages.last?.maxPrepTime == nil)
+    }
+
+    // MARK: - Favorites
+
+    @Test func loadPopulatesFavoriteIds() async {
+        let fake = FakeRecipeService()
+        fake.recipesToReturn = [makeRecipe(id: 1, title: "Carbonara"), makeRecipe(id: 2, title: "Tacos")]
+        let favorites = FakeFavoritesService()
+        favorites.favoriteIds = [2]
+        let viewModel = RecipeListViewModel(recipeService: fake, tagService: FakeTagService(), favoritesService: favorites)
+
+        await viewModel.load()
+
+        #expect(viewModel.isFavorite(makeRecipe(id: 2, title: "Tacos")))
+        #expect(!viewModel.isFavorite(makeRecipe(id: 1, title: "Carbonara")))
+    }
+
+    @Test func favoritesFilterShowsOnlyFavoritedRecipes() async {
+        let fake = FakeRecipeService()
+        fake.recipesToReturn = (1...3).map { makeRecipe(id: Int64($0), title: "Recipe \($0)") }
+        let favorites = FakeFavoritesService()
+        favorites.favoriteIds = [1, 3]
+        let viewModel = RecipeListViewModel(recipeService: fake, tagService: FakeTagService(), favoritesService: favorites, debounceDelay: .zero)
+        await viewModel.load()
+
+        viewModel.showFavoritesOnly = true
+        try? await Task.sleep(for: .milliseconds(50))
+
+        #expect(viewModel.items.map(\.id).sorted() == [1, 3])
+        #expect(viewModel.hasActiveFilters)
+    }
+
+    @Test func toggleFavoriteInFavoritesModeDropsUnfavoritedRow() async {
+        let fake = FakeRecipeService()
+        fake.recipesToReturn = (1...3).map { makeRecipe(id: Int64($0), title: "Recipe \($0)") }
+        let favorites = FakeFavoritesService()
+        favorites.favoriteIds = [1, 2, 3]
+        let viewModel = RecipeListViewModel(recipeService: fake, tagService: FakeTagService(), favoritesService: favorites, debounceDelay: .zero)
+        await viewModel.load()
+        viewModel.showFavoritesOnly = true
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(viewModel.items.count == 3)
+
+        await viewModel.toggleFavorite(makeRecipe(id: 2, title: "Recipe 2"))
+
+        #expect(viewModel.items.map(\.id).sorted() == [1, 3])
+        #expect(!viewModel.isFavorite(makeRecipe(id: 2, title: "Recipe 2")))
+        #expect(favorites.setCalls.last?.isFavorite == false)
+    }
+
+    @Test func toggleFavoriteRevertsOnError() async {
+        let fake = FakeRecipeService()
+        fake.recipesToReturn = [makeRecipe(id: 1, title: "Carbonara")]
+        let favorites = FakeFavoritesService()
+        let viewModel = RecipeListViewModel(recipeService: fake, tagService: FakeTagService(), favoritesService: favorites)
+        await viewModel.load()
+        favorites.setError = TestError()
+
+        await viewModel.toggleFavorite(makeRecipe(id: 1, title: "Carbonara"))
+
+        #expect(!viewModel.isFavorite(makeRecipe(id: 1, title: "Carbonara")))
+        #expect(viewModel.errorMessage == "failed to load")
     }
 }

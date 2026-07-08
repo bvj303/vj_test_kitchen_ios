@@ -15,6 +15,11 @@ protocol RecipeServicing: Sendable {
     /// HEAD request with an exact count — no rows transferred. Defaulted in the
     /// protocol extension so existing test fakes don't have to implement it.
     func totalCount() async throws -> Int
+    /// List-column rows for a specific set of recipe ids (id order) — backs the
+    /// Recipes list's "Favorites" filter, which resolves the user's favorite ids
+    /// then pulls just those recipes. Defaulted in the extension so existing
+    /// fakes needn't implement it.
+    func fetchByIds(_ ids: [Int64]) async throws -> [Recipe]
     func fetchDetail(id: Int64) async throws -> RecipeDetail
     @discardableResult
     func create(_ draft: RecipeDraft) async throws -> Recipe
@@ -39,6 +44,9 @@ extension RecipeServicing {
     /// Default so existing conformers (test fakes) needn't implement counting;
     /// `RecipeService` overrides this with a real HEAD-count query.
     func totalCount() async throws -> Int { 0 }
+
+    /// Default so existing fakes needn't implement the favorites-by-id fetch.
+    func fetchByIds(_ ids: [Int64]) async throws -> [Recipe] { [] }
 }
 
 /// Reference implementation of the Service-layer pattern: one struct per
@@ -105,6 +113,17 @@ struct RecipeService: RecipeServicing {
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "%", with: "\\%")
             .replacingOccurrences(of: "_", with: "\\_")
+    }
+
+    func fetchByIds(_ ids: [Int64]) async throws -> [Recipe] {
+        guard !ids.isEmpty else { return [] }
+        return try await client
+            .from("recipes")
+            .select("id,title,image_path,image_url,prep_time,servings,created_at")
+            .in("id", values: ids.map(String.init))
+            .order("id")
+            .execute()
+            .value
     }
 
     func fetchDetail(id: Int64) async throws -> RecipeDetail {
