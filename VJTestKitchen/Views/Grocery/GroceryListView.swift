@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct GroceryListView: View {
+    @Environment(AppCommands.self) private var appCommands
     @State private var viewModel = GroceryListViewModel()
     @State private var showingClearConfirmation = false
     @State private var showingAddItem = false
@@ -78,6 +79,14 @@ struct GroceryListView: View {
                 Button("OK") { viewModel.errorMessage = nil }
             } message: {
                 Text(viewModel.errorMessage ?? "")
+            }
+            // Menu-bar / keyboard-shortcut commands. Context-aware ⌘N lands here
+            // when Grocery is the visible tab; ⌘R reloads the list.
+            .onChange(of: appCommands.newGroceryItemRequests) { _, _ in
+                showingAddItem = true
+            }
+            .onChange(of: appCommands.refreshRequests) { _, _ in
+                Task { await viewModel.load() }
             }
     }
 
