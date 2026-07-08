@@ -45,7 +45,6 @@ final class MealCalendarViewModel {
     private let mealPlanService: MealPlanServicing
     private let recipeService: RecipeServicing
     private let weatherForecaster: WeatherForecasting
-    private let locationProvider: LocationProviding
     private let weatherPreferenceStore: WeatherPreferenceStoring
     private let debouncer: Debouncer
 
@@ -57,14 +56,12 @@ final class MealCalendarViewModel {
         mealPlanService: MealPlanServicing = MealPlanService(),
         recipeService: RecipeServicing = RecipeService(),
         weatherForecaster: WeatherForecasting = OpenMeteoForecastService(),
-        locationProvider: LocationProviding = CoreLocationService(),
         weatherPreferenceStore: WeatherPreferenceStoring = UserDefaultsWeatherPreferenceStore(),
         debounceDelay: Duration = .milliseconds(300)
     ) {
         self.mealPlanService = mealPlanService
         self.recipeService = recipeService
         self.weatherForecaster = weatherForecaster
-        self.locationProvider = locationProvider
         self.weatherPreferenceStore = weatherPreferenceStore
         self.debouncer = Debouncer(delay: debounceDelay)
         self.referenceDate = referenceDate
@@ -91,9 +88,10 @@ final class MealCalendarViewModel {
         if !weekDates.contains(selectedPlanningDate) {
             selectedPlanningDate = weekDates[0]
         }
-        // Refresh the weather outlook for the newly-visible week (a no-op when
-        // weather is off; other weeks simply have no forecast data).
-        Task { await loadWeather() }
+        // No weather refetch here: the outlook is keyed to the fixed home
+        // location and only spans ~10 days from today, so paging to another
+        // week can't surface new forecast data — refetching (and, previously,
+        // taking a fresh GPS fix) on every ‹/› tap was wasted work.
     }
 
     /// The forecast (if any) for the given "yyyy-MM-dd" string, so the schedule
@@ -141,18 +139,19 @@ final class MealCalendarViewModel {
         await loadWeather()
     }
 
-    /// Loads the week's weather outlook when the user has opted in. Failures
-    /// (location denied, network, provider error) are swallowed into an empty
-    /// forecast rather than raising the meal-plan error alert — weather is a
-    /// nice-to-have, not core to planning.
+    /// Loads the weather outlook for the saved home location, if the user has
+    /// set one (see `HomeLocationViewModel`). No live GPS — the forecast is
+    /// keyed to the stored home coordinate, so this is a single network call and
+    /// safe to call on load/foreground without a per-visit location fix.
+    /// Failures (network, provider error) are swallowed into an empty forecast
+    /// rather than raising the meal-plan error alert — weather is a nice-to-have.
     func loadWeather() async {
-        guard weatherPreferenceStore.loadUseCurrentLocation() else {
+        guard let home = weatherPreferenceStore.loadHomeLocation() else {
             forecastByDate = [:]
             return
         }
         do {
-            let coordinate = try await locationProvider.currentLocation()
-            let forecasts = try await weatherForecaster.dailyForecast(for: coordinate)
+            let forecasts = try await weatherForecaster.dailyForecast(for: home.coordinate)
             forecastByDate = Dictionary(forecasts.map { ($0.date, $0) }, uniquingKeysWith: { first, _ in first })
         } catch {
             forecastByDate = [:]

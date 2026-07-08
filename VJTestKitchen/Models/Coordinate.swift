@@ -4,7 +4,7 @@ import Foundation
 /// hand latitude/longitude around without leaking CoreLocation's
 /// `CLLocationCoordinate2D` up into the ViewModel (same SDK-isolation reasoning
 /// as keeping `Session`/`User` out of the ViewModels — see CLAUDE.md).
-struct Coordinate: Equatable, Sendable {
+struct Coordinate: Equatable, Sendable, Codable {
     let latitude: Double
     let longitude: Double
 }
