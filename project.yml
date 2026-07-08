@@ -54,8 +54,10 @@ targets:
         # On-device signing. Baked into the spec (not Xcode's Signing & Capabilities
         # UI) because the .xcodeproj is generated from this file and any UI change
         # would be lost on the next `xcodegen generate`. 89R449GG5Z is Brendan's
-        # free Personal Team — swap for the paid Developer Program team ID once
-        # active (year-long vs. 7-day provisioning). Simulator builds ignore this.
+        # team — now a **paid** Apple Developer Program membership (individual
+        # enrollment upgraded the former free Personal Team *in place*, same team
+        # ID), so provisioning profiles are valid ~1 year, not 7 days. No team-ID
+        # swap needed. Simulator builds ignore this.
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: 89R449GG5Z
     dependencies:
