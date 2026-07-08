@@ -1,15 +1,11 @@
 import Foundation
-import UIKit
 import Testing
 @testable import VJTestKitchen
 
-/// A 1x1 opaque image, enough to exercise store/retrieve without any real
-/// image assets.
-func makeTestImage() -> UIImage {
-    UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1)).image { context in
-        UIColor.red.setFill()
-        context.fill(CGRect(x: 0, y: 0, width: 1, height: 1))
-    }
+/// A 1x1 opaque `PlatformImage`, enough to exercise store/retrieve without any
+/// real image assets. Cross-platform (see `PlatformTestImage`).
+func makeTestImage() -> PlatformImage {
+    PlatformTestImage.platformImage()
 }
 
 @MainActor
