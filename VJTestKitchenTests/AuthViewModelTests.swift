@@ -16,6 +16,9 @@ final class FakeAuthService: AuthServicing, @unchecked Sendable {
     private(set) var lastLastName: String?
     private(set) var lastUsername: String?
     var errorToThrow: Error?
+    /// Controls the value `signUp` reports back — `true` simulates a project
+    /// with email confirmation on (no session until the link is clicked).
+    var signUpNeedsEmailConfirmation = false
 
     let userIdChanges: AsyncStream<UUID?>
     private let continuation: AsyncStream<UUID?>.Continuation
@@ -26,7 +29,8 @@ final class FakeAuthService: AuthServicing, @unchecked Sendable {
         self.continuation = continuation
     }
 
-    func signUp(email: String, password: String, firstName: String, lastName: String, username: String) async throws {
+    @discardableResult
+    func signUp(email: String, password: String, firstName: String, lastName: String, username: String) async throws -> Bool {
         signUpCallCount += 1
         lastEmail = email
         lastPassword = password
@@ -34,6 +38,7 @@ final class FakeAuthService: AuthServicing, @unchecked Sendable {
         lastLastName = lastName
         lastUsername = username
         if let errorToThrow { throw errorToThrow }
+        return signUpNeedsEmailConfirmation
     }
 
     func signIn(email: String, password: String) async throws {
@@ -206,6 +211,45 @@ struct AuthViewModelTests {
 
         #expect(fake.signUpCallCount == 1)
         #expect(viewModel.errorMessage == nil)
+    }
+
+    @Test func signUpFlagsAwaitingConfirmationWhenProjectRequiresIt() async {
+        let fake = FakeAuthService()
+        fake.signUpNeedsEmailConfirmation = true
+        let viewModel = AuthViewModel(authService: fake)
+        viewModel.email = "new@example.com"
+        viewModel.password = "s3cretpw"
+
+        await viewModel.signUp()
+
+        #expect(viewModel.awaitingEmailConfirmation)
+        #expect(viewModel.errorMessage == nil)
+    }
+
+    @Test func signUpDoesNotAwaitConfirmationWhenSessionIsImmediate() async {
+        let fake = FakeAuthService()
+        fake.signUpNeedsEmailConfirmation = false
+        let viewModel = AuthViewModel(authService: fake)
+        viewModel.email = "new@example.com"
+        viewModel.password = "s3cretpw"
+
+        await viewModel.signUp()
+
+        #expect(viewModel.awaitingEmailConfirmation == false)
+    }
+
+    @Test func signUpFailureDoesNotFlagAwaitingConfirmation() async {
+        let fake = FakeAuthService()
+        fake.signUpNeedsEmailConfirmation = true  // ignored — the call throws first
+        fake.errorToThrow = TestError()
+        let viewModel = AuthViewModel(authService: fake)
+        viewModel.email = "new@example.com"
+        viewModel.password = "s3cretpw"
+
+        await viewModel.signUp()
+
+        #expect(viewModel.awaitingEmailConfirmation == false)
+        #expect(viewModel.errorMessage != nil)
     }
 
     @Test func signInIsNotBlockedByPasswordLength() async {

@@ -20,4 +20,5 @@ struct RootView: View {
         .environment(AuthViewModel())
         .environment(SettingsViewModel())
         .environment(AccountViewModel())
+        .environment(HomeLocationViewModel())
 }

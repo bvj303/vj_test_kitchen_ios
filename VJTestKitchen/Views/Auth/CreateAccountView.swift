@@ -16,7 +16,41 @@ struct CreateAccountView: View {
         @Bindable var viewModel = viewModel
 
         ScrollView {
-            VStack(spacing: 14) {
+            if viewModel.awaitingEmailConfirmation {
+                confirmationPrompt
+            } else {
+                signUpForm(viewModel: viewModel)
+            }
+        }
+        .navigationTitle("Create Account")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    /// Shown after a successful sign-up when the account still needs email
+    /// confirmation — there's no session yet, so tell the user to check their
+    /// inbox rather than leaving them on a form that looks like it did nothing.
+    private var confirmationPrompt: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "envelope.badge")
+                .font(.system(size: 48))
+                .foregroundStyle(Color.brandPrimary)
+            Text("Check your email")
+                .font(.title2.bold())
+            Text("We sent a confirmation link to \(viewModel.email). Tap it to activate your account, then come back and sign in.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding(24)
+        .glassEffect(in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .frame(maxWidth: 420)
+        .padding(.horizontal)
+        .padding(.top, 40)
+    }
+
+    private func signUpForm(viewModel: AuthViewModel) -> some View {
+        @Bindable var viewModel = viewModel
+        return VStack(spacing: 14) {
                 TextField("Email", text: $viewModel.email)
                     .textContentType(.emailAddress)
                     .keyboardType(.emailAddress)
@@ -65,9 +99,6 @@ struct CreateAccountView: View {
             .glassEffect(in: RoundedRectangle(cornerRadius: 24, style: .continuous))
             .frame(maxWidth: 420)
             .padding(.horizontal)
-        }
-        .navigationTitle("Create Account")
-        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
