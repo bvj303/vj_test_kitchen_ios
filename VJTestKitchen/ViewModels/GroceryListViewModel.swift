@@ -152,12 +152,7 @@ final class GroceryListViewModel {
         let ids = Set(row.items.map(\.id))
         let snapshot = items
         for i in items.indices where ids.contains(items[i].id) { items[i].isChecked = newValue } // optimistic
-        do {
-            for id in ids { try await service.setChecked(id: id, isChecked: newValue) }
-        } catch {
-            items = snapshot
-            errorMessage = ErrorPresenter.message(for: error)
-        }
+        await reconcile(ids: ids, snapshot: snapshot) { try await service.setChecked(id: $0, isChecked: newValue) }
     }
 
     func toggleChecked(_ item: GroceryItem) async {
@@ -168,12 +163,7 @@ final class GroceryListViewModel {
         let ids = Set(row.items.map(\.id))
         let snapshot = items
         for i in items.indices where ids.contains(items[i].id) { items[i].category = category } // optimistic
-        do {
-            for id in ids { try await service.setCategory(id: id, category: category) }
-        } catch {
-            items = snapshot
-            errorMessage = ErrorPresenter.message(for: error)
-        }
+        await reconcile(ids: ids, snapshot: snapshot) { try await service.setCategory(id: $0, category: category) }
     }
 
     func setCategory(_ item: GroceryItem, to category: GroceryCategory) async {
@@ -184,12 +174,35 @@ final class GroceryListViewModel {
         let ids = Set(row.items.map(\.id))
         let snapshot = items
         items.removeAll { ids.contains($0.id) } // optimistic
-        do {
-            for id in ids { try await service.delete(id: id) }
-        } catch {
-            items = snapshot
-            errorMessage = ErrorPresenter.message(for: error)
+        await reconcile(ids: ids, snapshot: snapshot) { try await service.delete(id: $0) }
+    }
+
+    /// Runs the per-item server mutation for every id (the row was already
+    /// updated optimistically), reverting **only** the ids whose call throws —
+    /// successes stay applied. This keeps a partially-failed combined row (e.g.
+    /// "2 lemons + 1 lemon" spanning two DB rows where one write fails) matching
+    /// real server state instead of snapping the whole row back, which the old
+    /// all-or-nothing `items = snapshot` did. Surfaces the last error, if any.
+    private func reconcile(ids: Set<UUID>, snapshot: [GroceryItem], _ op: (UUID) async throws -> Void) async {
+        var failed = Set<UUID>()
+        var lastError: Error?
+        for id in ids {
+            do { try await op(id) } catch { failed.insert(id); lastError = error }
         }
+        guard !failed.isEmpty else { return }
+        // Restore each failed id from the snapshot: a mutated item resets in
+        // place, a deleted one is re-inserted (order doesn't matter — `groups`
+        // re-sorts). Successful ids are left as the optimistic update set them.
+        let snapshotById = Dictionary(uniqueKeysWithValues: snapshot.map { ($0.id, $0) })
+        for id in failed {
+            guard let original = snapshotById[id] else { continue }
+            if let idx = items.firstIndex(where: { $0.id == id }) {
+                items[idx] = original
+            } else {
+                items.append(original)
+            }
+        }
+        if let lastError { errorMessage = ErrorPresenter.message(for: lastError) }
     }
 
     func delete(_ item: GroceryItem) async {
