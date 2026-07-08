@@ -1,18 +1,16 @@
 import Foundation
-import UIKit
 import Testing
 @testable import VJTestKitchen
 
 /// Records which URLs were asked for and hands back a fixed PNG payload, so the
-/// prefetcher can be driven without touching the network. `makeTestImage` lives
-/// in ImageCacheTests (same test target).
+/// prefetcher can be driven without touching the network.
 final class StubImageDataLoader: ImageDataLoading, @unchecked Sendable {
     private(set) var requestedURLs: [URL] = []
     let payload: Data
     var errorToThrow: Error?
 
     init() {
-        payload = makeTestImage().pngData()!
+        payload = PlatformTestImage.solidPNG(width: 1, height: 1)
     }
 
     func data(for url: URL) async throws -> Data {
