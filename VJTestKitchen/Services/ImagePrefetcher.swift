@@ -1,4 +1,4 @@
-import UIKit
+import Foundation
 
 /// Loads raw image bytes for a URL. Abstracted so `ImagePrefetcher` and
 /// `CachedAsyncImage` can be unit-tested against a stub instead of the network —
@@ -64,7 +64,7 @@ final class ImagePrefetcher: ImagePrefetching {
     private func load(_ url: URL) async {
         defer { inFlight.remove(url) }
         guard let data = try? await loader.data(for: url),
-              let image = UIImage(data: data) else { return }
+              let image = PlatformImage(data: data) else { return }
         cache.insert(image, for: url)
     }
 }

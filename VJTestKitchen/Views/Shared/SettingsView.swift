@@ -27,7 +27,7 @@ struct SettingsView: View {
             weatherSection(homeLocationViewModel: homeLocationViewModel)
         }
         .navigationTitle("Settings")
-        .navigationBarTitleDisplayMode(.inline)
+        .inlineNavigationTitle()
     }
 
     /// Home location for the calendar's weather outlook — the saved ZIP (with
@@ -61,7 +61,7 @@ struct SettingsView: View {
 
                 HStack {
                     TextField("Home ZIP code", text: $homeLocationViewModel.zipInput)
-                        .keyboardType(.numbersAndPunctuation)
+                        .platformKeyboardType(.numbersAndPunctuation)
                         .textContentType(.postalCode)
                     Button("Set") {
                         Task { await homeLocationViewModel.setFromZipInput() }

@@ -23,7 +23,7 @@ struct CreateAccountView: View {
             }
         }
         .navigationTitle("Create Account")
-        .navigationBarTitleDisplayMode(.inline)
+        .inlineNavigationTitle()
     }
 
     /// Shown after a successful sign-up when the account still needs email
@@ -53,8 +53,8 @@ struct CreateAccountView: View {
         return VStack(spacing: 14) {
                 TextField("Email", text: $viewModel.email)
                     .textContentType(.emailAddress)
-                    .keyboardType(.emailAddress)
-                    .textInputAutocapitalization(.never)
+                    .platformKeyboardType(.emailAddress)
+                    .platformAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .focused($focusedField, equals: .email)
                     .submitLabel(.next)

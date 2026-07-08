@@ -1,4 +1,4 @@
-import UIKit
+import Foundation
 
 /// A tiny in-memory image cache keyed by URL, backed by `NSCache` (thread-safe,
 /// automatically evicts under memory pressure). Warmed ahead of time by
@@ -7,10 +7,12 @@ import UIKit
 /// scrolls into view. Memory-only by design — the underlying HTTP responses are
 /// still disk-cached by `URLSession`/`URLCache`, so this only front-runs the
 /// decode, not the download, across launches.
+///
+/// Stores `PlatformImage` (`UIImage`/`NSImage`) — see `Platform/PlatformImage.swift`.
 final class ImageCache: @unchecked Sendable {
     static let shared = ImageCache()
 
-    private let cache = NSCache<NSURL, UIImage>()
+    private let cache = NSCache<NSURL, PlatformImage>()
 
     /// `countLimit` is a soft cap; `NSCache` still evicts early under real
     /// memory pressure. Sized for a few screens' worth of catalog thumbnails.
@@ -18,11 +20,11 @@ final class ImageCache: @unchecked Sendable {
         cache.countLimit = countLimit
     }
 
-    func image(for url: URL) -> UIImage? {
+    func image(for url: URL) -> PlatformImage? {
         cache.object(forKey: url as NSURL)
     }
 
-    func insert(_ image: UIImage, for url: URL) {
+    func insert(_ image: PlatformImage, for url: URL) {
         cache.setObject(image, forKey: url as NSURL)
     }
 }

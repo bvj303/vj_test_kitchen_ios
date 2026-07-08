@@ -9,7 +9,7 @@ struct GroceryListView: View {
         content
             .navigationTitle("Grocery List")
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
+                ToolbarItem(placement: .platformLeading) {
                     if !viewModel.isEmpty {
                         Menu {
                             Button {
@@ -101,7 +101,7 @@ struct GroceryListView: View {
                         }
                     }
                 }
-                .listStyle(.insetGrouped)
+                .platformInsetGroupedListStyle()
             }
         }
     }
@@ -142,6 +142,9 @@ struct GroceryListView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        #if os(iOS)
+        // Touch affordance; the same Delete lives in the context menu below, so
+        // macOS (right-click) and iPad (pointer) reach it without swipe.
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button(role: .destructive) {
                 Task { await viewModel.delete(row) }
@@ -149,6 +152,7 @@ struct GroceryListView: View {
                 Label("Delete", systemImage: "trash")
             }
         }
+        #endif
         .contextMenu {
             Menu {
                 ForEach(GroceryCategory.allCases) { category in

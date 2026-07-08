@@ -5,7 +5,7 @@ struct GroceryListTab: View {
         NavigationStack {
             GroceryListView()
                 .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
+                    ToolbarItem(placement: .platformPrimaryAction) {
                         AccountButton()
                     }
                 }
