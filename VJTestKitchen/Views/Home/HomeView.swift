@@ -1,12 +1,12 @@
 import SwiftUI
 
-/// The dashboard content of the Home tab: a context-aware suggestion header, a
-/// row of glanceable stats, and a responsive grid of suggested recipes. Layout
-/// is size-class-gated like `RecipesTab`/`MealCalendarView` — the grid widens to
-/// more columns on iPad so the space fills without any horizontal scrolling.
+/// The dashboard content of the Home tab: a context-aware suggestion header and
+/// a responsive grid of suggested recipes that rotates each time the screen
+/// loads. Layout is size-class-gated like `RecipesTab`/`MealCalendarView` — the
+/// grid widens to more columns on iPad so the space fills without any horizontal
+/// scrolling.
 struct HomeView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @Binding var selection: AppTab
     @State private var viewModel = HomeViewModel()
 
     /// Cap + center the content on very wide screens so a landscape iPad reads
@@ -19,10 +19,6 @@ struct HomeView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: isRegular ? 28 : 24) {
                 suggestionHeader
-                // Stat tiles sit directly under the header (above the recipe
-                // grid) so the cross-tab quick-jumps are visible without
-                // scrolling past a screen of suggestions.
-                statsRow
                 suggestedGrid
             }
             .frame(maxWidth: Self.regularMaxWidth)
@@ -68,50 +64,6 @@ struct HomeView: View {
         .glassEffect(.regular.tint(Color.brandPrimary.opacity(0.18)), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
-    // MARK: - Stats
-
-    /// Three compact summary tiles at the foot of the screen that double as
-    /// jumps to their tabs.
-    private var statsRow: some View {
-        HStack(spacing: 10) {
-            statTile(
-                value: viewModel.totalRecipeCount.map(Self.compactNumber) ?? "—",
-                label: "Recipes", systemImage: "book.pages", tint: .brandPrimary
-            ) { selection = .recipes }
-            statTile(
-                value: "\(viewModel.mealsThisWeekCount)",
-                label: "This Week", systemImage: "calendar", tint: .brandSage
-            ) { selection = .calendar }
-            statTile(
-                value: "\(viewModel.uncheckedGroceryCount)",
-                label: "To Buy", systemImage: "cart", tint: .brandSaffron
-            ) { selection = .grocery }
-        }
-    }
-
-    private func statTile(value: String, label: String, systemImage: String, tint: Color, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: systemImage)
-                    .font(.footnote)
-                    .foregroundStyle(tint)
-                Text(value)
-                    .font(.subheadline.bold())
-                    .foregroundStyle(.primary)
-                    .contentTransition(.numericText())
-                Text(label)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 10)
-            .padding(.horizontal, 12)
-            .glassEffect(.regular.tint(tint.opacity(0.14)), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        }
-        .buttonStyle(.plain)
-    }
-
     // MARK: - Suggested recipes grid
 
     @ViewBuilder
@@ -150,8 +102,8 @@ struct HomeView: View {
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            if let prep = recipe.prepTime {
-                Label(PrepTimeFormat.string(minutes: prep), systemImage: "clock")
+            if let prepLabel = PrepTimeFormat.label(minutes: recipe.prepTime) {
+                Label(prepLabel, systemImage: "clock")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .labelStyle(.compact)
@@ -176,14 +128,5 @@ struct HomeView: View {
         }
         .frame(maxWidth: .infinity, minHeight: 120)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-    }
-
-    /// Compact, human count for the recipe stat (e.g. 14601 → "14.6K").
-    private static func compactNumber(_ value: Int) -> String {
-        if value >= 1000 {
-            let thousands = Double(value) / 1000
-            return String(format: thousands >= 100 ? "%.0fK" : "%.1fK", thousands)
-        }
-        return "\(value)"
     }
 }

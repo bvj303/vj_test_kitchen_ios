@@ -19,4 +19,14 @@ enum PrepTimeFormat {
         default: return "\(hours) hr \(mins) min"
         }
     }
+
+    /// Optional variant for display: returns `nil` when the prep time is unknown
+    /// (`nil`, 0, or negative) so callers can omit the label entirely instead of
+    /// showing a meaningless "0 min". Roughly a fifth of the imported ATK catalog
+    /// (~2,900 of 14,601: drinks, salads, no-cook sauces) has no recorded prep
+    /// time and stores it as 0 — those should read as "no prep time", not "0 min".
+    static func label(minutes: Int?) -> String? {
+        guard let minutes, minutes > 0 else { return nil }
+        return string(minutes: minutes)
+    }
 }

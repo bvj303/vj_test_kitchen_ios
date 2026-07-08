@@ -27,4 +27,17 @@ struct PrepTimeFormatTests {
         #expect(PrepTimeFormat.string(minutes: 0) == "0 min")
         #expect(PrepTimeFormat.string(minutes: -5) == "0 min")
     }
+
+    @Test func labelReturnsNilForUnknownPrepTime() {
+        // Unknown prep time (nil, 0, or negative) → no label at all, rather than
+        // a meaningless "0 min" for the ~2,900 ATK rows with no recorded time.
+        #expect(PrepTimeFormat.label(minutes: nil) == nil)
+        #expect(PrepTimeFormat.label(minutes: 0) == nil)
+        #expect(PrepTimeFormat.label(minutes: -5) == nil)
+    }
+
+    @Test func labelFormatsKnownPrepTimeLikeString() {
+        #expect(PrepTimeFormat.label(minutes: 30) == "30 min")
+        #expect(PrepTimeFormat.label(minutes: 90) == "1 hr 30 min")
+    }
 }
