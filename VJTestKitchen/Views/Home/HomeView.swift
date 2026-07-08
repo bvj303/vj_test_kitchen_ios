@@ -19,8 +19,11 @@ struct HomeView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: isRegular ? 28 : 24) {
                 suggestionHeader
-                suggestedGrid
+                // Stat tiles sit directly under the header (above the recipe
+                // grid) so the cross-tab quick-jumps are visible without
+                // scrolling past a screen of suggestions.
                 statsRow
+                suggestedGrid
             }
             .frame(maxWidth: Self.regularMaxWidth)
             .frame(maxWidth: .infinity)

@@ -135,11 +135,19 @@ export interface GeminiContent {
   parts: GeminiPart[];
 }
 
+export interface RecipeRef {
+  id: number;
+  title: string;
+}
+
 export interface ToolLoopResult {
   text?: string;
   finishReason?: string;
   blocked: boolean;
   roundCapHit: boolean;
+  /// Recipes surfaced by `search_recipes` during the loop, deduped. The client
+  /// shows tappable cards for the ones the assistant actually names in its reply.
+  recipes: RecipeRef[];
 }
 
 export class GeminiRequestError extends Error {
@@ -162,6 +170,10 @@ export async function runGeminiWithTools(params: {
 }): Promise<ToolLoopResult> {
   const fetchImpl = params.fetchImpl ?? fetch;
   const contents: GeminiContent[] = [{ role: "user", parts: [{ text: params.userPrompt }] }];
+  // Recipes the tool surfaced this turn, deduped by id (first title wins).
+  const referenced = new Map<number, string>();
+  const collectRecipes = (): RecipeRef[] =>
+    [...referenced].map(([id, title]) => ({ id, title }));
 
   for (let round = 1; round <= MAX_TOOL_ROUNDS; round++) {
     const geminiResponse = await fetchImpl(
@@ -196,6 +208,7 @@ export async function runGeminiWithTools(params: {
         finishReason,
         blocked: finishReason === "SAFETY" || Boolean(data?.promptFeedback?.blockReason),
         roundCapHit: false,
+        recipes: collectRecipes(),
       };
     }
 
@@ -203,6 +216,9 @@ export async function runGeminiWithTools(params: {
 
     const args = (functionCallPart.functionCall?.args ?? {}) as SearchRecipesArgs;
     const results = await searchRecipes(params.authHeader, params.supabaseUrl, params.anonKey, args, fetchImpl);
+    for (const r of results) {
+      if (!referenced.has(r.id)) referenced.set(r.id, r.title);
+    }
 
     contents.push({ role: "model", parts: [functionCallPart] });
     contents.push({
@@ -211,5 +227,5 @@ export async function runGeminiWithTools(params: {
     });
   }
 
-  return { blocked: false, roundCapHit: true };
+  return { blocked: false, roundCapHit: true, recipes: collectRecipes() };
 }

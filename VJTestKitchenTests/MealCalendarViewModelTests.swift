@@ -84,6 +84,51 @@ struct MealCalendarViewModelTests {
         #expect(!viewModel.isToday("2026-07-06"))
     }
 
+    @Test func weekNavigationShiftsWindowAndKeepsTodayFixed() {
+        var components = DateComponents()
+        components.year = 2026; components.month = 7; components.day = 5
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let referenceDate = calendar.date(from: components)!
+        let viewModel = MealCalendarViewModel(referenceDate: referenceDate, mealPlanService: FakeMealPlanService(), recipeService: FakeMealPlanRecipeService())
+
+        viewModel.goToNextWeek()
+        #expect(viewModel.weekOffset == 1)
+        #expect(viewModel.weekDates.first == "2026-07-12")
+        #expect(viewModel.weekDates.last == "2026-07-18")
+        #expect(viewModel.isCurrentWeek == false)
+        // "Today" stays the real reference day, now outside the visible window.
+        #expect(viewModel.todayDate == "2026-07-05")
+        #expect(viewModel.isToday("2026-07-12") == false)
+
+        viewModel.goToPreviousWeek()
+        viewModel.goToPreviousWeek()
+        #expect(viewModel.weekOffset == -1)
+        #expect(viewModel.weekDates.first == "2026-06-28")
+
+        viewModel.goToThisWeek()
+        #expect(viewModel.weekOffset == 0)
+        #expect(viewModel.isCurrentWeek)
+        #expect(viewModel.weekDates.first == "2026-07-05")
+    }
+
+    @Test func navigatingWeeksClampsPlanningDayIntoVisibleWeek() {
+        var components = DateComponents()
+        components.year = 2026; components.month = 7; components.day = 5
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let referenceDate = calendar.date(from: components)!
+        let viewModel = MealCalendarViewModel(referenceDate: referenceDate, mealPlanService: FakeMealPlanService(), recipeService: FakeMealPlanRecipeService())
+        // Pick a day in the current week, then move weeks.
+        viewModel.selectedPlanningDate = "2026-07-08"
+
+        viewModel.goToNextWeek()
+
+        // The old day isn't in the new week, so it snaps to the new week's start.
+        #expect(viewModel.weekDates.contains(viewModel.selectedPlanningDate))
+        #expect(viewModel.selectedPlanningDate == "2026-07-12")
+    }
+
     @Test func holidayPassesThroughToHolidayProvider() {
         let viewModel = MealCalendarViewModel(mealPlanService: FakeMealPlanService(), recipeService: FakeMealPlanRecipeService())
 
