@@ -10,6 +10,8 @@ final class FakeAuthService: AuthServicing, @unchecked Sendable {
     private(set) var signInCallCount = 0
     private(set) var signOutCallCount = 0
     private(set) var deleteAccountCallCount = 0
+    private(set) var handleAuthCallbackCallCount = 0
+    private(set) var lastCallbackURL: URL?
     private(set) var lastEmail: String?
     private(set) var lastPassword: String?
     private(set) var lastFirstName: String?
@@ -55,6 +57,12 @@ final class FakeAuthService: AuthServicing, @unchecked Sendable {
 
     func deleteAccount() async throws {
         deleteAccountCallCount += 1
+        if let errorToThrow { throw errorToThrow }
+    }
+
+    func handleAuthCallback(url: URL) async throws {
+        handleAuthCallbackCallCount += 1
+        lastCallbackURL = url
         if let errorToThrow { throw errorToThrow }
     }
 
@@ -250,6 +258,33 @@ struct AuthViewModelTests {
 
         #expect(viewModel.awaitingEmailConfirmation == false)
         #expect(viewModel.errorMessage != nil)
+    }
+
+    @Test func handleAuthCallbackForwardsUrlAndClearsAwaitingConfirmation() async {
+        let fake = FakeAuthService()
+        fake.signUpNeedsEmailConfirmation = true
+        let viewModel = AuthViewModel(authService: fake)
+        viewModel.email = "new@example.com"
+        viewModel.password = "s3cretpw"
+        await viewModel.signUp()
+        #expect(viewModel.awaitingEmailConfirmation)
+
+        let url = URL(string: "vjtestkitchen://login-callback#access_token=abc")!
+        await viewModel.handleAuthCallback(url: url)
+
+        #expect(fake.handleAuthCallbackCallCount == 1)
+        #expect(fake.lastCallbackURL == url)
+        #expect(viewModel.awaitingEmailConfirmation == false)
+    }
+
+    @Test func handleAuthCallbackIgnoresInvalidLinkWithoutSurfacingError() async {
+        let fake = FakeAuthService()
+        fake.errorToThrow = TestError()  // simulate an expired/unrelated link
+        let viewModel = AuthViewModel(authService: fake)
+
+        await viewModel.handleAuthCallback(url: URL(string: "vjtestkitchen://login-callback")!)
+
+        #expect(viewModel.errorMessage == nil)
     }
 
     @Test func signInIsNotBlockedByPasswordLength() async {

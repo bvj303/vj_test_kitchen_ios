@@ -29,6 +29,12 @@ struct VJTestKitchenApp: App {
                 .environment(accountViewModel)
                 .environment(homeLocationViewModel)
                 .preferredColorScheme(settingsViewModel.appearanceMode.colorScheme)
+                // Email-confirmation (and future magic-link) deep links redirect
+                // to vjtestkitchen://login-callback; complete them here so the
+                // user lands signed-in in the app rather than on a web page.
+                .onOpenURL { url in
+                    Task { await authViewModel.handleAuthCallback(url: url) }
+                }
         }
     }
 }
