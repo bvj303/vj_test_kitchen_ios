@@ -97,5 +97,7 @@ Deno.serve(async (req: Request) => {
     ? `${result.text}\n\n_(Response was cut short — ask me to continue for the rest.)_`
     : result.text;
 
-  return Response.json({ response });
+  // `recipes` are the ones surfaced by search_recipes this turn; the client
+  // renders tappable cards for those the reply actually names.
+  return Response.json({ response, recipes: result.recipes });
 });
