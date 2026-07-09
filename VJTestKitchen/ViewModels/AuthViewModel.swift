@@ -25,6 +25,14 @@ final class AuthViewModel {
     /// config.toml) — the server is the real gate; this is fast UX feedback.
     static let minimumPasswordLength = 8
 
+    /// How long the launch screen holds on a `.refreshPending` resolution before
+    /// falling back to an optimistic sign-in with the cached session. Long
+    /// enough for a normal token refresh to win the race, short enough that a
+    /// returning offline user isn't stranded staring at the splash. Injectable
+    /// for tests. `nonisolated` so it's usable as a default argument (which is
+    /// evaluated in a nonisolated context) despite the class being main-actor.
+    nonisolated static let defaultLaunchFallbackDelay: Duration = .seconds(4)
+
     private(set) var state: AuthState = .loading
     var email = ""
     var password = ""
@@ -73,31 +81,68 @@ final class AuthViewModel {
     private let authService: AuthServicing
     private let profileService: ProfileServicing
     private let usernameDebouncer: Debouncer
+    private let launchFallbackDelay: Duration
     // deinit is always non-isolated (even in a @MainActor class), and
     // Task.cancel() is safe to call from any context, so this is exempted
     // from main-actor isolation solely to allow cleanup there. Not UI state,
     // so it's also excluded from @Observable's tracking.
     @ObservationIgnored
     nonisolated(unsafe) private var observationTask: Task<Void, Never>?
+    // The pending optimistic-sign-in fallback armed while a launch refresh is in
+    // flight (see apply(_:)). Main-actor-isolated like the rest of the class;
+    // exempt from observation since it's plumbing, not UI state.
+    @ObservationIgnored
+    private var launchFallbackTask: Task<Void, Never>?
 
     init(
         authService: AuthServicing = AuthService(),
         profileService: ProfileServicing = ProfileService(),
-        usernameDebounceDelay: Duration = .milliseconds(300)
+        usernameDebounceDelay: Duration = .milliseconds(300),
+        launchFallbackDelay: Duration = AuthViewModel.defaultLaunchFallbackDelay
     ) {
         self.authService = authService
         self.profileService = profileService
         self.usernameDebouncer = Debouncer(delay: usernameDebounceDelay)
+        self.launchFallbackDelay = launchFallbackDelay
         observationTask = Task { [weak self] in
             guard let self else { return }
-            for await userId in self.authService.userIdChanges {
-                self.state = userId.map { .signedIn(userId: $0) } ?? .signedOut
+            for await resolution in self.authService.authResolutions {
+                self.apply(resolution)
             }
         }
     }
 
     deinit {
         observationTask?.cancel()
+    }
+
+    /// Maps an `AuthResolution` from the service stream onto the root `state`.
+    /// A definitive resolution (signed in / signed out) cancels any pending
+    /// launch fallback and commits immediately. `.refreshPending` instead holds
+    /// the launch screen and arms a one-shot fallback: if the token refresh
+    /// hasn't produced a definitive resolution within `launchFallbackDelay`, we
+    /// sign in optimistically with the cached session rather than strand a
+    /// returning user (notably offline) on a login screen they can't complete.
+    private func apply(_ resolution: AuthResolution) {
+        switch resolution {
+        case .signedIn(let userId):
+            launchFallbackTask?.cancel()
+            launchFallbackTask = nil
+            state = .signedIn(userId: userId)
+        case .signedOut:
+            launchFallbackTask?.cancel()
+            launchFallbackTask = nil
+            state = .signedOut
+        case .refreshPending(let userId):
+            // Only relevant while still on the launch screen, and only arm once.
+            guard state == .loading, launchFallbackTask == nil else { return }
+            launchFallbackTask = Task { [weak self] in
+                guard let self else { return }
+                try? await Task.sleep(for: self.launchFallbackDelay)
+                guard !Task.isCancelled, self.state == .loading else { return }
+                self.state = .signedIn(userId: userId)
+            }
+        }
     }
 
     func signUp() async {

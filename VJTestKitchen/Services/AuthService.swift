@@ -1,6 +1,22 @@
 import Foundation
 import Supabase
 
+/// The signed-in resolution of an auth-state event, as consumed by
+/// `AuthViewModel` to drive the root gate. A richer signal than a bare
+/// `UUID?` specifically so the launch flow can distinguish "genuinely signed
+/// out" from "we have a stored session that just needs a token refresh" —
+/// without which an expired-but-refreshable session briefly flashes the login
+/// screen on cold launch. See `AuthService.resolve`.
+enum AuthResolution: Equatable, Sendable {
+    case signedIn(userId: UUID)
+    case signedOut
+    /// An expired session was restored at launch (`emitLocalSessionAsInitialSession`)
+    /// and a token refresh is in flight. The UI should hold the launch screen
+    /// rather than drop to the login screen; the carried id backs an optimistic
+    /// sign-in fallback if the refresh doesn't resolve promptly (e.g. offline).
+    case refreshPending(userId: UUID)
+}
+
 /// Abstraction over Supabase Auth so AuthViewModel can be tested without a
 /// real network/session — see AuthViewModelTests' FakeAuthService.
 protocol AuthServicing: Sendable {
@@ -38,9 +54,9 @@ protocol AuthServicing: Sendable {
     /// zero rows ("you have no recipes") until the Recipes tab was opened. See
     /// the per-call safety net in `AIService.sendMessage` too.
     func warmUpSession() async throws
-    /// Emits the signed-in user's id (nil when signed out), including the
-    /// current state as its first value on subscription.
-    var userIdChanges: AsyncStream<UUID?> { get }
+    /// Emits the resolved auth state for each auth-state event, including the
+    /// current state as its first value on subscription. See `AuthResolution`.
+    var authResolutions: AsyncStream<AuthResolution> { get }
 }
 
 struct AuthService: AuthServicing {
@@ -88,7 +104,7 @@ struct AuthService: AuthServicing {
         try await client.functions.invoke("delete-account")
         // The Edge Function deletes the auth.users row server-side, which
         // doesn't by itself invalidate the SDK's local session state — sign
-        // out explicitly so userIdChanges emits nil and the UI returns to
+        // out explicitly so authResolutions emits signed-out and the UI returns to
         // AuthView, same as any other sign-out.
         try await client.auth.signOut()
     }
@@ -106,27 +122,32 @@ struct AuthService: AuthServicing {
         _ = try await client.auth.session
     }
 
-    /// Pure decision for which user id to emit for a given auth event, split
-    /// out so it's unit-testable without a live `SupabaseClient`/`Session`.
+    /// Pure decision for how to resolve a given auth event, split out so it's
+    /// unit-testable without a live `SupabaseClient`/`Session`.
     ///
     /// With `emitLocalSessionAsInitialSession` enabled (see SupabaseManager),
     /// the SDK emits the locally stored session on launch even when it's
-    /// expired. Treat an expired `.initialSession` as signed-out so a stale
-    /// session doesn't briefly flash the signed-in UI; every other event maps
-    /// straight to its session's user id (nil when signed out).
-    static func resolveUserId(event: AuthChangeEvent, userId: UUID?, isExpired: Bool) -> UUID? {
+    /// expired. An expired `.initialSession` is *not* signed-out — the refresh
+    /// token is typically still valid, so a refresh is imminent; report
+    /// `.refreshPending` so the UI holds the launch screen instead of flashing
+    /// the login screen (and, symmetrically, doesn't flash the signed-in UI for
+    /// a session that turns out to be dead — that only happens once a real
+    /// signed-in/token-refreshed event lands). Only a truly empty
+    /// `.initialSession` (no stored session) is `.signedOut`. Every other event
+    /// maps straight to its session's user id (signed out when nil).
+    static func resolve(event: AuthChangeEvent, userId: UUID?, isExpired: Bool) -> AuthResolution {
         if event == .initialSession, isExpired {
-            return nil
+            return userId.map { .refreshPending(userId: $0) } ?? .signedOut
         }
-        return userId
+        return userId.map { .signedIn(userId: $0) } ?? .signedOut
     }
 
-    var userIdChanges: AsyncStream<UUID?> {
+    var authResolutions: AsyncStream<AuthResolution> {
         AsyncStream { continuation in
             let task = Task {
                 for await (event, session) in client.auth.authStateChanges {
                     continuation.yield(
-                        AuthService.resolveUserId(
+                        AuthService.resolve(
                             event: event,
                             userId: session?.user.id,
                             isExpired: session?.isExpired ?? true
