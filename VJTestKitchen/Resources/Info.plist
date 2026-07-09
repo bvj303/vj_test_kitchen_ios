@@ -33,7 +33,7 @@
 	<key>CFBundleShortVersionString</key>
 	<string>1.0</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>2</string>
 	<!-- Export-compliance: the app uses only standard HTTPS/TLS and Apple's
 	     built-in crypto (Keychain session storage), all export-exempt. Declaring
 	     this false means App Store Connect / TestFlight won't prompt the
