@@ -46,6 +46,7 @@ final class MealCalendarViewModel {
     private let recipeService: RecipeServicing
     private let weatherForecaster: WeatherForecasting
     private let weatherPreferenceStore: WeatherPreferenceStoring
+    private let widgetPublisher: WidgetPublishing
     private let debouncer: Debouncer
 
     /// Matches `.prefix(5)` in `MealCalendarView`'s Quick Planner search results.
@@ -57,12 +58,14 @@ final class MealCalendarViewModel {
         recipeService: RecipeServicing = RecipeService(),
         weatherForecaster: WeatherForecasting = OpenMeteoForecastService(),
         weatherPreferenceStore: WeatherPreferenceStoring = UserDefaultsWeatherPreferenceStore(),
+        widgetPublisher: WidgetPublishing = WidgetPublisher(),
         debounceDelay: Duration = .milliseconds(300)
     ) {
         self.mealPlanService = mealPlanService
         self.recipeService = recipeService
         self.weatherForecaster = weatherForecaster
         self.weatherPreferenceStore = weatherPreferenceStore
+        self.widgetPublisher = widgetPublisher
         self.debouncer = Debouncer(delay: debounceDelay)
         self.referenceDate = referenceDate
         let dates = Self.computeWeekDates(from: referenceDate, weekOffset: 0)
@@ -133,6 +136,8 @@ final class MealCalendarViewModel {
         do {
             let plans = try await mealPlanService.fetchAll()
             mealPlansByDate = Dictionary(grouping: plans, by: \.date)
+            // Publish today's meals to the Today's Meals widget.
+            widgetPublisher.publishTodaysMeals(plans: plans, today: todayDate)
         } catch {
             errorMessage = ErrorPresenter.message(for: error)
         }

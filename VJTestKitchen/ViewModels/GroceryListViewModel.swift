@@ -29,7 +29,13 @@ final class GroceryListViewModel {
         var rows: [GroceryDisplayRow]
     }
 
-    private(set) var items: [GroceryItem] = []
+    /// Publishing the Grocery widget snapshot from `items`' `didSet` keeps the
+    /// widget in sync across *every* mutation — the initial load plus each
+    /// optimistic add/toggle/delete/clear (and their reverts) — without
+    /// scattering publish calls through every method.
+    private(set) var items: [GroceryItem] = [] {
+        didSet { widgetPublisher.publishGrocery(items: items) }
+    }
     var grouping: Grouping = .byRecipe
     private(set) var isLoading = false
     private(set) var isExporting = false
@@ -37,13 +43,16 @@ final class GroceryListViewModel {
 
     private let service: GroceryItemServicing
     private let reminderService: ReminderExporting
+    private let widgetPublisher: WidgetPublishing
 
     init(
         service: GroceryItemServicing = GroceryItemService(),
-        reminderService: ReminderExporting = ReminderService()
+        reminderService: ReminderExporting = ReminderService(),
+        widgetPublisher: WidgetPublishing = WidgetPublisher()
     ) {
         self.service = service
         self.reminderService = reminderService
+        self.widgetPublisher = widgetPublisher
     }
 
     var isEmpty: Bool { items.isEmpty }
