@@ -25,5 +25,14 @@
 	     key). Paired with NSRemindersFullAccessUsageDescription. -->
 	<key>com.apple.security.personal-information.calendars</key>
 	<true/>
+
+	<!-- Shared container the app writes and the desktop widget reads (see
+	     WidgetDataStore). macOS requires the Team ID prefix on the group id and
+	     the matching UserDefaults suite name (WidgetSharedConfig), unlike iOS's
+	     bare group. form. -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>89R449GG5Z.group.com.bvj303.vjtestkitchen</string>
+	</array>
 </dict>
 </plist>

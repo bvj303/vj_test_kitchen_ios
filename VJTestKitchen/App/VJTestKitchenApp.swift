@@ -32,11 +32,18 @@ struct VJTestKitchenApp: App {
                 .environment(homeLocationViewModel)
                 .environment(appCommands)
                 .preferredColorScheme(settingsViewModel.appearanceMode.colorScheme)
-                // Email-confirmation (and future magic-link) deep links redirect
-                // to vjtestkitchen://login-callback; complete them here so the
-                // user lands signed-in in the app rather than on a web page.
+                // Two kinds of vjtestkitchen:// deep links land here:
+                //  • Widget taps (host = a tab, e.g. vjtestkitchen://calendar) →
+                //    switch to that tab via the command bus.
+                //  • Email-confirmation / magic-link redirects
+                //    (vjtestkitchen://login-callback) → complete auth so the user
+                //    lands signed-in in the app rather than on a dead web page.
                 .onOpenURL { url in
-                    Task { await authViewModel.handleAuthCallback(url: url) }
+                    if let tab = AppTab(deepLinkHost: url.host) {
+                        appCommands.selectTab(tab)
+                    } else {
+                        Task { await authViewModel.handleAuthCallback(url: url) }
+                    }
                 }
                 #if os(macOS)
                 // Floor the window size so it can't collapse to a screen's

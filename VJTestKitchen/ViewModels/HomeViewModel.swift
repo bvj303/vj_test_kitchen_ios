@@ -35,6 +35,7 @@ final class HomeViewModel {
     private let recipeService: RecipeServicing
     private let weatherForecaster: WeatherForecasting
     private let weatherPreferenceStore: WeatherPreferenceStoring
+    private let widgetPublisher: WidgetPublishing
 
     /// How many recipes the shelf shows at once…
     private static let displayCount = 8
@@ -47,13 +48,15 @@ final class HomeViewModel {
         calendar: Calendar = .current,
         recipeService: RecipeServicing = RecipeService(),
         weatherForecaster: WeatherForecasting = OpenMeteoForecastService(),
-        weatherPreferenceStore: WeatherPreferenceStoring = UserDefaultsWeatherPreferenceStore()
+        weatherPreferenceStore: WeatherPreferenceStoring = UserDefaultsWeatherPreferenceStore(),
+        widgetPublisher: WidgetPublishing = WidgetPublisher()
     ) {
         self.referenceDate = referenceDate
         self.calendar = calendar
         self.recipeService = recipeService
         self.weatherForecaster = weatherForecaster
         self.weatherPreferenceStore = weatherPreferenceStore
+        self.widgetPublisher = widgetPublisher
         self.suggestion = RecipeSuggester.suggestion(for: referenceDate, calendar: calendar)
     }
 
@@ -97,6 +100,8 @@ final class HomeViewModel {
             }
             // Shuffle then slice so the shelf rotates on each load/refresh.
             suggestedRecipes = Array(pool.shuffled().prefix(Self.displayCount))
+            // Publish the current suggestion + a few recipes to the Cook's Idea widget.
+            widgetPublisher.publishCooksIdea(suggestion: suggestion, recipes: suggestedRecipes)
         } catch {
             errorMessage = ErrorPresenter.message(for: error)
         }
