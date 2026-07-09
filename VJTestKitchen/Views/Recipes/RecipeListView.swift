@@ -13,13 +13,19 @@ struct RecipeListView: View {
     var body: some View {
         @Bindable var viewModel = viewModel
 
-        // The filter bar is a plain sibling stacked above the List rather than a
-        // `.safeAreaInset(edge: .top)`: that inset silently fails to lay out when
-        // the Recipes screen is entered as a *secondary* tab (a lazily-created
-        // TabView tab), which is exactly how it's reached now that Home is the
-        // first tab — the bar simply didn't appear. A VStack sibling always
-        // renders, so the chips show regardless of how the tab is opened.
+        // Both the search field and the filter bar are plain siblings stacked
+        // above the List rather than nav-bar chrome (`.searchable` /
+        // `.safeAreaInset(edge: .top)`): those hoist into the navigation bar via
+        // a mechanism that silently fails to install when the Recipes screen is
+        // entered as a *secondary* tab (a lazily-created TabView tab), which is
+        // exactly how it's reached now that Home is the first tab — the search
+        // field simply never appeared on iPhone. A VStack sibling always renders,
+        // so search + filters show regardless of how the tab is opened.
         VStack(spacing: 0) {
+            searchField
+                .padding(.horizontal)
+                .padding(.top, 8)
+                .background(.bar)
             RecipeFilterBar(viewModel: viewModel)
                 .background(.bar)
             Divider()
@@ -53,8 +59,6 @@ struct RecipeListView: View {
             }
             .refreshable { await viewModel.load() }
         }
-        .searchable(text: $viewModel.searchText, prompt: "Search recipes")
-        .searchFocused($searchFieldFocused)
         .toolbar {
             ToolbarItem(placement: .platformPrimaryAction) {
                 Button {
@@ -95,6 +99,39 @@ struct RecipeListView: View {
         } message: {
             Text(viewModel.errorMessage ?? "")
         }
+    }
+
+    // MARK: - Search field
+
+    /// A custom glass search field rendered inline above the list, replacing the
+    /// nav-bar `.searchable` (which didn't install on the secondary Recipes tab —
+    /// see the body comment). Binds straight to `viewModel.searchText`, whose
+    /// `didSet` debounces the reload, so typing behaves exactly as before.
+    private var searchField: some View {
+        @Bindable var viewModel = viewModel
+        return HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField("Search recipes", text: $viewModel.searchText)
+                .textFieldStyle(.plain)
+                .focused($searchFieldFocused)
+                .submitLabel(.search)
+                .platformAutocapitalization(.never)
+                .autocorrectionDisabled()
+            if !viewModel.searchText.isEmpty {
+                Button {
+                    viewModel.searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+        .glassEffect(.regular, in: Capsule())
     }
 
     /// Favorite/unfavorite button used by both the leading swipe and the
