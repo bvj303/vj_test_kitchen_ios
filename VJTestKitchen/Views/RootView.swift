@@ -18,7 +18,7 @@ struct RootView: View {
     private var content: some View {
         switch authViewModel.state {
         case .loading:
-            ProgressView()
+            SplashView()
         case .signedOut:
             AuthView()
         case .signedIn:

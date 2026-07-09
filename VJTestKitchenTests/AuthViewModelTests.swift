@@ -23,12 +23,12 @@ final class FakeAuthService: AuthServicing, @unchecked Sendable {
     /// with email confirmation on (no session until the link is clicked).
     var signUpNeedsEmailConfirmation = false
 
-    let userIdChanges: AsyncStream<UUID?>
-    private let continuation: AsyncStream<UUID?>.Continuation
+    let authResolutions: AsyncStream<AuthResolution>
+    private let continuation: AsyncStream<AuthResolution>.Continuation
 
     init() {
-        var continuation: AsyncStream<UUID?>.Continuation!
-        userIdChanges = AsyncStream { continuation = $0 }
+        var continuation: AsyncStream<AuthResolution>.Continuation!
+        authResolutions = AsyncStream { continuation = $0 }
         self.continuation = continuation
     }
 
@@ -72,8 +72,15 @@ final class FakeAuthService: AuthServicing, @unchecked Sendable {
         if let errorToThrow { throw errorToThrow }
     }
 
+    /// Convenience mirroring the old `UUID?` stream: nil → signed-out, some →
+    /// signed-in. Keeps existing tests readable; use `emit(_:)` for the
+    /// launch-time `.refreshPending` case.
     func emit(userId: UUID?) {
-        continuation.yield(userId)
+        continuation.yield(userId.map { .signedIn(userId: $0) } ?? .signedOut)
+    }
+
+    func emit(_ resolution: AuthResolution) {
+        continuation.yield(resolution)
     }
 }
 
@@ -145,6 +152,64 @@ struct AuthViewModelTests {
         fake.emit(userId: userId)
         try? await Task.sleep(for: .milliseconds(50))
         #expect(viewModel.state == .signedIn(userId: userId))
+    }
+
+    @Test func refreshPendingHoldsLoadingRatherThanFlashingLogin() async {
+        // The launch-time expired-session case: the app must NOT drop to the
+        // login screen while a token refresh is in flight — it holds .loading.
+        let fake = FakeAuthService()
+        // Long fallback so the optimistic-sign-in doesn't fire during the test.
+        let viewModel = AuthViewModel(authService: fake, launchFallbackDelay: .seconds(60))
+
+        fake.emit(.refreshPending(userId: UUID()))
+        try? await Task.sleep(for: .milliseconds(50))
+
+        #expect(viewModel.state == .loading)
+    }
+
+    @Test func refreshPendingResolvesToSignedInWhenRefreshSucceeds() async {
+        // A successful refresh lands as a .signedIn resolution and commits it,
+        // cancelling the fallback.
+        let fake = FakeAuthService()
+        let viewModel = AuthViewModel(authService: fake, launchFallbackDelay: .seconds(60))
+        let userId = UUID()
+
+        fake.emit(.refreshPending(userId: userId))
+        try? await Task.sleep(for: .milliseconds(20))
+        #expect(viewModel.state == .loading)
+
+        fake.emit(userId: userId)  // token refreshed
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(viewModel.state == .signedIn(userId: userId))
+    }
+
+    @Test func refreshPendingFallsBackToOptimisticSignInAfterDelay() async {
+        // If the refresh never resolves (e.g. offline), the cached session's user
+        // is signed in optimistically after the fallback delay rather than
+        // stranding a returning user on the splash.
+        let fake = FakeAuthService()
+        let viewModel = AuthViewModel(authService: fake, launchFallbackDelay: .milliseconds(30))
+        let userId = UUID()
+
+        fake.emit(.refreshPending(userId: userId))
+        try? await Task.sleep(for: .milliseconds(100))
+
+        #expect(viewModel.state == .signedIn(userId: userId))
+    }
+
+    @Test func refreshPendingFallbackIsCancelledBySignOut() async {
+        // A real signed-out resolution arriving before the fallback fires must
+        // win — the optimistic sign-in must not later override it.
+        let fake = FakeAuthService()
+        let viewModel = AuthViewModel(authService: fake, launchFallbackDelay: .milliseconds(40))
+        let userId = UUID()
+
+        fake.emit(.refreshPending(userId: userId))
+        try? await Task.sleep(for: .milliseconds(10))
+        fake.emit(userId: nil)  // refresh failed -> signed out
+        try? await Task.sleep(for: .milliseconds(80))
+
+        #expect(viewModel.state == .signedOut)
     }
 
     @Test func signInCallsServiceWithEnteredCredentials() async {
