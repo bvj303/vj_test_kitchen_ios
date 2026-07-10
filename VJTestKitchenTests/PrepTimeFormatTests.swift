@@ -40,4 +40,39 @@ struct PrepTimeFormatTests {
         #expect(PrepTimeFormat.label(minutes: 30) == "30 min")
         #expect(PrepTimeFormat.label(minutes: 90) == "1 hr 30 min")
     }
+
+    // MARK: - parseMinutes (form input)
+
+    @Test func parsesBareMinuteCounts() {
+        #expect(PrepTimeFormat.parseMinutes("45") == 45)
+        #expect(PrepTimeFormat.parseMinutes(" 45 ") == 45)
+        #expect(PrepTimeFormat.parseMinutes("0") == 0)
+    }
+
+    @Test func parsesMinuteKeywordForms() {
+        #expect(PrepTimeFormat.parseMinutes("45 min") == 45)
+        #expect(PrepTimeFormat.parseMinutes("45 mins") == 45)
+        #expect(PrepTimeFormat.parseMinutes("45 minutes") == 45)
+        #expect(PrepTimeFormat.parseMinutes("45m") == 45)
+    }
+
+    @Test func parsesHourKeywordForms() {
+        #expect(PrepTimeFormat.parseMinutes("1 hour") == 60)
+        #expect(PrepTimeFormat.parseMinutes("2 hrs") == 120)
+        #expect(PrepTimeFormat.parseMinutes("1.5 hours") == 90)
+        #expect(PrepTimeFormat.parseMinutes("1h") == 60)
+    }
+
+    @Test func parsesCombinedHourAndMinuteForms() {
+        #expect(PrepTimeFormat.parseMinutes("1 hr 30 min") == 90)
+        #expect(PrepTimeFormat.parseMinutes("1h30m") == 90)
+        #expect(PrepTimeFormat.parseMinutes("2 hours 15 minutes") == 135)
+    }
+
+    @Test func refusesUnreadableInputInsteadOfGuessing() {
+        #expect(PrepTimeFormat.parseMinutes("") == nil)
+        #expect(PrepTimeFormat.parseMinutes("a while") == nil)
+        #expect(PrepTimeFormat.parseMinutes("45 foo") == nil)
+        #expect(PrepTimeFormat.parseMinutes("-10") == nil)
+    }
 }

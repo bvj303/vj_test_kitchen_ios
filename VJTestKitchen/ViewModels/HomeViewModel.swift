@@ -30,37 +30,64 @@ final class HomeViewModel {
     private(set) var isLoading = false
     var errorMessage: String?
 
-    private let referenceDate: Date
+    /// Wall clock, injectable for tests — read fresh on every `load()` (never
+    /// frozen at init) so the suggestion tracks the real day: this view model
+    /// lives as long as the tab does, and iOS keeps apps suspended for days, so
+    /// an init-time date left weekend suggestions showing on a Monday.
+    private let now: () -> Date
     private let calendar: Calendar
     private let recipeService: RecipeServicing
     private let weatherForecaster: WeatherForecasting
     private let weatherPreferenceStore: WeatherPreferenceStoring
     private let widgetPublisher: WidgetPublishing
+    private let snapshotStore: LocalSnapshotStoring
+
+    /// When the shelf/forecast last loaded, and the calendar-derived suggestion
+    /// they loaded for — together they let `load()` skip a refetch when nothing
+    /// meaningful changed (see `isFresh`).
+    @ObservationIgnored private var lastLoadedAt: Date?
+    @ObservationIgnored private var lastCalendarSuggestion: RecipeSuggestion?
 
     /// How many recipes the shelf shows at once…
     private static let displayCount = 8
     /// …drawn (and shuffled) from a larger pool, so repeat visits surface a
     /// different slice instead of the same first-N every time.
     private static let poolSize = 40
+    /// How long a loaded shelf + forecast stay fresh. `.task` re-fires on every
+    /// tab switch, and refetching Open-Meteo plus two recipe pages each visit
+    /// (with the shelf visibly reshuffling) was wasted churn — within this
+    /// window, revisits reuse what's shown. Pull-to-refresh / ⌘R force it.
+    private static let reloadInterval: TimeInterval = 3600
 
     init(
-        referenceDate: Date = Date(),
+        now: @escaping () -> Date = Date.init,
         calendar: Calendar = .current,
         recipeService: RecipeServicing = RecipeService(),
         weatherForecaster: WeatherForecasting = OpenMeteoForecastService(),
         weatherPreferenceStore: WeatherPreferenceStoring = UserDefaultsWeatherPreferenceStore(),
-        widgetPublisher: WidgetPublishing = WidgetPublisher()
+        widgetPublisher: WidgetPublishing = WidgetPublisher(),
+        snapshotStore: LocalSnapshotStoring = FileSnapshotStore.shared
     ) {
-        self.referenceDate = referenceDate
+        self.now = now
         self.calendar = calendar
         self.recipeService = recipeService
         self.weatherForecaster = weatherForecaster
         self.weatherPreferenceStore = weatherPreferenceStore
         self.widgetPublisher = widgetPublisher
-        self.suggestion = RecipeSuggester.suggestion(for: referenceDate, calendar: calendar)
+        self.snapshotStore = snapshotStore
+        self.suggestion = RecipeSuggester.suggestion(for: now(), calendar: calendar)
     }
 
-    func load() async {
+    /// Loads (or reuses) the forecast and suggested-recipes shelf. `force`
+    /// (pull-to-refresh, ⌘R) always refetches; otherwise a fresh recent load
+    /// for the same calendar context is reused as-is.
+    func load(force: Bool = false) async {
+        if !force, isFresh { return }
+        // Paint the last-loaded shelf immediately (fresh launch only) while
+        // the real load runs — offline, Home still has recipes to show.
+        if suggestedRecipes.isEmpty, let cached = snapshotStore.load([Recipe].self, key: .homeShelf) {
+            suggestedRecipes = cached
+        }
         isLoading = true
         errorMessage = nil
         defer { isLoading = false }
@@ -68,6 +95,18 @@ final class HomeViewModel {
         // the shelf query uses the weather-driven keyword/prep cap.
         await loadWeatherSuggestion()
         await loadSuggestedRecipes()
+        lastLoadedAt = now()
+        lastCalendarSuggestion = RecipeSuggester.suggestion(for: now(), calendar: calendar)
+    }
+
+    /// A previous load still stands when it happened within `reloadInterval`,
+    /// actually produced a shelf, and the calendar-derived suggestion hasn't
+    /// changed since (a day rollover — weeknight→weekend, new season — must
+    /// refetch even inside the interval).
+    private var isFresh: Bool {
+        guard let lastLoadedAt, !suggestedRecipes.isEmpty else { return false }
+        return now().timeIntervalSince(lastLoadedAt) < Self.reloadInterval
+            && lastCalendarSuggestion == RecipeSuggester.suggestion(for: now(), calendar: calendar)
     }
 
     /// Fetches the forecast for the saved home location (if any) and recomputes
@@ -77,13 +116,13 @@ final class HomeViewModel {
     private func loadWeatherSuggestion() async {
         guard let home = weatherPreferenceStore.loadHomeLocation() else {
             todayForecast = nil
-            suggestion = RecipeSuggester.suggestion(for: referenceDate, calendar: calendar)
+            suggestion = RecipeSuggester.suggestion(for: now(), calendar: calendar)
             return
         }
         // Open-Meteo returns the outlook starting today, so the first entry is
         // today's forecast (see OpenMeteoForecastService / the calendar's usage).
         todayForecast = try? await weatherForecaster.dailyForecast(for: home.coordinate).first
-        suggestion = RecipeSuggester.suggestion(forecast: todayForecast, date: referenceDate, calendar: calendar)
+        suggestion = RecipeSuggester.suggestion(forecast: todayForecast, date: now(), calendar: calendar)
     }
 
     private func loadSuggestedRecipes() async {
@@ -100,6 +139,7 @@ final class HomeViewModel {
             }
             // Shuffle then slice so the shelf rotates on each load/refresh.
             suggestedRecipes = Array(pool.shuffled().prefix(Self.displayCount))
+            snapshotStore.save(suggestedRecipes, key: .homeShelf)
             // Publish the current suggestion + a few recipes to the Cook's Idea widget.
             widgetPublisher.publishCooksIdea(suggestion: suggestion, recipes: suggestedRecipes)
         } catch {

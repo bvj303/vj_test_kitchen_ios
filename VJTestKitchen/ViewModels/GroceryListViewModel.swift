@@ -29,12 +29,15 @@ final class GroceryListViewModel {
         var rows: [GroceryDisplayRow]
     }
 
-    /// Publishing the Grocery widget snapshot from `items`' `didSet` keeps the
-    /// widget in sync across *every* mutation — the initial load plus each
-    /// optimistic add/toggle/delete/clear (and their reverts) — without
-    /// scattering publish calls through every method.
+    /// Publishing the Grocery widget snapshot (and the offline snapshot) from
+    /// `items`' `didSet` keeps both in sync across *every* mutation — the
+    /// initial load plus each optimistic add/toggle/delete/clear (and their
+    /// reverts) — without scattering publish calls through every method.
     private(set) var items: [GroceryItem] = [] {
-        didSet { widgetPublisher.publishGrocery(items: items) }
+        didSet {
+            widgetPublisher.publishGrocery(items: items)
+            snapshotStore.save(items, key: .groceryItems)
+        }
     }
     var grouping: Grouping = .byRecipe
     private(set) var isLoading = false
@@ -44,15 +47,18 @@ final class GroceryListViewModel {
     private let service: GroceryItemServicing
     private let reminderService: ReminderExporting
     private let widgetPublisher: WidgetPublishing
+    private let snapshotStore: LocalSnapshotStoring
 
     init(
         service: GroceryItemServicing = GroceryItemService(),
         reminderService: ReminderExporting = ReminderService(),
-        widgetPublisher: WidgetPublishing = WidgetPublisher()
+        widgetPublisher: WidgetPublishing = WidgetPublisher(),
+        snapshotStore: LocalSnapshotStoring = FileSnapshotStore.shared
     ) {
         self.service = service
         self.reminderService = reminderService
         self.widgetPublisher = widgetPublisher
+        self.snapshotStore = snapshotStore
     }
 
     var isEmpty: Bool { items.isEmpty }
@@ -117,6 +123,11 @@ final class GroceryListViewModel {
     }
 
     func load() async {
+        // Paint the last-known list immediately (fresh launch only) while the
+        // real fetch runs — offline, it's what keeps the checklist usable.
+        if items.isEmpty, let cached = snapshotStore.load([GroceryItem].self, key: .groceryItems) {
+            items = cached
+        }
         errorMessage = nil
         isLoading = true
         defer { isLoading = false }
@@ -234,10 +245,11 @@ final class GroceryListViewModel {
         isExporting = true
         defer { isExporting = false }
         // Export what's still needed (unchecked) — the point of a checklist is
-        // that checked items are already in the cart.
-        let formatted = items
-            .filter { !$0.isChecked }
-            .map { Self.formatItem(name: $0.name, amount: $0.amount, unit: $0.unit) }
+        // that checked items are already in the cart. Like items are combined
+        // the same way the by-category view shows them ("2 lemons" + "1 lemon"
+        // → one "3 Lemons" reminder), instead of one reminder per source row.
+        let formatted = GroceryAggregator.combine(items.filter { !$0.isChecked })
+            .map { $0.quantityText.isEmpty ? $0.name : "\($0.quantityText) \($0.name)" }
         do {
             try await reminderService.export(items: formatted, listName: "VJ Test Kitchen Groceries")
         } catch {

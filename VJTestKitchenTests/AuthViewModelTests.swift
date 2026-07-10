@@ -371,13 +371,31 @@ struct AuthViewModelTests {
         #expect(viewModel.errorMessage == nil)
     }
 
-    @Test func signOutCallsService() async {
+    @Test func signOutCallsServiceAndClearsOfflineSnapshots() async {
         let fake = FakeAuthService()
-        let viewModel = AuthViewModel(authService: fake)
+        let snapshots = FakeSnapshotStore()
+        snapshots.save(["stale"], key: .homeShelf)
+        let viewModel = AuthViewModel(authService: fake, snapshotStore: snapshots)
 
         await viewModel.signOut()
 
         #expect(fake.signOutCallCount == 1)
+        // The previous account's cached data must not paint for the next one.
+        #expect(snapshots.clearAllCallCount == 1)
+        #expect(snapshots.isEmpty)
+    }
+
+    @Test func failedSignOutKeepsOfflineSnapshots() async {
+        let fake = FakeAuthService()
+        fake.errorToThrow = TestError()
+        let snapshots = FakeSnapshotStore()
+        snapshots.save(["mine"], key: .homeShelf)
+        let viewModel = AuthViewModel(authService: fake, snapshotStore: snapshots)
+
+        await viewModel.signOut()
+
+        // Still signed in (the sign-out failed) — the user's own cache stays.
+        #expect(snapshots.clearAllCallCount == 0)
     }
 
     @Test func warmUpSessionCallsService() async {
@@ -403,14 +421,17 @@ struct AuthViewModelTests {
         #expect(viewModel.errorMessage == nil)
     }
 
-    @Test func deleteAccountCallsService() async {
+    @Test func deleteAccountCallsServiceAndClearsOfflineSnapshots() async {
         let fake = FakeAuthService()
-        let viewModel = AuthViewModel(authService: fake)
+        let snapshots = FakeSnapshotStore()
+        snapshots.save(["stale"], key: .groceryItems)
+        let viewModel = AuthViewModel(authService: fake, snapshotStore: snapshots)
 
         await viewModel.deleteAccount()
 
         #expect(fake.deleteAccountCallCount == 1)
         #expect(viewModel.errorMessage == nil)
+        #expect(snapshots.clearAllCallCount == 1)
     }
 
     @Test func deleteAccountSurfacesErrorMessageOnFailure() async {

@@ -32,27 +32,52 @@ final class RecipeFormViewModel {
     private(set) var didSave = false
 
     private let recipeService: RecipeServicing
-    private let ingredientService: IngredientServicing
-    private let tagService: TagServicing
+    private let saveService: RecipeSaving
 
     init(
         mode: Mode,
         recipeService: RecipeServicing = RecipeService(),
-        ingredientService: IngredientServicing = IngredientService(),
-        tagService: TagServicing = TagService()
+        saveService: RecipeSaving = RecipeSaveService()
     ) {
         self.mode = mode
         self.recipeService = recipeService
-        self.ingredientService = ingredientService
-        self.tagService = tagService
+        self.saveService = saveService
     }
 
     var isEditing: Bool {
         if case .edit = mode { true } else { false }
     }
 
+    /// Whether the prep-time field reads as a duration ("45", "1 hr 30 min",
+    /// …) — empty is fine (prep time is optional), garbage is not. The old
+    /// form's `Int(prepTimeText)` silently saved nil for "45 min".
+    var prepTimeIsValid: Bool {
+        prepTimeText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || PrepTimeFormat.parseMinutes(prepTimeText) != nil
+    }
+
+    /// Whether the servings field contains a readable count — empty is fine,
+    /// and "4 people" reads as 4 (see `parseServings`).
+    var servingsIsValid: Bool {
+        servingsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || Self.parseServings(servingsText) != nil
+    }
+
+    /// Inline feedback for the Quick Stats section; nil when both fields parse.
+    var quickStatsValidationMessage: String? {
+        if !prepTimeIsValid {
+            return "Prep time should be minutes, like \"45\" or \"1 hr 30 min\"."
+        }
+        if !servingsIsValid {
+            return "Servings should be a number, like \"4\"."
+        }
+        return nil
+    }
+
     var canSave: Bool {
         !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && prepTimeIsValid
+            && servingsIsValid
     }
 
     func loadIfNeeded() async {
@@ -97,33 +122,28 @@ final class RecipeFormViewModel {
             description: description.isEmpty ? nil : description,
             instructions: instructions.isEmpty ? nil : instructions,
             imagePath: nil,
-            prepTime: Int(prepTimeText),
-            servings: Int(servingsText)
+            prepTime: PrepTimeFormat.parseMinutes(prepTimeText),
+            servings: Self.parseServings(servingsText)
         )
 
+        let ingredients: [RecipeSaveIngredient] = ingredientRows.compactMap { row in
+            let trimmedName = row.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedName.isEmpty else { return nil }
+            return RecipeSaveIngredient(name: trimmedName, amount: IngredientAmountParser.parse(row.amount) ?? 0, unit: row.unit)
+        }
+
+        let tagNames = tagsText
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        let recipeId: Int64? = if case .edit(let id) = mode { id } else { nil }
+
         do {
-            let recipeId: Int64
-            switch mode {
-            case .create:
-                recipeId = try await recipeService.create(draft).id
-            case .edit(let id):
-                try await recipeService.update(id: id, with: draft)
-                recipeId = id
-            }
-
-            let ingredients: [IngredientInsert] = ingredientRows.compactMap { row in
-                let trimmedName = row.name.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmedName.isEmpty else { return nil }
-                return IngredientInsert(recipeId: recipeId, name: trimmedName, amount: IngredientAmountParser.parse(row.amount) ?? 0, unit: row.unit)
-            }
-            try await ingredientService.replaceAll(recipeId: recipeId, with: ingredients)
-
-            let tagNames = tagsText
-                .split(separator: ",")
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
-            try await tagService.replaceAll(recipeId: recipeId, withTagNames: tagNames)
-
+            // One atomic RPC — recipe + ingredients + tags land together or not
+            // at all, so a mid-save network drop can't leave a recipe without
+            // its ingredients or duplicate it on retry (see RecipeSaveService).
+            try await saveService.save(recipeId: recipeId, draft: draft, ingredients: ingredients, tagNames: tagNames)
             didSave = true
         } catch {
             errorMessage = ErrorPresenter.message(for: error)
@@ -142,6 +162,13 @@ final class RecipeFormViewModel {
             errorMessage = ErrorPresenter.message(for: error)
             return false
         }
+    }
+
+    /// Reads a serving count out of user-typed text: "4" → 4, "4 people" → 4,
+    /// "serves 6" → 6. Nil when there's no number to read.
+    static func parseServings(_ text: String) -> Int? {
+        guard let match = text.firstMatch(of: #/\d+/#) else { return nil }
+        return Int(match.0)
     }
 
     private static func formatAmount(_ amount: Double) -> String {
