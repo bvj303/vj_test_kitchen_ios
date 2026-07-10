@@ -28,16 +28,26 @@ struct SpatchBuddyView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     // Optional so previews/tests without the app root's injection still work.
     // While the walkthrough is up, Spatch is *on stage there* — a cameo popping
-    // in at the same time would put two of him on screen at once.
+    // in at the same time would put two of him on screen at once. Same deal
+    // while a stunt flyby is playing, and none of him at all when the user has
+    // turned Spatch off in Settings.
     @Environment(SpatchTutorialViewModel.self) private var tutorialViewModel: SpatchTutorialViewModel?
+    @Environment(SpatchStuntCoordinator.self) private var stuntCoordinator: SpatchStuntCoordinator?
+    @Environment(SettingsViewModel.self) private var settingsViewModel: SettingsViewModel?
 
     @State private var dragOffset: CGSize = .zero
+    /// This cameo's key in the coordinator's visibility registry — each of the
+    /// hosting screens (Home / Recipe Detail / Cook Mode) owns its own cameo.
+    @State private var cameoId = UUID()
 
     /// Drag distance past which a swipe counts as "away", in points.
     private let dismissThreshold: CGFloat = 80
 
     var body: some View {
-        let isShowing = viewModel.isVisible && tutorialViewModel?.isPresented != true
+        let isShowing = viewModel.isVisible
+            && tutorialViewModel?.isPresented != true
+            && stuntCoordinator?.isPerforming != true
+            && settingsViewModel?.showSpatch != false
         // The ZStack persists across visibility flips so the `if` below is
         // inserted/removed *inside* an animated container — that's what makes
         // the `.transition` actually animate. (Attaching the animation at the
@@ -54,6 +64,17 @@ struct SpatchBuddyView: View {
             }
         }
         .animation(.spring(response: 0.45, dampingFraction: 0.68), value: isShowing)
+        // Keep the stunt coordinator's registry in sync with what's actually
+        // rendered (`isShowing`, not raw `isVisible`) so a stunt never starts
+        // while this cameo is on screen. `initial: true` seeds a cameo that's
+        // already visible when the view lands; `onDisappear` covers the host
+        // screen being popped/dismissed with the cameo still up.
+        .onChange(of: isShowing, initial: true) { _, showing in
+            stuntCoordinator?.setCameoVisible(showing, id: cameoId)
+        }
+        .onDisappear {
+            stuntCoordinator?.setCameoVisible(false, id: cameoId)
+        }
         .onChange(of: viewModel.isVisible) { _, isVisible in
             // A swipe-dismiss leaves `dragOffset` at its flung 3× value; without
             // this reset the *next* pop-in would render him off-position and

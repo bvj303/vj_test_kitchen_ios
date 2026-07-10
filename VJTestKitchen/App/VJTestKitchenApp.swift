@@ -13,6 +13,10 @@ struct VJTestKitchenApp: App {
     // Shared so the first-launch walkthrough (MainTabView) and Settings'
     // "Meet Spatch Again" replay read and write the same instance.
     @State private var spatchTutorialViewModel = SpatchTutorialViewModel()
+    // Schedules Spatch's surprise stunt flybys — shared so the stage/scheduler
+    // (MainTabView) and every cameo (which must yield the stage to a stunt and
+    // vice versa) coordinate through one instance.
+    @State private var spatchStuntCoordinator = SpatchStuntCoordinator()
 
     init() {
         // Give `URLSession.shared` (and therefore every `RemoteImage`) a roomy
@@ -35,6 +39,7 @@ struct VJTestKitchenApp: App {
                 .environment(homeLocationViewModel)
                 .environment(appCommands)
                 .environment(spatchTutorialViewModel)
+                .environment(spatchStuntCoordinator)
                 .preferredColorScheme(settingsViewModel.appearanceMode.colorScheme)
                 // Two kinds of vjtestkitchen:// deep links land here:
                 //  • Widget taps (host = a tab, e.g. vjtestkitchen://calendar) →
