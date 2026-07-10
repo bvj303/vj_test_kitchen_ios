@@ -98,6 +98,16 @@ struct SpatchStuntPerformanceView: View {
             CGSize(width: characterSize.width * 2.6, height: characterSize.height * 1.62)
         case .bubbleBounce:
             CGSize(width: characterSize.height * 1.12, height: characterSize.height * 1.12)
+        case .whiskBroom:
+            CGSize(width: characterSize.width * 2.8, height: characterSize.height * 1.12)
+        case .pizzaSurf:
+            CGSize(width: characterSize.width * 2.2, height: characterSize.height * 1.15)
+        case .rollingPin:
+            CGSize(width: characterSize.width * 2.0, height: characterSize.height * 1.12)
+        case .toastPop:
+            CGSize(width: characterSize.width * 1.7, height: characterSize.height * 1.05)
+        case .potSail:
+            CGSize(width: characterSize.width * 2.0, height: characterSize.height * 1.05)
         }
     }
 
@@ -166,6 +176,68 @@ struct SpatchStuntPerformanceView: View {
             ZStack {
                 character(mood: .laughing)
                 soapBubble
+            }
+
+        case .whiskBroom:
+            // Witch-style: astride the whisk's rod, bristle cage trailing
+            // behind — the whisk mirrors with him like the paper plane.
+            ZStack {
+                WhiskView()
+                    .frame(width: characterSize.width * 2.7, height: characterSize.width * 0.85)
+                    .scaleEffect(x: facesReversed ? -1 : 1)
+                    .rotationEffect(.degrees(facesReversed ? 8 : -8))
+                    .offset(y: characterSize.height * 0.30)
+                // Astride the rod (not the collar), bristle cage behind him.
+                character(mood: .laughing)
+                    .offset(
+                        x: characterSize.width * 0.55 * (facesReversed ? -1 : 1),
+                        y: -characterSize.height * 0.06
+                    )
+            }
+
+        case .pizzaSurf:
+            VStack(spacing: -characterSize.height * 0.10) {
+                character(mood: .happy)
+                PizzaView()
+                    .frame(width: characterSize.width * 2.1, height: characterSize.width * 0.62)
+            }
+
+        case .rollingPin:
+            VStack(spacing: -characterSize.height * 0.07) {
+                character(mood: .thinking)
+                RollingPinView()
+                    .frame(width: characterSize.width * 1.9, height: characterSize.width * 0.34)
+            }
+
+        case .toastPop:
+            // He rides up hugging the slice — toast behind, Spatch in front.
+            ZStack {
+                ToastShape()
+                    .fill(
+                        LinearGradient(
+                            colors: [Color(red: 0.91, green: 0.72, blue: 0.42), Color(red: 0.78, green: 0.55, blue: 0.28)],
+                            startPoint: .top, endPoint: .bottom
+                        )
+                    )
+                    .overlay(
+                        // The pale crumb face inside the crust.
+                        ToastShape()
+                            .fill(Color(red: 0.96, green: 0.87, blue: 0.64))
+                            .scaleEffect(0.82)
+                    )
+                    .frame(width: characterSize.width * 1.55, height: characterSize.width * 1.65)
+                    .offset(x: characterSize.width * (facesReversed ? -0.18 : 0.18), y: -characterSize.height * 0.14)
+                character(mood: .surprised)
+            }
+
+        case .potSail:
+            // Sitting in the pot: his handle end hides behind it, steam
+            // curling up off the broth beside him.
+            ZStack(alignment: .bottom) {
+                character(mood: .winking)
+                    .offset(y: -characterSize.height * 0.16)
+                StockpotView(steamColor: Color.white.opacity(0.55))
+                    .frame(width: characterSize.width * 1.9, height: characterSize.height * 0.52)
             }
         }
     }
@@ -352,6 +424,185 @@ private struct BalloonBunchView: View {
             .overlay(sheen)
             .frame(width: width, height: height)
             .offset(x: w * centerX - width / 2, y: h * centerY - height / 2)
+    }
+}
+
+/// A giant balloon whisk lying broom-style: rod to the right (where he sits),
+/// wire cage trailing at the back like bristles.
+private struct WhiskView: View {
+    var body: some View {
+        GeometryReader { proxy in
+            let w = proxy.size.width
+            let h = proxy.size.height
+            let wire = max(1, h * 0.05)
+            ZStack {
+                Capsule()
+                    .fill(
+                        LinearGradient(
+                            colors: [SpatchPalette.woodLight, SpatchPalette.woodDark],
+                            startPoint: .top, endPoint: .bottom
+                        )
+                    )
+                    .frame(width: w * 0.58, height: h * 0.16)
+                    .offset(x: w * 0.21)
+                // Real whisk wires share both endpoints (collar and tip) and
+                // differ in how far they bow out — same width, nested heights.
+                // Concentric same-center loops read as a target, not a whisk.
+                loop(width: w * 0.52, height: h, wire: wire, w: w)
+                loop(width: w * 0.52, height: h * 0.60, wire: wire, w: w)
+                loop(width: w * 0.52, height: h * 0.26, wire: wire, w: w)
+                // The collar where the wires gather into the handle.
+                RoundedRectangle(cornerRadius: h * 0.05, style: .continuous)
+                    .fill(SpatchPalette.spoonGray)
+                    .frame(width: w * 0.07, height: h * 0.24)
+                    .offset(x: -w * 0.045)
+            }
+            .frame(width: w, height: h)
+        }
+    }
+
+    private func loop(width: CGFloat, height: CGFloat, wire: CGFloat, w: CGFloat) -> some View {
+        Ellipse()
+            .stroke(SpatchPalette.wireGray, lineWidth: wire)
+            .frame(width: width, height: height)
+            .offset(x: -w * 0.26)
+    }
+}
+
+/// The pepperoni pizza he surfs — a flattened perspective disc: crust ring,
+/// cheese, and a scatter of pepperoni.
+private struct PizzaView: View {
+    var body: some View {
+        GeometryReader { proxy in
+            let w = proxy.size.width
+            let h = proxy.size.height
+            let pepperoni = Color(red: 0.76, green: 0.25, blue: 0.20)
+            ZStack {
+                Ellipse()
+                    .fill(Color(red: 0.85, green: 0.64, blue: 0.36))
+                    .frame(width: w, height: h)
+                Ellipse()
+                    .fill(Color(red: 0.95, green: 0.77, blue: 0.36))
+                    .frame(width: w * 0.86, height: h * 0.78)
+                pepperoniDot(size: w * 0.09, x: -w * 0.28, y: -h * 0.08, color: pepperoni)
+                pepperoniDot(size: w * 0.08, x: -w * 0.05, y: h * 0.16, color: pepperoni)
+                pepperoniDot(size: w * 0.09, x: w * 0.22, y: -h * 0.12, color: pepperoni)
+                pepperoniDot(size: w * 0.07, x: w * 0.32, y: h * 0.14, color: pepperoni)
+                pepperoniDot(size: w * 0.07, x: -w * 0.12, y: -h * 0.24, color: pepperoni)
+            }
+            .frame(width: w, height: h)
+        }
+    }
+
+    private func pepperoniDot(size: CGFloat, x: CGFloat, y: CGFloat, color: Color) -> some View {
+        Ellipse()
+            .fill(color)
+            .frame(width: size, height: size * 0.72)
+            .offset(x: x, y: y)
+    }
+}
+
+/// The rolling pin he log-rolls on: a wooden barrel with stub handles.
+private struct RollingPinView: View {
+    var body: some View {
+        GeometryReader { proxy in
+            let w = proxy.size.width
+            let h = proxy.size.height
+            ZStack {
+                Capsule()
+                    .fill(SpatchPalette.woodDark)
+                    .frame(width: w, height: h * 0.42)
+                Capsule()
+                    .fill(
+                        LinearGradient(
+                            colors: [SpatchPalette.woodLight, SpatchPalette.woodDark],
+                            startPoint: .top, endPoint: .bottom
+                        )
+                    )
+                    .frame(width: w * 0.72, height: h)
+            }
+            .frame(width: w, height: h)
+        }
+    }
+}
+
+/// A slice of toast: rounded bottom, two humps on top.
+private struct ToastShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let w = rect.width
+        let h = rect.height
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX + w * 0.08, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX + w * 0.92, y: rect.maxY))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.maxX, y: rect.minY + h * 0.88),
+            control: CGPoint(x: rect.maxX, y: rect.maxY)
+        )
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY + h * 0.42))
+        // Two crown humps meeting in a slight center dip.
+        path.addQuadCurve(
+            to: CGPoint(x: rect.minX + w * 0.52, y: rect.minY + h * 0.30),
+            control: CGPoint(x: rect.maxX - w * 0.02, y: rect.minY - h * 0.05)
+        )
+        path.addQuadCurve(
+            to: CGPoint(x: rect.minX, y: rect.minY + h * 0.42),
+            control: CGPoint(x: rect.minX + w * 0.02, y: rect.minY - h * 0.05)
+        )
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + h * 0.88))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.minX + w * 0.08, y: rect.maxY),
+            control: CGPoint(x: rect.minX, y: rect.maxY)
+        )
+        path.closeSubpath()
+        return path
+    }
+}
+
+/// The stockpot he sails in: steel body, rolled rim, side handles, and steam
+/// curling off the broth.
+private struct StockpotView: View {
+    var steamColor: Color
+
+    var body: some View {
+        GeometryReader { proxy in
+            let w = proxy.size.width
+            let h = proxy.size.height
+            ZStack {
+                steam(size: w * 0.10, x: -w * 0.24, y: -h * 0.42, opacity: 1.0)
+                steam(size: w * 0.07, x: -w * 0.30, y: -h * 0.78, opacity: 0.7)
+                steam(size: w * 0.09, x: w * 0.26, y: -h * 0.52, opacity: 0.85)
+                // Side handles peek out from behind the rim.
+                Capsule()
+                    .fill(SpatchPalette.wireGray)
+                    .frame(width: w * 0.16, height: h * 0.10)
+                    .offset(x: -w * 0.44, y: -h * 0.10)
+                Capsule()
+                    .fill(SpatchPalette.wireGray)
+                    .frame(width: w * 0.16, height: h * 0.10)
+                    .offset(x: w * 0.44, y: -h * 0.10)
+                RoundedRectangle(cornerRadius: w * 0.05, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [SpatchPalette.spoonGray, SpatchPalette.wireGray],
+                            startPoint: .topLeading, endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: w * 0.78, height: h * 0.60)
+                    .offset(y: h * 0.18)
+                Capsule()
+                    .fill(SpatchPalette.spoonGray)
+                    .frame(width: w * 0.86, height: h * 0.16)
+                    .offset(y: -h * 0.16)
+            }
+            .frame(width: w, height: h)
+        }
+    }
+
+    private func steam(size: CGFloat, x: CGFloat, y: CGFloat, opacity: Double) -> some View {
+        Circle()
+            .fill(steamColor.opacity(opacity))
+            .frame(width: size, height: size)
+            .offset(x: x, y: y)
     }
 }
 

@@ -102,6 +102,22 @@ struct SpatchStuntChoreographyTests {
         }
     }
 
+    @Test func toastPopRisesThenFallsBackOffTheBottom() {
+        // The one stunt that enters and exits the *same* edge: up like toast,
+        // hang at the apex, back down out of sight.
+        let run = run(.toastPop)
+        func placement(_ p: CGFloat) -> SpatchStuntChoreography.Placement {
+            SpatchStuntChoreography.placement(run: run, progress: p, stage: stage, performer: performer)
+        }
+        // Both endpoints fully below the bottom edge, not just anywhere offstage.
+        #expect(placement(0).y - performer.height / 2 >= stage.height)
+        #expect(placement(1).y - performer.height / 2 >= stage.height)
+        // Apex is on stage, and both halves slope toward it.
+        #expect((0...stage.height).contains(placement(0.5).y))
+        #expect(placement(0.15).y > placement(0.5).y)
+        #expect(placement(0.85).y > placement(0.5).y)
+    }
+
     @Test func rocketAcceleratesAsItClimbs() {
         // The launch should ease in: the first half of the ride covers less
         // ground than the second.
