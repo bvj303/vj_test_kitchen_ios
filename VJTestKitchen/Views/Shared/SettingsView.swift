@@ -28,6 +28,9 @@ struct SettingsView: View {
         }
         .navigationTitle("Settings")
         .inlineNavigationTitle()
+        .scrollDismissesKeyboard(.interactively)
+        .dismissesKeyboardOnBackgroundTap()
+        .keyboardDoneButton()
     }
 
     /// Home location for the calendar's weather outlook — the saved ZIP (with

@@ -68,6 +68,8 @@ struct MealCalendarView: View {
         .onChange(of: appCommands.refreshRequests) { _, _ in
             Task { await viewModel.load() }
         }
+        .dismissesKeyboardOnBackgroundTap()
+        .keyboardDoneButton()
         .alert(
             "Something Went Wrong",
             isPresented: Binding(
@@ -94,6 +96,7 @@ struct MealCalendarView: View {
             }
             .padding()
         }
+        .scrollDismissesKeyboard(.interactively)
     }
 
     /// iPad (portrait and landscape): a fixed planner sidebar beside a
@@ -105,6 +108,7 @@ struct MealCalendarView: View {
                     .padding(.vertical)
             }
             .frame(width: 340)
+            .scrollDismissesKeyboard(.interactively)
 
             ScrollView {
                 VStack(spacing: 20) {
