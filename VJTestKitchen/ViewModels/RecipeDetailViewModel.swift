@@ -34,12 +34,32 @@ final class RecipeDetailViewModel {
     }
 
     /// Transient per-session feedback for the ingredient "add to grocery list"
-    /// buttons — which ingredients have been added this visit, and whether the
-    /// "Add All" action has run. Not reloaded from the server (a standalone
-    /// grocery snapshot has no lasting link back to the ingredient it came
-    /// from), just enough to flip a "+" to a checkmark.
-    private(set) var addedIngredientIds: Set<Int64> = []
-    private(set) var didAddAllToGroceryList = false
+    /// buttons — maps each added ingredient's id to the grocery item it
+    /// created, so an accidental add can be undone (deleted) right from the
+    /// recipe screen. Not reloaded from the server (a standalone grocery
+    /// snapshot has no lasting link back to the ingredient it came from), just
+    /// enough to flip a "+" to a checkmark and back for this visit.
+    private(set) var addedIngredientGroceryItemIds: [Int64: UUID] = [:]
+
+    /// Which ingredients currently have a grocery-list entry from this visit —
+    /// kept for call sites that only need the "added?" check, not the
+    /// underlying item id.
+    var addedIngredientIds: Set<Int64> { Set(addedIngredientGroceryItemIds.keys) }
+
+    /// True once every ingredient has been added, and false again if any one
+    /// of them is individually removed afterward — so "Add All" becomes
+    /// available again rather than staying permanently disabled.
+    var didAddAllToGroceryList: Bool {
+        guard let detail, !detail.ingredients.isEmpty else { return false }
+        return detail.ingredients.allSatisfy { addedIngredientGroceryItemIds[$0.id] != nil }
+    }
+
+    /// Whether this ingredient currently has a grocery-list entry from this
+    /// recipe — drives the "+" vs. checkmark icon and which action a tap
+    /// performs (add vs. remove).
+    func isInGroceryList(_ ingredient: Ingredient) -> Bool {
+        addedIngredientGroceryItemIds[ingredient.id] != nil
+    }
 
     private let recipeService: RecipeServicing
     private let ratingService: RecipeRatingServicing
@@ -104,21 +124,39 @@ final class RecipeDetailViewModel {
     func addIngredientToGroceryList(_ ingredient: Ingredient, scale: Double = 1) async {
         guard let detail else { return }
         do {
-            _ = try await groceryItemService.add(draft(for: ingredient, in: detail, scale: scale))
-            addedIngredientIds.insert(ingredient.id)
+            let item = try await groceryItemService.add(draft(for: ingredient, in: detail, scale: scale))
+            addedIngredientGroceryItemIds[ingredient.id] = item.id
         } catch {
             errorMessage = ErrorPresenter.message(for: error)
         }
     }
 
-    /// Adds every ingredient at once, each tagged to this recipe.
+    /// Undoes an accidental add — deletes the grocery-list row this ingredient
+    /// created and flips its icon back to "+". No-op if it was never added (or
+    /// was already removed).
+    func removeIngredientFromGroceryList(_ ingredient: Ingredient) async {
+        guard let itemId = addedIngredientGroceryItemIds[ingredient.id] else { return }
+        do {
+            try await groceryItemService.delete(id: itemId)
+            addedIngredientGroceryItemIds.removeValue(forKey: ingredient.id)
+        } catch {
+            errorMessage = ErrorPresenter.message(for: error)
+        }
+    }
+
+    /// Adds every not-yet-added ingredient at once, each tagged to this
+    /// recipe. Skips ingredients already on the list so re-tapping "Add All"
+    /// after removing a few individually doesn't create duplicates.
     func addAllIngredientsToGroceryList(scale: Double = 1) async {
         guard let detail, !detail.ingredients.isEmpty else { return }
-        let drafts = detail.ingredients.map { draft(for: $0, in: detail, scale: scale) }
+        let pending = detail.ingredients.filter { addedIngredientGroceryItemIds[$0.id] == nil }
+        guard !pending.isEmpty else { return }
+        let drafts = pending.map { draft(for: $0, in: detail, scale: scale) }
         do {
-            _ = try await groceryItemService.addMany(drafts)
-            didAddAllToGroceryList = true
-            addedIngredientIds.formUnion(detail.ingredients.map(\.id))
+            let created = try await groceryItemService.addMany(drafts)
+            for (ingredient, item) in zip(pending, created) {
+                addedIngredientGroceryItemIds[ingredient.id] = item.id
+            }
         } catch {
             errorMessage = ErrorPresenter.message(for: error)
         }
