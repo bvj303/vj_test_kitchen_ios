@@ -19,10 +19,27 @@ struct SettingsView: View {
                     }
                 }
                 .pickerStyle(.inline)
+                // The section header already says "Appearance" — without this
+                // the inline picker repeats its label as a first row.
+                .labelsHidden()
             } header: {
                 Text("Appearance")
             } footer: {
                 Text("System matches your device's Light/Dark Mode setting.")
+            }
+
+            // macOS has no alternate-icon API, so the picker only exists on
+            // iOS/iPadOS (see AppIconSwitching).
+            if settingsViewModel.supportsAppIconPicker {
+                Section {
+                    NavigationLink {
+                        AppIconPickerView()
+                    } label: {
+                        LabeledContent("App Icon", value: settingsViewModel.selectedAppIcon.title)
+                    }
+                } footer: {
+                    Text("Pick which pose Spatch strikes on your Home Screen.")
+                }
             }
 
             weatherSection(homeLocationViewModel: homeLocationViewModel)
@@ -45,6 +62,9 @@ struct SettingsView: View {
         }
         .navigationTitle("Settings")
         .inlineNavigationTitle()
+        // The init-time read of the current icon can predate launch
+        // completing — re-sync whenever Settings appears.
+        .task { settingsViewModel.refreshSelectedAppIcon() }
         .scrollDismissesKeyboard(.interactively)
         .dismissesKeyboardOnBackgroundTap()
         .keyboardDoneButton()
