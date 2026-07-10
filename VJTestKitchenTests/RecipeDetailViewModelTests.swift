@@ -229,6 +229,81 @@ struct RecipeDetailViewModelTests {
         #expect(viewModel.addedIngredientIds.isEmpty)
     }
 
+    @Test func removeIngredientDeletesItsGroceryItemAndClearsAddedState() async {
+        let recipes = FakeRecipeDetailService()
+        recipes.detailToReturn = makeDetail(id: 1, title: "Carbonara")
+        let grocery = FakeGroceryItemService()
+
+        let viewModel = RecipeDetailViewModel(recipeId: 1, recipeService: recipes, ratingService: FakeRecipeRatingService(), groceryItemService: grocery)
+        await viewModel.load()
+        let ingredient = viewModel.detail!.ingredients[0]
+
+        await viewModel.addIngredientToGroceryList(ingredient)
+        #expect(viewModel.isInGroceryList(ingredient))
+        #expect(grocery.items.count == 1)
+
+        await viewModel.removeIngredientFromGroceryList(ingredient)
+
+        #expect(!viewModel.isInGroceryList(ingredient))
+        #expect(viewModel.addedIngredientIds.isEmpty)
+        #expect(grocery.items.isEmpty)
+    }
+
+    @Test func removeIngredientNeverAddedIsANoOp() async {
+        let recipes = FakeRecipeDetailService()
+        recipes.detailToReturn = makeDetail(id: 1)
+        let grocery = FakeGroceryItemService()
+
+        let viewModel = RecipeDetailViewModel(recipeId: 1, recipeService: recipes, ratingService: FakeRecipeRatingService(), groceryItemService: grocery)
+        await viewModel.load()
+
+        await viewModel.removeIngredientFromGroceryList(viewModel.detail!.ingredients[0])
+
+        #expect(viewModel.errorMessage == nil)
+    }
+
+    @Test func removeIngredientSurfacesErrorAndLeavesItMarkedAdded() async {
+        let recipes = FakeRecipeDetailService()
+        recipes.detailToReturn = makeDetail(id: 1)
+        let grocery = FakeGroceryItemService()
+
+        let viewModel = RecipeDetailViewModel(recipeId: 1, recipeService: recipes, ratingService: FakeRecipeRatingService(), groceryItemService: grocery)
+        await viewModel.load()
+        let ingredient = viewModel.detail!.ingredients[0]
+        await viewModel.addIngredientToGroceryList(ingredient)
+        grocery.mutationError = TestError()
+
+        await viewModel.removeIngredientFromGroceryList(ingredient)
+
+        #expect(viewModel.errorMessage == "failed")
+        #expect(viewModel.isInGroceryList(ingredient))
+    }
+
+    @Test func addAllThenRemoveOneAllowsAddAllAgainWithoutDuplicating() async {
+        let recipes = FakeRecipeDetailService()
+        recipes.detailToReturn = makeDetail(id: 1, title: "Carbonara")
+        let grocery = FakeGroceryItemService()
+
+        let viewModel = RecipeDetailViewModel(recipeId: 1, recipeService: recipes, ratingService: FakeRecipeRatingService(), groceryItemService: grocery)
+        await viewModel.load()
+        let ingredients = viewModel.detail!.ingredients
+
+        await viewModel.addAllIngredientsToGroceryList()
+        #expect(viewModel.didAddAllToGroceryList == true)
+
+        await viewModel.removeIngredientFromGroceryList(ingredients[0])
+        #expect(viewModel.didAddAllToGroceryList == false)
+        #expect(grocery.items.count == ingredients.count - 1)
+
+        // Re-tapping "Add All" should only add the one that's missing, not
+        // re-add (and duplicate) the ones still on the list.
+        await viewModel.addAllIngredientsToGroceryList()
+
+        #expect(viewModel.didAddAllToGroceryList == true)
+        #expect(grocery.items.count == ingredients.count)
+        #expect(grocery.addedDrafts.count == ingredients.count + 1)
+    }
+
     // MARK: - Favorites
 
     @Test func loadReflectsFavoriteState() async {
