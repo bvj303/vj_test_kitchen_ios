@@ -1,14 +1,26 @@
 import SwiftUI
 
 /// Spatch: the app's mascot — a sage-green silicone spatula with a wooden
-/// handle and reactive googly eyes. Pure vector SwiftUI (no image assets),
-/// shared verbatim between iOS and macOS. Eyes drift on their own when idle,
-/// follow a drag within a small radius (the "reactive googly eyes" bit — like
-/// the real toy, they track whatever's nudging them), and the whole head gives
-/// a little spring wobble on release, like bopping a googly-eye toy. A subtle
+/// handle, a curled wire arm holding a spoon (echoing the reference photo),
+/// and reactive googly eyes. Pure vector SwiftUI (no image assets), shared
+/// verbatim between iOS and macOS. Eyes drift on their own when idle, follow a
+/// drag within a small radius (the "reactive googly eyes" bit — like the real
+/// toy, they track whatever's nudging them), and the whole head gives a
+/// little spring wobble on release, like bopping a googly-eye toy. A subtle
 /// breathing scale keeps him feeling alive even at rest.
+///
+/// He always renders at a fixed, deliberately narrow aspect ratio (a real
+/// spatula silhouette, not a rounded blob) regardless of the frame he's given
+/// — `fittedSize(in:)` fits that ratio inside the available space and centers
+/// it, so callers can just hand him a bounding box.
 struct SpatchCharacterView: View {
     var mood: SpatchMood = .idle
+    /// Flips him horizontally — the arm/spoon (drawn on the trailing side by
+    /// default) and the whole silhouette mirror together, so he reads as
+    /// facing the other way. Callers pop him in "facing inward": mirrored at a
+    /// trailing-corner cameo, unmirrored at a leading one (see
+    /// `SpatchCorner.isTrailing` / `SpatchBuddyView`).
+    var isMirrored = false
 
     @State private var isBlinking = false
     @State private var idleLookOffset: CGSize = .zero
@@ -19,18 +31,26 @@ struct SpatchCharacterView: View {
 
     /// How far the pupils can travel from center, in points.
     private let pupilTravel: CGFloat = 6
+    /// Width ÷ height of the whole character — narrower than a plain blob so
+    /// he reads as an actual spatula silhouette.
+    private let aspectRatio: CGFloat = 0.42
 
     var body: some View {
         GeometryReader { proxy in
-            let width = proxy.size.width
-            let height = proxy.size.height
+            let size = fittedSize(in: proxy.size)
 
-            VStack(spacing: -height * 0.03) {
-                head(width: width, height: height * 0.68)
-                handle(width: width * 0.24, height: height * 0.34)
+            ZStack(alignment: .top) {
+                VStack(spacing: -size.height * 0.03) {
+                    head(width: size.width, height: size.height * 0.68)
+                    handle(width: size.width * 0.3, height: size.height * 0.34)
+                }
+                .frame(width: size.width, height: size.height, alignment: .top)
+
+                arm(characterSize: size)
             }
-            .frame(width: width, height: height, alignment: .top)
-            .scaleEffect(y: isBreathing ? 1.03 : 1, anchor: .bottom)
+            .frame(width: size.width, height: size.height)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            .scaleEffect(x: isMirrored ? -1 : 1, y: isBreathing ? 1.03 : 1, anchor: .bottom)
             .rotationEffect(wobble, anchor: .bottom)
             .contentShape(Rectangle())
             .gesture(
@@ -50,6 +70,17 @@ struct SpatchCharacterView: View {
         }
         .task { await runIdleLoop() }
         .task { await runBreathingLoop() }
+    }
+
+    /// Fits `aspectRatio` inside `available`, centered — so he's always the
+    /// same narrow shape no matter what bounding box a caller provides.
+    private func fittedSize(in available: CGSize) -> CGSize {
+        let widthFromHeight = available.height * aspectRatio
+        if widthFromHeight <= available.width {
+            return CGSize(width: widthFromHeight, height: available.height)
+        } else {
+            return CGSize(width: available.width, height: available.width / aspectRatio)
+        }
     }
 
     /// A quick spring rotation, like bopping a googly-eye toy — triggered when
@@ -98,11 +129,15 @@ struct SpatchCharacterView: View {
         }
     }
 
+    /// Negates the x-component when mirrored, so the pupils — drawn in this
+    /// pre-mirror coordinate space — still visually track the real drag
+    /// direction once the whole view is flipped for rendering.
     private func clamp(_ translation: CGSize) -> CGSize {
-        let distance = (translation.width * translation.width + translation.height * translation.height).squareRoot()
-        guard distance > pupilTravel else { return translation }
+        let signed = isMirrored ? CGSize(width: -translation.width, height: translation.height) : translation
+        let distance = (signed.width * signed.width + signed.height * signed.height).squareRoot()
+        guard distance > pupilTravel else { return signed }
         let scale = pupilTravel / distance
-        return CGSize(width: translation.width * scale, height: translation.height * scale)
+        return CGSize(width: signed.width * scale, height: signed.height * scale)
     }
 
     private var pupilOffset: CGSize {
@@ -117,10 +152,10 @@ struct SpatchCharacterView: View {
     private func head(width: CGFloat, height: CGFloat) -> some View {
         ZStack {
             UnevenRoundedRectangle(
-                topLeadingRadius: width * 0.4,
-                bottomLeadingRadius: width * 0.14,
-                bottomTrailingRadius: width * 0.14,
-                topTrailingRadius: width * 0.4,
+                topLeadingRadius: width * 0.34,
+                bottomLeadingRadius: width * 0.1,
+                bottomTrailingRadius: width * 0.1,
+                topTrailingRadius: width * 0.34,
                 style: .continuous
             )
             .fill(Color.brandSage)
@@ -128,7 +163,7 @@ struct SpatchCharacterView: View {
             // A faint center seam, like the mold-line on a real silicone spatula.
             Capsule()
                 .fill(Color.black.opacity(0.06))
-                .frame(width: max(1.5, width * 0.012), height: height * 0.55)
+                .frame(width: max(1.5, width * 0.02), height: height * 0.55)
                 .offset(y: height * 0.18)
 
             VStack(spacing: height * 0.04) {
@@ -144,10 +179,10 @@ struct SpatchCharacterView: View {
     }
 
     private func eyebrows(width: CGFloat, height: CGFloat) -> some View {
-        HStack(spacing: width * 0.2) {
-            eyebrow(width: width * 0.22, height: height)
+        HStack(spacing: width * 0.16) {
+            eyebrow(width: width * 0.26, height: height)
                 .rotationEffect(.degrees(Double(-mood.eyebrowTilt) * 16))
-            eyebrow(width: width * 0.22, height: height)
+            eyebrow(width: width * 0.26, height: height)
                 .rotationEffect(.degrees(Double(mood.eyebrowTilt) * 16))
         }
     }
@@ -159,9 +194,9 @@ struct SpatchCharacterView: View {
     }
 
     private func eyes(width: CGFloat, height: CGFloat) -> some View {
-        HStack(spacing: width * 0.14) {
-            eye(size: width * 0.24)
-            eye(size: width * 0.24, isRightEye: true)
+        HStack(spacing: width * 0.1) {
+            eye(size: width * 0.28)
+            eye(size: width * 0.28, isRightEye: true)
         }
     }
 
@@ -203,22 +238,22 @@ struct SpatchCharacterView: View {
                     .frame(height: height * 0.06)
                     .offset(y: -height * 0.055)
             }
-            .frame(width: width * 0.38, height: height * 0.22)
+            .frame(width: width * 0.44, height: height * 0.22)
         case .surprised:
             Circle()
                 .fill(Color.black.opacity(0.8))
-                .frame(width: width * 0.15, height: width * 0.15)
+                .frame(width: width * 0.18, height: width * 0.18)
         case nil:
             MouthShape(curve: mood.mouthCurve)
                 .fill(Color.black)
-                .frame(width: width * 0.42, height: height * 0.18)
+                .frame(width: width * 0.5, height: height * 0.18)
         }
     }
 
     private func blush(width: CGFloat, height: CGFloat) -> some View {
-        HStack(spacing: width * 0.4) {
-            Capsule().fill(Color.brandSaffron.opacity(0.4)).frame(width: width * 0.14, height: width * 0.07)
-            Capsule().fill(Color.brandSaffron.opacity(0.4)).frame(width: width * 0.14, height: width * 0.07)
+        HStack(spacing: width * 0.32) {
+            Capsule().fill(Color.brandSaffron.opacity(0.4)).frame(width: width * 0.16, height: width * 0.08)
+            Capsule().fill(Color.brandSaffron.opacity(0.4)).frame(width: width * 0.16, height: width * 0.08)
         }
         .offset(y: height * 0.2)
     }
@@ -237,10 +272,41 @@ struct SpatchCharacterView: View {
             // The hang-hole near the base, like a real spatula handle.
             Circle()
                 .fill(Color.black.opacity(0.2))
-                .frame(width: width * 0.34, height: width * 0.34)
+                .frame(width: width * 0.4, height: width * 0.4)
                 .padding(.bottom, height * 0.14)
         }
         .frame(width: width, height: height)
+    }
+
+    // MARK: - Arm + spoon
+
+    /// A little curled wire arm holding a spoon, emerging from the trailing
+    /// side of the neck — the asymmetric detail from the reference photo, and
+    /// what makes `isMirrored` visually read as "facing the other way" rather
+    /// than a no-op flip of an otherwise-symmetric face.
+    private func arm(characterSize: CGSize) -> some View {
+        let armWidth = characterSize.width * 0.55
+        let armHeight = characterSize.height * 0.2
+
+        return ZStack(alignment: .topLeading) {
+            ArmPath()
+                .stroke(Color(white: 0.6), style: StrokeStyle(lineWidth: max(1.5, characterSize.width * 0.05), lineCap: .round))
+            spoon(width: characterSize.width * 0.26)
+                .position(x: armWidth * 0.95, y: armHeight * 0.92)
+        }
+        .frame(width: armWidth, height: armHeight)
+        .position(x: characterSize.width * 0.78, y: characterSize.height * 0.64)
+    }
+
+    private func spoon(width: CGFloat) -> some View {
+        VStack(spacing: -width * 0.08) {
+            Ellipse()
+                .fill(Color(white: 0.7))
+                .frame(width: width * 0.6, height: width * 0.85)
+            Capsule()
+                .fill(Color(white: 0.62))
+                .frame(width: width * 0.18, height: width)
+        }
     }
 }
 
@@ -261,12 +327,37 @@ private struct MouthShape: Shape {
     }
 }
 
+/// A gently curled wire, like the reference photo's spoon-holding arm —
+/// bowing outward from the neck before curling back in toward the spoon.
+private struct ArmPath: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addCurve(
+            to: CGPoint(x: rect.maxX * 0.92, y: rect.maxY * 0.88),
+            control1: CGPoint(x: rect.maxX * 0.75, y: rect.minY + rect.height * 0.05),
+            control2: CGPoint(x: rect.maxX * 0.55, y: rect.maxY * 0.75)
+        )
+        return path
+    }
+}
+
 #Preview {
     HStack(spacing: 24) {
         ForEach(SpatchMood.allCases, id: \.self) { mood in
             SpatchCharacterView(mood: mood)
                 .frame(width: 90, height: 130)
         }
+    }
+    .padding()
+}
+
+#Preview("Mirrored") {
+    HStack(spacing: 24) {
+        SpatchCharacterView(mood: .happy, isMirrored: false)
+            .frame(width: 90, height: 130)
+        SpatchCharacterView(mood: .happy, isMirrored: true)
+            .frame(width: 90, height: 130)
     }
     .padding()
 }

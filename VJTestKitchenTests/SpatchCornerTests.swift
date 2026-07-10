@@ -23,4 +23,11 @@ struct SpatchCornerTests {
     @Test func randomWithoutExclusionReturnsAValidCorner() {
         #expect(SpatchCorner.allCases.contains(SpatchCorner.random()))
     }
+
+    @Test func onlyTrailingCornersReportIsTrailing() {
+        #expect(SpatchCorner.topTrailing.isTrailing)
+        #expect(SpatchCorner.bottomTrailing.isTrailing)
+        #expect(!SpatchCorner.topLeading.isTrailing)
+        #expect(!SpatchCorner.bottomLeading.isTrailing)
+    }
 }
