@@ -9,6 +9,7 @@ struct HomeView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(AppCommands.self) private var appCommands
     @State private var viewModel = HomeViewModel()
+    @State private var spatchViewModel = SpatchBuddyViewModel(initialMessage: SpatchContent.randomEncouragement(), initialMood: .idle)
 
     /// Cap + center the content on very wide screens so a landscape iPad reads
     /// as a centered dashboard rather than a few stretched-out rows.
@@ -27,12 +28,31 @@ struct HomeView: View {
             .padding(isRegular ? 24 : 16)
         }
         .background(Color.platformGroupedBackground)
+        .overlay(alignment: .bottomTrailing) {
+            SpatchBuddyView(
+                viewModel: spatchViewModel,
+                onRequestNewLine: {
+                    if Bool.random(), let title = viewModel.suggestedRecipes.randomElement()?.title {
+                        return (SpatchContent.recommendationLine(recipeTitle: title), .happy)
+                    }
+                    return (SpatchContent.randomJoke(), .laughing)
+                }
+            )
+            .padding(.trailing, 12)
+            .padding(.bottom, 12)
+        }
         .navigationTitle("Home")
         .task { await viewModel.load() }
         .refreshable { await viewModel.load() }
         // ⌘R reloads the dashboard when Home is the visible tab.
         .onChange(of: appCommands.refreshRequests) { _, _ in
             Task { await viewModel.load() }
+        }
+        // Once the shelf's actual suggestion is in, swap Spatch's line to
+        // reference it instead of the generic placeholder line he started with.
+        .onChange(of: viewModel.suggestedRecipes.isEmpty) { _, isEmpty in
+            guard !isEmpty else { return }
+            spatchViewModel.cycle(to: SpatchContent.recommendationLine(recipeTitle: viewModel.suggestedRecipes.first?.title), mood: .happy)
         }
         .alert(
             "Couldn't Load Home",

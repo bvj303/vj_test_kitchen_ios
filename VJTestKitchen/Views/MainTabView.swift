@@ -24,6 +24,7 @@ struct MainTabView: View {
     @Environment(AccountViewModel.self) private var accountViewModel
     @Environment(HomeLocationViewModel.self) private var homeLocationViewModel
     @Environment(AppCommands.self) private var appCommands
+    @Environment(SpatchTutorialViewModel.self) private var spatchTutorialViewModel
     @State private var selection: AppTab = .home
     @State private var showLocationPrompt = false
 
@@ -48,11 +49,27 @@ struct MainTabView: View {
         // Load the signed-in user's avatar once for the account button; runs
         // on each sign-in since MainTabView is recreated when auth state flips.
         .task { await accountViewModel.load() }
+        // First-launch-only: Spatch's walkthrough, shown ahead of the location
+        // prompt below so a brand-new user isn't hit with two sheets at once.
+        .task {
+            spatchTutorialViewModel.maybePresentOnLaunch()
+            if !spatchTutorialViewModel.isPresented, homeLocationViewModel.shouldPromptForLocation {
+                showLocationPrompt = true
+            }
+        }
+        .sheet(isPresented: Binding(
+            get: { spatchTutorialViewModel.isPresented },
+            set: { spatchTutorialViewModel.isPresented = $0 }
+        )) {
+            SpatchTutorialView()
+        }
         // First-login-only: offer to set a home location for the weather
         // outlook. Gated so it's shown at most once (the prompt itself records
-        // that it was shown — see HomeLocationPromptView).
-        .task {
-            if homeLocationViewModel.shouldPromptForLocation { showLocationPrompt = true }
+        // that it was shown — see HomeLocationPromptView). Deferred until
+        // Spatch's walkthrough (above) has been dismissed.
+        .onChange(of: spatchTutorialViewModel.isPresented) { _, isPresented in
+            guard !isPresented, homeLocationViewModel.shouldPromptForLocation else { return }
+            showLocationPrompt = true
         }
         .sheet(isPresented: $showLocationPrompt) {
             HomeLocationPromptView()
@@ -79,4 +96,5 @@ struct MainTabView: View {
         .environment(AccountViewModel())
         .environment(HomeLocationViewModel())
         .environment(AppCommands())
+        .environment(SpatchTutorialViewModel())
 }
