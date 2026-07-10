@@ -14,6 +14,11 @@ final class SpatchBuddyViewModel {
     private(set) var message: String
     private(set) var mood: SpatchMood
     private(set) var corner: SpatchCorner
+    /// Entrance lean in degrees, re-rolled on every appearance so he pops in
+    /// at a slightly different angle each time. Always leans *inward* (toward
+    /// screen center) from whichever side he's on — positive (clockwise) from
+    /// leading, negative from trailing.
+    private(set) var tilt: Double
 
     private let autoHideDelay: Duration?
     private var autoHideTask: Task<Void, Never>?
@@ -27,7 +32,9 @@ final class SpatchBuddyViewModel {
         self.isVisible = startsVisible
         self.message = initialMessage
         self.mood = initialMood
-        self.corner = .random()
+        let corner = SpatchCorner.random()
+        self.corner = corner
+        self.tilt = Self.randomTilt(for: corner)
         self.autoHideDelay = autoHideDelay
         if startsVisible { scheduleAutoHide() }
     }
@@ -39,6 +46,7 @@ final class SpatchBuddyViewModel {
         self.message = message
         self.mood = mood
         corner = .random(excluding: corner)
+        tilt = Self.randomTilt(for: corner)
         isVisible = true
         scheduleAutoHide()
     }
@@ -49,7 +57,15 @@ final class SpatchBuddyViewModel {
         self.message = message
         self.mood = mood
         corner = .random(excluding: corner)
+        tilt = Self.randomTilt(for: corner)
         scheduleAutoHide()
+    }
+
+    /// A fresh inward lean for a pop-in at `corner` — random magnitude so no
+    /// two entrances look identical, signed so he always leans toward the
+    /// center of the screen rather than out of it.
+    private static func randomTilt(for corner: SpatchCorner) -> Double {
+        Double.random(in: 3...12) * (corner.isTrailing ? -1 : 1)
     }
 
     func dismiss() {

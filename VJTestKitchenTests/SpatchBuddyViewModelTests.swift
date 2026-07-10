@@ -93,6 +93,32 @@ struct SpatchBuddyViewModelTests {
         #expect(!viewModel.isVisible)
     }
 
+    @Test func tiltLeansInwardFromWhicheverSideHePopsFrom() {
+        // Positive degrees lean clockwise. Popping from the leading side he
+        // should lean right (toward screen center); from trailing, left.
+        for _ in 0..<20 {
+            let viewModel = makeViewModel(startsVisible: false)
+            viewModel.show(message: "Hi", mood: .happy)
+            let magnitude = abs(viewModel.tilt)
+            #expect(magnitude >= 3 && magnitude <= 12)
+            if viewModel.corner.isTrailing {
+                #expect(viewModel.tilt < 0)
+            } else {
+                #expect(viewModel.tilt > 0)
+            }
+        }
+    }
+
+    @Test func showRerollsTheTiltSoRepeatEntrancesVaryInAngle() {
+        let viewModel = makeViewModel(startsVisible: false)
+        var seen = Set<Double>()
+        for _ in 0..<40 {
+            viewModel.show(message: "Hi", mood: .happy)
+            seen.insert(viewModel.tilt)
+        }
+        #expect(seen.count > 1)
+    }
+
     @Test func noAutoHideWhenDelayIsNil() async {
         let viewModel = makeViewModel(autoHideDelay: nil)
         try? await Task.sleep(for: .milliseconds(50))
