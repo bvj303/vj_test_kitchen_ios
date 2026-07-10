@@ -47,6 +47,15 @@ struct MainTabView: View {
                     CalendarTab()
                 }
             }
+            // The real screens must be inert while the tour narrates over
+            // them. The dim layer's tap-swallowing alone isn't enough: on
+            // macOS, clicks pass straight through it into the content
+            // (confirmed live — a click behind the tour pushed a recipe
+            // detail), and `.allowsHitTesting(false)` doesn't help either
+            // (also confirmed live — the tab content is AppKit-backed there,
+            // and event routing bypasses SwiftUI hit-testing). `.disabled`
+            // works: it disables the actual controls across the bridge.
+            .disabled(spatchTutorialViewModel.isPresented)
 
             // Spatch's walkthrough overlays the real tabs (rather than
             // covering them in a sheet) and drives `selection` itself as it
