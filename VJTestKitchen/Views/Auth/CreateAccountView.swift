@@ -22,8 +22,11 @@ struct CreateAccountView: View {
                 signUpForm(viewModel: viewModel)
             }
         }
+        .scrollDismissesKeyboard(.interactively)
         .navigationTitle("Create Account")
         .inlineNavigationTitle()
+        .dismissesKeyboardOnBackgroundTap()
+        .keyboardDoneButton()
     }
 
     /// Shown after a successful sign-up when the account still needs email
