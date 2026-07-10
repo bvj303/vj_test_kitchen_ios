@@ -17,16 +17,42 @@ final class SettingsViewModel {
         didSet { spatchStore.saveShowSpatch(showSpatch) }
     }
 
+    /// The icon look currently applied — the system owns the persistence
+    /// (`setAlternateIconName` survives relaunches), so this is read back from
+    /// the switcher at init rather than from a store of our own.
+    private(set) var selectedAppIcon: AppIconOption
+    var appIconErrorMessage: String?
+    /// False on macOS (no alternate-icon API) — Settings hides the picker.
+    let supportsAppIconPicker: Bool
+
     private let store: AppearanceStoring
     private let spatchStore: SpatchPreferenceStoring
+    private let appIconSwitcher: AppIconSwitching
 
     init(
         store: AppearanceStoring = UserDefaultsAppearanceStore(),
-        spatchStore: SpatchPreferenceStoring = UserDefaultsSpatchPreferenceStore()
+        spatchStore: SpatchPreferenceStoring = UserDefaultsSpatchPreferenceStore(),
+        appIconSwitcher: AppIconSwitching = AppIconSwitcher()
     ) {
         self.store = store
         self.spatchStore = spatchStore
+        self.appIconSwitcher = appIconSwitcher
         self.appearanceMode = store.loadAppearanceMode()
         self.showSpatch = spatchStore.loadShowSpatch()
+        self.selectedAppIcon = .option(forAlternateIconName: appIconSwitcher.currentAlternateIconName)
+        self.supportsAppIconPicker = appIconSwitcher.supportsAlternateIcons
+    }
+
+    /// Applies an icon look, keeping the current selection if the system
+    /// rejects the switch.
+    func selectAppIcon(_ option: AppIconOption) async {
+        guard option != selectedAppIcon else { return }
+        do {
+            try await appIconSwitcher.setAlternateIcon(named: option.alternateIconName)
+            selectedAppIcon = option
+            appIconErrorMessage = nil
+        } catch {
+            appIconErrorMessage = ErrorPresenter.message(for: error)
+        }
     }
 }

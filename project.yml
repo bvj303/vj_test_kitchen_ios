@@ -61,6 +61,13 @@ targets:
         # App Group so the app can publish widget snapshots (see WidgetDataStore).
         CODE_SIGN_ENTITLEMENTS: VJTestKitchen/Resources/VJTestKitchen-iOS.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # Selectable icon looks (Settings › App Icon, via UIApplication's
+        # setAlternateIconName) — actool compiles these icon sets and merges
+        # the CFBundleIcons/CFBundleAlternateIcons entries into the final
+        # Info.plist via its partial plist, so the custom Info.plist needs no
+        # hand-written icon keys. Names must match AppIconOption. iOS-only:
+        # macOS has no alternate-icon API, so the mac target doesn't set this.
+        ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES: AppIconPizza AppIconRocket AppIconBalloon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         # On-device signing. Baked into the spec (not Xcode's Signing & Capabilities
         # UI) because the .xcodeproj is generated from this file and any UI change
