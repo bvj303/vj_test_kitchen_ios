@@ -24,7 +24,7 @@ struct SpatchTutorialView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 14) {
                 SpatchCharacterView(mood: viewModel.mood)
-                    .frame(width: 74, height: 106)
+                    .frame(width: 50, height: 106)
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text(viewModel.isLeaving ? "Aw, okay…" : viewModel.currentStep.title)

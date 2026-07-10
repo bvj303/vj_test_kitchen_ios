@@ -8,16 +8,31 @@ enum SpatchContent {
     // MARK: - Jokes
 
     static let jokes: [String] = [
-        "Why did the tomato turn red? It saw the salad dressing!",
-        "I'm on a seafood diet. I see food, and I whisk it into something delicious.",
+        "Why did the tomato turn red? It saw the salad dressing.",
         "What do you call a fake noodle? An impasta.",
-        "I whisked it all for this app, you know.",
         "Why did the cookie go to the doctor? It was feeling crumbly.",
         "I'm a spatula, not a magician — but flipping pancakes without a tear IS kind of a trick.",
         "What's a spatula's favorite music? Anything with a good flip side.",
         "Lettuce romaine calm and cook something good.",
         "I don't do egg puns. They're too eggs-aggerating.",
-        "Someone told me I was spoon-fed my jokes. Rude. I'm a spatula. I'd never.",
+        "Why did the chef quit? He couldn't ketchup with the orders.",
+        "What do you call cheese that isn't yours? Nacho cheese.",
+        "I burned a salad once. Don't ask. Some things can't be undone.",
+        "Why do spatulas make terrible secret-keepers? We always flip.",
+        "What did the spatula say to the pancake? I've got your back — and your front, honestly.",
+        "Why did the baker stop making bread? He kneaded a break.",
+        "I tried to make a joke about butter, but it didn't spread well.",
+        "What's a spatula's least favorite exercise? Flipping out.",
+        "Why don't eggs tell jokes? They'd crack each other up.",
+        "What do you call a sad strawberry? A blueberry.",
+        "I stayed up all night wondering where the sun went. Then it dawned on me.",
+        "Why was the kitchen so tense? Someone kept whisking it.",
+        "What's the most patient vegetable? A slow-cooker squash.",
+        "I told the onion a joke. It brought tears to its eyes.",
+        "Why did the pot feel important? Everyone kept saying it was the main dish.",
+        "What did one plate say to the other? Dinner's on me.",
+        "I'm great at multitasking — I can stir, flip, and drop a pun at the same time.",
+        "Why did the recipe break up with the oven? It needed some space.",
     ]
 
     static func randomJoke() -> String {
@@ -32,6 +47,14 @@ enum SpatchContent {
         "Poke me for a joke. I've got dozens. Some are even funny.",
         "You've got this. Whatever 'this' turns out to be.",
         "I believe in you and your ability to not burn the garlic.",
+        "Every great meal starts with someone brave enough to open the fridge.",
+        "Not sure what to make? That's half the fun. The other half is eating it.",
+        "Fun fact: nothing bad has ever happened while snacking. Probably.",
+        "You know what pairs well with anything? Confidence. And maybe garlic.",
+        "Reminder: a slightly lopsided dish still tastes exactly the same.",
+        "I've never met a recipe I didn't want to cheer on from the sidelines.",
+        "Whatever you're making, I already think it smells great.",
+        "Cooking tip: taste as you go. Second tip: taste again, just to be sure.",
     ]
 
     static func randomEncouragement() -> String {
@@ -49,6 +72,9 @@ enum SpatchContent {
             "If I had hands, I'd already be making \(recipeTitle).",
             "\(recipeTitle) is calling your name. Spatulas have great ears.",
             "How about \(recipeTitle)? Trust me on this one.",
+            "\(recipeTitle) has been living rent-free in my head all day.",
+            "I did some very scientific research and \(recipeTitle) is the move tonight.",
+            "Not to be dramatic, but \(recipeTitle) might change your whole week.",
         ]
         return templates.randomElement() ?? "How about \(recipeTitle)?"
     }
@@ -62,12 +88,15 @@ enum SpatchContent {
         var pool: [String] = []
         if let prepTime, prepTime <= 20 {
             pool.append("Only \(prepTime) minutes? I like your style — fast hands, big flavor.")
+            pool.append("\(prepTime) minutes is basically a snack by kitchen standards.")
         }
         if let prepTime, prepTime >= 60 {
             pool.append("\(prepTime) minutes, huh. A labor of love. I'll be right here rooting for you.")
+            pool.append("\(prepTime) minutes of your life, dedicated to this. Respect.")
         }
         if let tag {
             pool.append("Ooh, \(tag.lowercased())! One of my favorites.")
+            pool.append("\(tag.lowercased()) again? Bold choice. I love it.")
         }
         guard !pool.isEmpty else { return randomJoke() }
         return pool.randomElement() ?? pool[0]
@@ -81,11 +110,23 @@ enum SpatchContent {
         let lines: [String]
         switch progress {
         case ..<0.34:
-            lines = ["You've got this — one step at a time!", "Mise en place, then go. You're doing great."]
+            lines = [
+                "You've got this — one step at a time!",
+                "Mise en place, then go. You're doing great.",
+                "Off to a great start. I'm not even worried.",
+            ]
         case ..<0.75:
-            lines = ["Smells good from here. Keep going!", "Halfway to delicious."]
+            lines = [
+                "Smells good from here. Keep going!",
+                "Halfway to delicious.",
+                "This is the part where it starts looking like the photo.",
+            ]
         default:
-            lines = ["Almost there — don't forget to taste as you go!", "So close. Don't let me distract you."]
+            lines = [
+                "Almost there — don't forget to taste as you go!",
+                "So close. Don't let me distract you.",
+                "The finish line smells amazing.",
+            ]
         }
         return lines.randomElement() ?? lines[0]
     }
@@ -94,6 +135,9 @@ enum SpatchContent {
         "You did it! Go plate that masterpiece.",
         "Chef's kiss. Literally, if I had lips shaped like that.",
         "Look at you go! Dinner is served.",
+        "That's a wrap. Somebody call the food critics.",
+        "You cooked. Actually cooked. I'm proud of you.",
+        "Nailed it. Now the real challenge: not eating it standing over the stove.",
     ]
 
     static func randomCompletionLine() -> String {
