@@ -49,6 +49,9 @@ struct AddGroceryItemSheet: View {
             }
             .navigationTitle("Add Item")
             .inlineNavigationTitle()
+            .scrollDismissesKeyboard(.interactively)
+            .dismissesKeyboardOnBackgroundTap()
+            .keyboardDoneButton()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }

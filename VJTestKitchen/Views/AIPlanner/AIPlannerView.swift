@@ -44,12 +44,15 @@ struct AIPlannerView: View {
                         withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
                     }
                 }
+                .scrollDismissesKeyboard(.interactively)
             }
 
             inputBar
         }
         .navigationTitle("AI Planner")
         .inlineNavigationTitle()
+        .dismissesKeyboardOnBackgroundTap()
+        .keyboardDoneButton()
         .sheet(item: $calendarTarget) { recipe in
             AddToCalendarSheet(recipeId: recipe.id, recipeTitle: recipe.title)
                 .platformMediumLargeDetents()

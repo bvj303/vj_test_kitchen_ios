@@ -89,6 +89,9 @@ struct EditProfileView: View {
         }
         .navigationTitle("Edit Profile")
         .inlineNavigationTitle()
+        .scrollDismissesKeyboard(.interactively)
+        .dismissesKeyboardOnBackgroundTap()
+        .keyboardDoneButton()
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Save") {
