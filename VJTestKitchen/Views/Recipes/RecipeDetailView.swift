@@ -107,7 +107,7 @@ struct RecipeDetailView: View {
                 CookModeView(detail: detail, scale: scale)
             }
         }
-        .overlay(alignment: .bottomTrailing) {
+        .overlay(alignment: spatchViewModel.corner.alignment) {
             SpatchBuddyView(
                 viewModel: spatchViewModel,
                 onRequestNewLine: {
@@ -115,8 +115,7 @@ struct RecipeDetailView: View {
                 },
                 dismissible: true
             )
-            .padding(.trailing, 12)
-            .padding(.bottom, 12)
+            .padding(spatchViewModel.corner.edgeInsets)
         }
         .task {
             // Give the community list the signed-in user so it can omit the

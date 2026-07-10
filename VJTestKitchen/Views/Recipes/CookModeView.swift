@@ -74,7 +74,7 @@ struct CookModeView: View {
         // Keep the screen awake while cooking; restore on exit.
         .onAppear { keepAwake.enable() }
         .onDisappear { keepAwake.disable() }
-        .overlay(alignment: .bottomTrailing) {
+        .overlay(alignment: spatchViewModel.corner.alignment) {
             SpatchBuddyView(
                 viewModel: spatchViewModel,
                 onRequestNewLine: {
@@ -82,8 +82,7 @@ struct CookModeView: View {
                 },
                 dismissible: true
             )
-            .padding(.trailing, 12)
-            .padding(.bottom, 12)
+            .padding(spatchViewModel.corner.edgeInsets)
         }
         .onChange(of: checkedSteps) { _, _ in
             guard let stepProgress else { return }

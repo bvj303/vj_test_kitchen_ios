@@ -5,7 +5,8 @@ import SwiftUI
 /// shared verbatim between iOS and macOS. Eyes drift on their own when idle,
 /// follow a drag within a small radius (the "reactive googly eyes" bit — like
 /// the real toy, they track whatever's nudging them), and the whole head gives
-/// a little spring wobble on release, like bopping a googly-eye toy.
+/// a little spring wobble on release, like bopping a googly-eye toy. A subtle
+/// breathing scale keeps him feeling alive even at rest.
 struct SpatchCharacterView: View {
     var mood: SpatchMood = .idle
 
@@ -14,20 +15,22 @@ struct SpatchCharacterView: View {
     @State private var dragOffset: CGSize = .zero
     @State private var wobble: Angle = .zero
     @State private var isDragging = false
+    @State private var isBreathing = false
 
     /// How far the pupils can travel from center, in points.
-    private let pupilTravel: CGFloat = 5
+    private let pupilTravel: CGFloat = 6
 
     var body: some View {
         GeometryReader { proxy in
             let width = proxy.size.width
             let height = proxy.size.height
 
-            VStack(spacing: 0) {
-                head(width: width, height: height * 0.72)
-                handle(width: width * 0.22, height: height * 0.30)
+            VStack(spacing: -height * 0.03) {
+                head(width: width, height: height * 0.68)
+                handle(width: width * 0.24, height: height * 0.34)
             }
-            .frame(width: width, height: height)
+            .frame(width: width, height: height, alignment: .top)
+            .scaleEffect(y: isBreathing ? 1.03 : 1, anchor: .bottom)
             .rotationEffect(wobble, anchor: .bottom)
             .contentShape(Rectangle())
             .gesture(
@@ -46,6 +49,7 @@ struct SpatchCharacterView: View {
             )
         }
         .task { await runIdleLoop() }
+        .task { await runBreathingLoop() }
     }
 
     /// A quick spring rotation, like bopping a googly-eye toy — triggered when
@@ -83,6 +87,17 @@ struct SpatchCharacterView: View {
         }
     }
 
+    /// A slow, gentle scale breathe so Spatch never looks like a frozen sticker.
+    private func runBreathingLoop() async {
+        while !Task.isCancelled {
+            withAnimation(.easeInOut(duration: 1.8)) { isBreathing = true }
+            try? await Task.sleep(for: .seconds(1.8))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeInOut(duration: 1.8)) { isBreathing = false }
+            try? await Task.sleep(for: .seconds(1.8))
+        }
+    }
+
     private func clamp(_ translation: CGSize) -> CGSize {
         let distance = (translation.width * translation.width + translation.height * translation.height).squareRoot()
         guard distance > pupilTravel else { return translation }
@@ -96,22 +111,55 @@ struct SpatchCharacterView: View {
 
     // MARK: - Head
 
+    /// Flatter and more rectangular than a plain rounded blob — rounded top
+    /// corners (the paddle face), tighter bottom corners (the neck meeting the
+    /// handle) — via `UnevenRoundedRectangle`, closer to a real spatula head.
     private func head(width: CGFloat, height: CGFloat) -> some View {
         ZStack {
-            RoundedRectangle(cornerRadius: width * 0.42, style: .continuous)
-                .fill(Color.brandSage)
-            VStack(spacing: height * 0.06) {
+            UnevenRoundedRectangle(
+                topLeadingRadius: width * 0.4,
+                bottomLeadingRadius: width * 0.14,
+                bottomTrailingRadius: width * 0.14,
+                topTrailingRadius: width * 0.4,
+                style: .continuous
+            )
+            .fill(Color.brandSage)
+
+            // A faint center seam, like the mold-line on a real silicone spatula.
+            Capsule()
+                .fill(Color.black.opacity(0.06))
+                .frame(width: max(1.5, width * 0.012), height: height * 0.55)
+                .offset(y: height * 0.18)
+
+            VStack(spacing: height * 0.04) {
+                eyebrows(width: width, height: height)
                 eyes(width: width, height: height)
                 mouth(width: width, height: height)
             }
-            .padding(.top, height * 0.2)
+            .padding(.top, height * 0.16)
+
             blush(width: width, height: height)
         }
         .frame(width: width, height: height)
     }
 
+    private func eyebrows(width: CGFloat, height: CGFloat) -> some View {
+        HStack(spacing: width * 0.2) {
+            eyebrow(width: width * 0.22, height: height)
+                .rotationEffect(.degrees(Double(-mood.eyebrowTilt) * 16))
+            eyebrow(width: width * 0.22, height: height)
+                .rotationEffect(.degrees(Double(mood.eyebrowTilt) * 16))
+        }
+    }
+
+    private func eyebrow(width: CGFloat, height: CGFloat) -> some View {
+        Capsule()
+            .fill(Color.black.opacity(0.6))
+            .frame(width: width, height: max(2.5, height * 0.03))
+    }
+
     private func eyes(width: CGFloat, height: CGFloat) -> some View {
-        HStack(spacing: width * 0.16) {
+        HStack(spacing: width * 0.14) {
             eye(size: width * 0.24)
             eye(size: width * 0.24, isRightEye: true)
         }
@@ -127,21 +175,44 @@ struct SpatchCharacterView: View {
                     .fill(Color.black)
                     .frame(width: size * 0.7, height: size * 0.12)
             } else {
-                Circle()
-                    .fill(Color.black)
-                    .frame(width: size * 0.42, height: size * 0.42)
-                    .offset(pupilOffset)
+                ZStack {
+                    Circle()
+                        .fill(Color.black)
+                        .frame(width: size * 0.44, height: size * 0.44)
+                    // A small catch-light so the pupil doesn't read as a flat dot.
+                    Circle()
+                        .fill(Color.white.opacity(0.85))
+                        .frame(width: size * 0.12, height: size * 0.12)
+                        .offset(x: -size * 0.1, y: -size * 0.1)
+                }
+                .offset(pupilOffset)
             }
         }
         .frame(width: size, height: size)
         .scaleEffect(y: isBlinking ? 0.15 : 1, anchor: .center)
     }
 
+    @ViewBuilder
     private func mouth(width: CGFloat, height: CGFloat) -> some View {
-        MouthShape(curve: mood.mouthCurve, isOpen: mood.mouthIsOpen)
-            .fill(Color.black.opacity(mood.mouthIsOpen ? 0.75 : 1))
-            .frame(width: width * 0.42, height: height * 0.18)
-            .padding(.top, height * 0.08)
+        switch mood.openMouthKind {
+        case .laugh:
+            ZStack {
+                Ellipse().fill(Color.black.opacity(0.85))
+                Ellipse()
+                    .fill(Color.white.opacity(0.9))
+                    .frame(height: height * 0.06)
+                    .offset(y: -height * 0.055)
+            }
+            .frame(width: width * 0.38, height: height * 0.22)
+        case .surprised:
+            Circle()
+                .fill(Color.black.opacity(0.8))
+                .frame(width: width * 0.15, height: width * 0.15)
+        case nil:
+            MouthShape(curve: mood.mouthCurve)
+                .fill(Color.black)
+                .frame(width: width * 0.42, height: height * 0.18)
+        }
     }
 
     private func blush(width: CGFloat, height: CGFloat) -> some View {
@@ -149,35 +220,38 @@ struct SpatchCharacterView: View {
             Capsule().fill(Color.brandSaffron.opacity(0.4)).frame(width: width * 0.14, height: width * 0.07)
             Capsule().fill(Color.brandSaffron.opacity(0.4)).frame(width: width * 0.14, height: width * 0.07)
         }
-        .offset(y: height * 0.16)
+        .offset(y: height * 0.2)
     }
 
     // MARK: - Handle
 
     private func handle(width: CGFloat, height: CGFloat) -> some View {
-        RoundedRectangle(cornerRadius: width * 0.3, style: .continuous)
-            .fill(
-                LinearGradient(
-                    colors: [Color(red: 0.62, green: 0.44, blue: 0.27), Color(red: 0.5, green: 0.34, blue: 0.2)],
-                    startPoint: .top, endPoint: .bottom
+        ZStack(alignment: .bottom) {
+            RoundedRectangle(cornerRadius: width * 0.3, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [Color(red: 0.62, green: 0.44, blue: 0.27), Color(red: 0.5, green: 0.34, blue: 0.2)],
+                        startPoint: .top, endPoint: .bottom
+                    )
                 )
-            )
-            .frame(width: width, height: height)
+            // The hang-hole near the base, like a real spatula handle.
+            Circle()
+                .fill(Color.black.opacity(0.2))
+                .frame(width: width * 0.34, height: width * 0.34)
+                .padding(.bottom, height * 0.14)
+        }
+        .frame(width: width, height: height)
     }
 }
 
-/// A closed smile/frown curve, or an open laugh oval when `isOpen` — driven by
-/// `SpatchMood.mouthCurve` (-1 frown ... +1 big smile).
+/// A closed smile/frown curve, driven by `SpatchMood.mouthCurve` (-1 frown ...
+/// +1 big smile). Open-mouth moods (laugh/surprised) are drawn separately by
+/// `SpatchCharacterView.mouth`.
 private struct MouthShape: Shape {
     var curve: CGFloat
-    var isOpen: Bool
 
     func path(in rect: CGRect) -> Path {
         var path = Path()
-        if isOpen {
-            path.addEllipse(in: rect.insetBy(dx: rect.width * 0.12, dy: 0))
-            return path
-        }
         let start = CGPoint(x: rect.minX, y: rect.midY)
         let end = CGPoint(x: rect.maxX, y: rect.midY)
         let control = CGPoint(x: rect.midX, y: rect.midY + rect.height * curve)

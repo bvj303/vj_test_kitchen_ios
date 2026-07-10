@@ -1,45 +1,53 @@
 import SwiftUI
 
-/// First-launch walkthrough: Spatch introduces the app one tab at a time, with
-/// Back/Next controls and a "Send Spatch Away" skip that visibly makes him sad
-/// before the sheet closes. Shown at most once (see
-/// `SpatchTutorialViewModel.maybePresentOnLaunch()` / `MainTabView`); replayable
-/// from Settings via `restart()`.
+/// First-launch walkthrough: a bottom-anchored card overlaid on the real app
+/// (see `MainTabView`), which follows `SpatchTutorialViewModel.targetTab` to
+/// actually switch tabs as the tour advances — so each step narrates over the
+/// real screen it's introducing rather than a static mockup. "Send Spatch
+/// Away" visibly makes him sad before the card closes. Shown at most once
+/// (`SpatchTutorialViewModel.maybePresentOnLaunch()`); replayable from
+/// Settings via `restart()`.
 struct SpatchTutorialView: View {
     @Environment(SpatchTutorialViewModel.self) private var viewModel
 
     var body: some View {
-        VStack(spacing: 24) {
+        VStack {
             Spacer(minLength: 0)
+            card
+                .padding(.horizontal, 16)
+                .padding(.bottom, 12)
+        }
+        .task { viewModel.onAppear() }
+    }
 
-            SpatchCharacterView(mood: viewModel.mood)
-                .frame(width: 130, height: 190)
+    private var card: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 14) {
+                SpatchCharacterView(mood: viewModel.mood)
+                    .frame(width: 74, height: 106)
 
-            VStack(spacing: 10) {
-                Text(viewModel.isLeaving ? "Aw, okay…" : viewModel.currentStep.title)
-                    .font(.title2.bold())
-                    .multilineTextAlignment(.center)
-                Text(viewModel.isLeaving ? SpatchContent.sadGoodbyeLine : viewModel.currentStep.message)
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 340)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(viewModel.isLeaving ? "Aw, okay…" : viewModel.currentStep.title)
+                        .font(.title3.bold())
+                    Text(viewModel.isLeaving ? SpatchContent.sadGoodbyeLine : viewModel.currentStep.message)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .animation(.default, value: viewModel.stepIndex)
+
+                Spacer(minLength: 0)
             }
-            .animation(.default, value: viewModel.stepIndex)
 
             if !viewModel.isLeaving {
                 pageDots
-            }
-
-            Spacer(minLength: 0)
-
-            if !viewModel.isLeaving {
                 controls
             }
         }
-        .padding(24)
-        .frame(maxWidth: 460, maxHeight: .infinity)
-        .task { viewModel.onAppear() }
+        .padding(18)
+        .frame(maxWidth: 480)
+        .frame(maxWidth: .infinity)
+        .glassEffect(.regular.tint(Color.brandSage.opacity(0.2)), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
 
     private var pageDots: some View {
@@ -53,17 +61,15 @@ struct SpatchTutorialView: View {
     }
 
     private var controls: some View {
-        VStack(spacing: 12) {
-            HStack {
-                if !viewModel.isFirstStep {
-                    Button("Back") { viewModel.goBack() }
-                }
-                Spacer()
-                Button(viewModel.isLastStep ? "Let's Cook!" : "Next") { viewModel.advance() }
-                    .buttonStyle(.glassProminent)
+        HStack {
+            if !viewModel.isFirstStep {
+                Button("Back") { viewModel.goBack() }
             }
             Button("Send Spatch Away", role: .destructive) { viewModel.sendAway() }
                 .font(.footnote)
+            Spacer()
+            Button(viewModel.isLastStep ? "Let's Cook!" : "Next") { viewModel.advance() }
+                .buttonStyle(.glassProminent)
         }
     }
 }
