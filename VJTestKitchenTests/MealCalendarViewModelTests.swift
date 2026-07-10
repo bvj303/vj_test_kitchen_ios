@@ -2,20 +2,35 @@ import Foundation
 import Testing
 @testable import VJTestKitchen
 
-final class FakeMealPlanService: MealPlanServicing, @unchecked Sendable {
+/// Main-actor isolated: week navigation spawns `loadPlans()` tasks, so a
+/// nonisolated fake's bookkeeping arrays would be mutated concurrently.
+@MainActor
+final class FakeMealPlanService: MealPlanServicing {
     var plansToReturn: [MealPlanWithRecipe] = []
     var errorToThrow: Error?
+    private(set) var fetchedRanges: [(from: String, to: String)] = []
     private(set) var createdDrafts: [MealPlanDraft] = []
     private(set) var deletedIds: [Int64] = []
+    /// The id and recipe title the next `create` returns; incremented per call.
+    var nextCreatedId: Int64 = 100
+    var createdRecipeTitle = "Created Recipe"
 
-    func fetchAll() async throws -> [MealPlanWithRecipe] {
+    func fetch(from startDate: String, to endDate: String) async throws -> [MealPlanWithRecipe] {
         if let errorToThrow { throw errorToThrow }
-        return plansToReturn
+        fetchedRanges.append((startDate, endDate))
+        return plansToReturn.filter { $0.date >= startDate && $0.date <= endDate }
     }
 
-    func create(_ draft: MealPlanDraft) async throws {
+    @discardableResult
+    func create(_ draft: MealPlanDraft) async throws -> MealPlanWithRecipe {
         if let errorToThrow { throw errorToThrow }
         createdDrafts.append(draft)
+        let plan = MealPlanWithRecipe(
+            id: nextCreatedId, userId: UUID(), date: draft.date, mealType: draft.mealType,
+            recipeId: draft.recipeId, createdAt: Date(), recipes: .init(title: createdRecipeTitle)
+        )
+        nextCreatedId += 1
+        return plan
     }
 
     func delete(id: Int64) async throws {
@@ -24,7 +39,8 @@ final class FakeMealPlanService: MealPlanServicing, @unchecked Sendable {
     }
 }
 
-final class FakeMealPlanRecipeService: RecipeServicing, @unchecked Sendable {
+@MainActor
+final class FakeMealPlanRecipeService: RecipeServicing {
     var recipesToReturn: [Recipe] = []
     private(set) var fetchedPages: [(offset: Int, limit: Int, search: String?)] = []
 
@@ -52,52 +68,94 @@ private struct TestError: Error, LocalizedError {
     var errorDescription: String? { "failed" }
 }
 
+private let utc = TimeZone(identifier: "UTC")!
+
+/// Noon UTC on the given day — away from midnight so UTC-based expectations
+/// aren't sensitive to sub-day arithmetic.
+private func utcDate(_ year: Int, _ month: Int, _ day: Int, hour: Int = 12) -> Date {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = utc
+    return calendar.date(from: DateComponents(year: year, month: month, day: day, hour: hour))!
+}
+
+/// A view model pinned to a fixed (mutable-by-reference) clock in UTC.
+@MainActor
+private func makeViewModel(
+    now: Date = utcDate(2026, 7, 5),
+    timeZone: TimeZone = utc,
+    mealPlanService: FakeMealPlanService = FakeMealPlanService(),
+    recipeService: FakeMealPlanRecipeService = FakeMealPlanRecipeService(),
+    snapshotStore: FakeSnapshotStore = FakeSnapshotStore(),
+    debounceDelay: Duration = .milliseconds(300)
+) -> MealCalendarViewModel {
+    MealCalendarViewModel(
+        now: { now },
+        timeZone: timeZone,
+        mealPlanService: mealPlanService,
+        recipeService: recipeService,
+        snapshotStore: snapshotStore,
+        debounceDelay: debounceDelay
+    )
+}
+
 @MainActor
 struct MealCalendarViewModelTests {
-    @Test func weekDatesStartsAtReferenceDateAndSpansSevenDays() {
-        var components = DateComponents()
-        components.year = 2026
-        components.month = 7
-        components.day = 5
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "UTC")!
-        let referenceDate = calendar.date(from: components)!
-
-        let viewModel = MealCalendarViewModel(referenceDate: referenceDate, mealPlanService: FakeMealPlanService(), recipeService: FakeMealPlanRecipeService())
+    @Test func weekDatesStartsAtTodayAndSpansSevenDays() {
+        let viewModel = makeViewModel(now: utcDate(2026, 7, 5))
 
         #expect(viewModel.weekDates == ["2026-07-05", "2026-07-06", "2026-07-07", "2026-07-08", "2026-07-09", "2026-07-10", "2026-07-11"])
     }
 
-    @Test func isTodayMatchesFirstWeekDateOnly() {
-        var components = DateComponents()
-        components.year = 2026
-        components.month = 7
-        components.day = 5
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "UTC")!
-        let referenceDate = calendar.date(from: components)!
+    @Test func todayIsTheLocalCalendarDayNotUTCs() {
+        // 00:30 UTC on July 5 is still the evening of July 4 in New York —
+        // "today" must follow the user's clock, not UTC's.
+        let newYork = TimeZone(identifier: "America/New_York")!
+        let viewModel = makeViewModel(now: utcDate(2026, 7, 5, hour: 0) + 1800, timeZone: newYork)
 
-        let viewModel = MealCalendarViewModel(referenceDate: referenceDate, mealPlanService: FakeMealPlanService(), recipeService: FakeMealPlanRecipeService())
+        #expect(viewModel.todayDate == "2026-07-04")
+        #expect(viewModel.weekDates.first == "2026-07-04")
+    }
+
+    @Test func isTodayMatchesFirstWeekDateOnly() {
+        let viewModel = makeViewModel(now: utcDate(2026, 7, 5))
 
         #expect(viewModel.todayDate == "2026-07-05")
         #expect(viewModel.isToday("2026-07-05"))
         #expect(!viewModel.isToday("2026-07-06"))
     }
 
+    @Test func loadAfterDayRolloverRefreshesTodayAndWeekWindow() async {
+        // The view model lives as long as the tab; iOS keeps apps suspended
+        // for days. Simulate: created on July 5, `load()` runs again on July 7.
+        var current = utcDate(2026, 7, 5)
+        let viewModel = MealCalendarViewModel(
+            now: { current },
+            timeZone: utc,
+            mealPlanService: FakeMealPlanService(),
+            recipeService: FakeMealPlanRecipeService(),
+            snapshotStore: FakeSnapshotStore()
+        )
+        #expect(viewModel.todayDate == "2026-07-05")
+
+        current = utcDate(2026, 7, 7)
+        await viewModel.load()
+
+        #expect(viewModel.todayDate == "2026-07-07")
+        #expect(viewModel.weekDates.first == "2026-07-07")
+        #expect(viewModel.isToday("2026-07-07"))
+        #expect(!viewModel.isToday("2026-07-05"))
+        #expect(viewModel.weekDates.contains(viewModel.selectedPlanningDate))
+    }
+
     @Test func weekNavigationShiftsWindowAndKeepsTodayFixed() {
-        var components = DateComponents()
-        components.year = 2026; components.month = 7; components.day = 5
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "UTC")!
-        let referenceDate = calendar.date(from: components)!
-        let viewModel = MealCalendarViewModel(referenceDate: referenceDate, mealPlanService: FakeMealPlanService(), recipeService: FakeMealPlanRecipeService())
+        let viewModel = makeViewModel(now: utcDate(2026, 7, 5))
 
         viewModel.goToNextWeek()
         #expect(viewModel.weekOffset == 1)
         #expect(viewModel.weekDates.first == "2026-07-12")
         #expect(viewModel.weekDates.last == "2026-07-18")
         #expect(viewModel.isCurrentWeek == false)
-        // "Today" stays the real reference day, now outside the visible window.
+        // "Today" stays the real day, now outside the visible window.
         #expect(viewModel.todayDate == "2026-07-05")
         #expect(viewModel.isToday("2026-07-12") == false)
 
@@ -113,12 +171,7 @@ struct MealCalendarViewModelTests {
     }
 
     @Test func navigatingWeeksClampsPlanningDayIntoVisibleWeek() {
-        var components = DateComponents()
-        components.year = 2026; components.month = 7; components.day = 5
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "UTC")!
-        let referenceDate = calendar.date(from: components)!
-        let viewModel = MealCalendarViewModel(referenceDate: referenceDate, mealPlanService: FakeMealPlanService(), recipeService: FakeMealPlanRecipeService())
+        let viewModel = makeViewModel(now: utcDate(2026, 7, 5))
         // Pick a day in the current week, then move weeks.
         viewModel.selectedPlanningDate = "2026-07-08"
 
@@ -129,23 +182,32 @@ struct MealCalendarViewModelTests {
         #expect(viewModel.selectedPlanningDate == "2026-07-12")
     }
 
+    @Test func navigatingWeeksFetchesTheNewWindow() async {
+        let plans = FakeMealPlanService()
+        let viewModel = makeViewModel(now: utcDate(2026, 7, 5), mealPlanService: plans)
+        await viewModel.load()
+        #expect(plans.fetchedRanges.count == 1)
+
+        viewModel.goToNextWeek()
+        // The fetch is spawned as a Task; give it a beat to land.
+        try? await Task.sleep(for: .milliseconds(50))
+
+        #expect(plans.fetchedRanges.count == 2)
+        // The window spans the visible week and still reaches back to today so
+        // the widget snapshot stays accurate.
+        #expect(plans.fetchedRanges.last?.from == "2026-07-05")
+        #expect(plans.fetchedRanges.last?.to == "2026-07-18")
+    }
+
     @Test func holidayPassesThroughToHolidayProvider() {
-        let viewModel = MealCalendarViewModel(mealPlanService: FakeMealPlanService(), recipeService: FakeMealPlanRecipeService())
+        let viewModel = makeViewModel()
 
         #expect(viewModel.holiday(for: "2026-07-04")?.name == "Independence Day")
         #expect(viewModel.holiday(for: "2026-07-07") == nil)
     }
 
     @Test func selectedPlanningDateDefaultsToFirstDayOfWeek() {
-        var components = DateComponents()
-        components.year = 2026
-        components.month = 7
-        components.day = 5
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "UTC")!
-        let referenceDate = calendar.date(from: components)!
-
-        let viewModel = MealCalendarViewModel(referenceDate: referenceDate, mealPlanService: FakeMealPlanService(), recipeService: FakeMealPlanRecipeService())
+        let viewModel = makeViewModel(now: utcDate(2026, 7, 5))
 
         #expect(viewModel.selectedPlanningDate == "2026-07-05")
         #expect(viewModel.selectedPlanningDate == viewModel.weekDates.first)
@@ -158,7 +220,7 @@ struct MealCalendarViewModelTests {
             makePlan(id: 2, date: "2026-07-05", title: "Salad"),
             makePlan(id: 3, date: "2026-07-06", title: "Pasta"),
         ]
-        let viewModel = MealCalendarViewModel(mealPlanService: plans, recipeService: FakeMealPlanRecipeService())
+        let viewModel = makeViewModel(now: utcDate(2026, 7, 5), mealPlanService: plans)
 
         await viewModel.load()
 
@@ -166,6 +228,17 @@ struct MealCalendarViewModelTests {
         #expect(viewModel.mealPlans(for: "2026-07-06").count == 1)
         #expect(viewModel.mealPlans(for: "2026-07-07").isEmpty)
         #expect(viewModel.errorMessage == nil)
+    }
+
+    @Test func loadFetchesOnlyTheVisibleWindow() async {
+        let plans = FakeMealPlanService()
+        let viewModel = makeViewModel(now: utcDate(2026, 7, 5), mealPlanService: plans)
+
+        await viewModel.load()
+
+        #expect(plans.fetchedRanges.count == 1)
+        #expect(plans.fetchedRanges.first?.from == "2026-07-05")
+        #expect(plans.fetchedRanges.first?.to == "2026-07-11")
     }
 
     @Test func mealPlansAreOrderedByMealTypeWithSnackLast() async {
@@ -177,7 +250,7 @@ struct MealCalendarViewModelTests {
             makePlan(id: 3, date: "2026-07-05", title: "Pancakes", mealType: "Breakfast"),
             makePlan(id: 4, date: "2026-07-05", title: "Sandwich", mealType: "Lunch"),
         ]
-        let viewModel = MealCalendarViewModel(mealPlanService: plans, recipeService: FakeMealPlanRecipeService())
+        let viewModel = makeViewModel(now: utcDate(2026, 7, 5), mealPlanService: plans)
 
         await viewModel.load()
 
@@ -191,7 +264,7 @@ struct MealCalendarViewModelTests {
             makePlan(id: 1, date: "2026-07-05", title: "Early Dinner", mealType: "Dinner"),
             makePlan(id: 2, date: "2026-07-05", title: "Mid Dinner", mealType: "Dinner"),
         ]
-        let viewModel = MealCalendarViewModel(mealPlanService: plans, recipeService: FakeMealPlanRecipeService())
+        let viewModel = makeViewModel(now: utcDate(2026, 7, 5), mealPlanService: plans)
 
         await viewModel.load()
 
@@ -202,11 +275,36 @@ struct MealCalendarViewModelTests {
     @Test func loadSurfacesErrorMessage() async {
         let plans = FakeMealPlanService()
         plans.errorToThrow = TestError()
-        let viewModel = MealCalendarViewModel(mealPlanService: plans, recipeService: FakeMealPlanRecipeService())
+        let viewModel = makeViewModel(mealPlanService: plans)
 
         await viewModel.load()
 
         #expect(viewModel.errorMessage == "failed")
+    }
+
+    @Test func loadPaintsCachedPlansBeforeTheFetchResolves() async {
+        // Offline: the fetch fails, but the last-persisted window still shows.
+        let store = FakeSnapshotStore()
+        store.save([makePlan(id: 1, date: "2026-07-05", title: "Cached Tacos")], key: .mealPlansWindow)
+        let plans = FakeMealPlanService()
+        plans.errorToThrow = TestError()
+        let viewModel = makeViewModel(now: utcDate(2026, 7, 5), mealPlanService: plans, snapshotStore: store)
+
+        await viewModel.load()
+
+        #expect(viewModel.mealPlans(for: "2026-07-05").map(\.recipeTitle) == ["Cached Tacos"])
+        #expect(viewModel.errorMessage == "failed")
+    }
+
+    @Test func loadPersistsTheFetchedWindowForNextLaunch() async {
+        let store = FakeSnapshotStore()
+        let plans = FakeMealPlanService()
+        plans.plansToReturn = [makePlan(id: 1, date: "2026-07-05", title: "Tacos")]
+        let viewModel = makeViewModel(now: utcDate(2026, 7, 5), mealPlanService: plans, snapshotStore: store)
+
+        await viewModel.load()
+
+        #expect(store.hasValue(for: .mealPlansWindow))
     }
 
     @Test func matchingRecipesFiltersBySearchTextCaseInsensitivelyViaServerSideSearch() async {
@@ -215,7 +313,7 @@ struct MealCalendarViewModelTests {
             Recipe(id: 1, userId: nil, title: "Carbonara", description: nil, instructions: nil, imagePath: nil, prepTime: nil, servings: nil, createdAt: Date()),
             Recipe(id: 2, userId: nil, title: "Beef Tacos", description: nil, instructions: nil, imagePath: nil, prepTime: nil, servings: nil, createdAt: Date()),
         ]
-        let viewModel = MealCalendarViewModel(mealPlanService: FakeMealPlanService(), recipeService: recipes, debounceDelay: .zero)
+        let viewModel = makeViewModel(recipeService: recipes, debounceDelay: .zero)
         await viewModel.load()
 
         #expect(viewModel.matchingRecipes.isEmpty)
@@ -228,9 +326,11 @@ struct MealCalendarViewModelTests {
         #expect(recipes.fetchedPages.last?.limit == 5)
     }
 
-    @Test func addMealPlanCallsServiceThenReloads() async {
+    @Test func addMealPlanCallsServiceAndPatchesTheDayLocally() async {
         let plans = FakeMealPlanService()
-        let viewModel = MealCalendarViewModel(mealPlanService: plans, recipeService: FakeMealPlanRecipeService())
+        plans.createdRecipeTitle = "Ramen"
+        let viewModel = makeViewModel(now: utcDate(2026, 7, 5), mealPlanService: plans)
+        await viewModel.load()
         viewModel.selectedMealType = "Lunch"
 
         await viewModel.addMealPlan(date: "2026-07-05", recipeId: 9)
@@ -239,16 +339,25 @@ struct MealCalendarViewModelTests {
         #expect(plans.createdDrafts.first?.date == "2026-07-05")
         #expect(plans.createdDrafts.first?.mealType == "Lunch")
         #expect(plans.createdDrafts.first?.recipeId == 9)
+        // No second fetch — the created row is patched into the day directly.
+        #expect(plans.fetchedRanges.count == 1)
+        #expect(viewModel.mealPlans(for: "2026-07-05").map(\.recipeTitle) == ["Ramen"])
         #expect(viewModel.errorMessage == nil)
     }
 
-    @Test func deleteMealPlanCallsServiceThenReloads() async {
+    @Test func deleteMealPlanCallsServiceAndRemovesTheRowLocally() async {
         let plans = FakeMealPlanService()
-        let viewModel = MealCalendarViewModel(mealPlanService: plans, recipeService: FakeMealPlanRecipeService())
+        plans.plansToReturn = [makePlan(id: 5, date: "2026-07-05", title: "Tacos")]
+        let viewModel = makeViewModel(now: utcDate(2026, 7, 5), mealPlanService: plans)
+        await viewModel.load()
+        #expect(viewModel.mealPlans(for: "2026-07-05").count == 1)
 
         await viewModel.deleteMealPlan(5)
 
         #expect(plans.deletedIds == [5])
+        #expect(viewModel.mealPlans(for: "2026-07-05").isEmpty)
+        // No second fetch — removed locally.
+        #expect(plans.fetchedRanges.count == 1)
     }
 }
 

@@ -41,14 +41,15 @@ final class AddToCalendarViewModel {
         recipeId: Int64,
         recipeTitle: String,
         referenceDate: Date = Date(),
+        timeZone: TimeZone = .current,
         mealPlanService: MealPlanServicing = MealPlanService()
     ) {
         self.recipeId = recipeId
         self.recipeTitle = recipeTitle
         self.mealPlanService = mealPlanService
-        let days = Self.upcomingDays(from: referenceDate, count: Self.dayRange)
+        let days = Self.upcomingDays(from: referenceDate, count: Self.dayRange, timeZone: timeZone)
         self.days = days
-        self.selectedDate = days.first?.date ?? MealPlan.dateFormatter.string(from: referenceDate)
+        self.selectedDate = days[0].date
     }
 
     func add() async {
@@ -64,30 +65,34 @@ final class AddToCalendarViewModel {
     }
 
     /// Builds `count` consecutive days starting at `referenceDate`, each as a
-    /// "yyyy-MM-dd" string (UTC, matching `MealPlan.dateFormatter` — see its
-    /// note on why a local time zone can shift the shown day). Offsets 0 and 1
-    /// get "Today"/"Tomorrow" labels; the rest get "Wed, Jul 9" style labels.
-    private static func upcomingDays(from referenceDate: Date, count: Int) -> [PlannerDay] {
+    /// "yyyy-MM-dd" string derived in the **user's time zone** — "Today" must
+    /// be the user's calendar day, not UTC's, which rolls over at 7–8pm in US
+    /// time zones (see `MealCalendarViewModel.todayDate`). Offsets 0 and 1 get
+    /// "Today"/"Tomorrow" labels; the rest get "Wed, Jul 9" style labels.
+    private static func upcomingDays(from referenceDate: Date, count: Int, timeZone: TimeZone) -> [PlannerDay] {
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "UTC")!
+        calendar.timeZone = timeZone
+
+        let dayFormatter = DateFormatter()
+        dayFormatter.dateFormat = "yyyy-MM-dd"
+        dayFormatter.calendar = Calendar(identifier: .gregorian)
+        dayFormatter.locale = Locale(identifier: "en_US_POSIX")
+        dayFormatter.timeZone = timeZone
+
+        let labelFormatter = DateFormatter()
+        labelFormatter.dateFormat = "EEE, MMM d"
+        labelFormatter.timeZone = timeZone
+
         return (0..<count).map { offset in
             let day = calendar.date(byAdding: .day, value: offset, to: referenceDate)!
-            let dateString = MealPlan.dateFormatter.string(from: day)
+            let dateString = dayFormatter.string(from: day)
             let label: String
             switch offset {
             case 0: label = "Today"
             case 1: label = "Tomorrow"
-            default: label = Self.labelFormatter.string(from: day)
+            default: label = labelFormatter.string(from: day)
             }
             return PlannerDay(date: dateString, label: label)
         }
     }
-
-    /// "Wed, Jul 9" — UTC to match how the day strings above are computed.
-    private static let labelFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEE, MMM d"
-        formatter.timeZone = TimeZone(identifier: "UTC")
-        return formatter
-    }()
 }
