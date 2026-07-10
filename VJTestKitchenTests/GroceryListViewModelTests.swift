@@ -102,7 +102,7 @@ struct GroceryListViewModelTests {
     @Test func loadFetchesItemsFromService() async {
         let service = FakeGroceryItemService()
         service.items = [makeItem(name: "Milk"), makeItem(name: "Eggs")]
-        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService())
+        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService(), snapshotStore: FakeSnapshotStore())
 
         await viewModel.load()
 
@@ -113,7 +113,7 @@ struct GroceryListViewModelTests {
     @Test func loadSurfacesErrorMessage() async {
         let service = FakeGroceryItemService()
         service.fetchError = TestError()
-        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService())
+        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService(), snapshotStore: FakeSnapshotStore())
 
         await viewModel.load()
 
@@ -122,7 +122,7 @@ struct GroceryListViewModelTests {
 
     @Test func addManualItemAutoCategorizesFromName() async {
         let service = FakeGroceryItemService()
-        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService())
+        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService(), snapshotStore: FakeSnapshotStore())
 
         await viewModel.addManualItem(name: "Whole Milk", amount: 1, unit: "gallon")
 
@@ -133,7 +133,7 @@ struct GroceryListViewModelTests {
 
     @Test func addManualItemRespectsExplicitCategoryOverride() async {
         let service = FakeGroceryItemService()
-        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService())
+        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService(), snapshotStore: FakeSnapshotStore())
 
         await viewModel.addManualItem(name: "Milk", amount: 1, unit: "", category: .other)
 
@@ -142,7 +142,7 @@ struct GroceryListViewModelTests {
 
     @Test func addManualItemIgnoresBlankName() async {
         let service = FakeGroceryItemService()
-        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService())
+        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService(), snapshotStore: FakeSnapshotStore())
 
         await viewModel.addManualItem(name: "   ", amount: 1, unit: "")
 
@@ -153,7 +153,7 @@ struct GroceryListViewModelTests {
     @Test func toggleCheckedFlipsAndPersists() async {
         let service = FakeGroceryItemService()
         service.items = [makeItem(name: "Milk")]
-        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService())
+        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService(), snapshotStore: FakeSnapshotStore())
         await viewModel.load()
         let item = viewModel.items[0]
 
@@ -166,7 +166,7 @@ struct GroceryListViewModelTests {
     @Test func toggleCheckedRevertsOnError() async {
         let service = FakeGroceryItemService()
         service.items = [makeItem(name: "Milk")]
-        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService())
+        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService(), snapshotStore: FakeSnapshotStore())
         await viewModel.load()
         service.mutationError = TestError()
 
@@ -185,7 +185,7 @@ struct GroceryListViewModelTests {
         let good = makeItem(name: "Lemon", category: .produce)
         let bad = makeItem(name: "Lemon", category: .produce)
         service.items = [good, bad]
-        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService())
+        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService(), snapshotStore: FakeSnapshotStore())
         viewModel.grouping = .byCategory
         await viewModel.load()
         service.failingIds = [bad.id]
@@ -205,7 +205,7 @@ struct GroceryListViewModelTests {
         let good = makeItem(name: "Lemon", category: .produce)
         let bad = makeItem(name: "Lemon", category: .produce)
         service.items = [good, bad]
-        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService())
+        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService(), snapshotStore: FakeSnapshotStore())
         viewModel.grouping = .byCategory
         await viewModel.load()
         service.failingIds = [bad.id]
@@ -222,7 +222,7 @@ struct GroceryListViewModelTests {
     @Test func setCategoryUpdatesItem() async {
         let service = FakeGroceryItemService()
         service.items = [makeItem(name: "Mystery", category: .other)]
-        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService())
+        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService(), snapshotStore: FakeSnapshotStore())
         await viewModel.load()
 
         await viewModel.setCategory(viewModel.items[0], to: .produce)
@@ -234,7 +234,7 @@ struct GroceryListViewModelTests {
     @Test func deleteRemovesItem() async {
         let service = FakeGroceryItemService()
         service.items = [makeItem(name: "Milk"), makeItem(name: "Eggs")]
-        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService())
+        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService(), snapshotStore: FakeSnapshotStore())
         await viewModel.load()
 
         await viewModel.delete(viewModel.items[0])
@@ -246,7 +246,7 @@ struct GroceryListViewModelTests {
     @Test func clearListEmptiesEverything() async {
         let service = FakeGroceryItemService()
         service.items = [makeItem(name: "Milk"), makeItem(name: "Eggs")]
-        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService())
+        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService(), snapshotStore: FakeSnapshotStore())
         await viewModel.load()
 
         await viewModel.clearList()
@@ -262,7 +262,7 @@ struct GroceryListViewModelTests {
             makeItem(name: "Salt", recipeTitle: "Aioli"),
             makeItem(name: "Paper Towels"), // manual, no recipe
         ]
-        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService())
+        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService(), snapshotStore: FakeSnapshotStore())
         await viewModel.load()
         viewModel.grouping = .byRecipe
 
@@ -276,7 +276,7 @@ struct GroceryListViewModelTests {
             makeItem(name: "Milk", category: .dairy),
             makeItem(name: "Apple", category: .produce),
         ]
-        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService())
+        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService(), snapshotStore: FakeSnapshotStore())
         await viewModel.load()
         viewModel.grouping = .byCategory
 
@@ -290,7 +290,7 @@ struct GroceryListViewModelTests {
             makeItem(name: "Lemons", amount: 2, category: .produce, recipeTitle: "Lemonade"),
             makeItem(name: "Lemon", amount: 1, category: .produce, recipeTitle: "Pie"),
         ]
-        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService())
+        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService(), snapshotStore: FakeSnapshotStore())
         await viewModel.load()
 
         // By recipe: one row under each recipe, uncombined.
@@ -310,7 +310,7 @@ struct GroceryListViewModelTests {
             makeItem(name: "Lemons", amount: 2, category: .produce),
             makeItem(name: "Lemon", amount: 1, category: .produce),
         ]
-        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService())
+        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService(), snapshotStore: FakeSnapshotStore())
         await viewModel.load()
         viewModel.grouping = .byCategory
         let combined = viewModel.groups[0].rows[0]
@@ -330,7 +330,7 @@ struct GroceryListViewModelTests {
             makeItem(name: "Lemon", amount: 1, category: .produce),
             makeItem(name: "Milk", category: .dairy),
         ]
-        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService())
+        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService(), snapshotStore: FakeSnapshotStore())
         await viewModel.load()
         viewModel.grouping = .byCategory
         let combined = viewModel.groups.first { $0.title == "Produce" }!.rows[0]
@@ -347,7 +347,7 @@ struct GroceryListViewModelTests {
             makeItem(name: "Lemons", amount: 2, category: .produce),
             makeItem(name: "Lemon", amount: 1, category: .produce),
         ]
-        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService())
+        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService(), snapshotStore: FakeSnapshotStore())
         await viewModel.load()
         viewModel.grouping = .byCategory
         let combined = viewModel.groups[0].rows[0]
@@ -368,7 +368,7 @@ struct GroceryListViewModelTests {
             makeItem(name: "Sugar", amount: 50, unit: "g", isChecked: true),
         ]
         let reminders = FakeReminderService()
-        let viewModel = GroceryListViewModel(service: service, reminderService: reminders)
+        let viewModel = GroceryListViewModel(service: service, reminderService: reminders, snapshotStore: FakeSnapshotStore())
         await viewModel.load()
 
         await viewModel.exportToReminders()
@@ -379,12 +379,56 @@ struct GroceryListViewModelTests {
         #expect(reminders.exportedItems?.contains(where: { $0.contains("Sugar") }) == false)
     }
 
+    @Test func exportCombinesLikeItemsTheWayTheCategoryViewDoes() async {
+        // "2 Lemons" (one recipe) + "1 Lemon" (another) export as a single
+        // "3 Lemons" reminder, matching the combined by-category row — not two
+        // separate reminders.
+        let service = FakeGroceryItemService()
+        service.items = [
+            makeItem(name: "Lemons", amount: 2, category: .produce, recipeTitle: "Lemonade"),
+            makeItem(name: "Lemon", amount: 1, category: .produce, recipeTitle: "Pie"),
+        ]
+        let reminders = FakeReminderService()
+        let viewModel = GroceryListViewModel(service: service, reminderService: reminders, snapshotStore: FakeSnapshotStore())
+        await viewModel.load()
+
+        await viewModel.exportToReminders()
+
+        #expect(reminders.exportedItems == ["3 Lemons"])
+    }
+
+    @Test func loadPaintsCachedItemsWhenTheFetchFails() async {
+        // Offline: the fetch fails, but the last-persisted list still shows.
+        let store = FakeSnapshotStore()
+        store.save([makeItem(name: "Cached Milk")], key: .groceryItems)
+        let service = FakeGroceryItemService()
+        service.fetchError = TestError()
+        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService(), snapshotStore: store)
+
+        await viewModel.load()
+
+        #expect(viewModel.items.map(\.name) == ["Cached Milk"])
+        #expect(viewModel.errorMessage == "failed")
+    }
+
+    @Test func mutationsPersistTheSnapshotForNextLaunch() async {
+        let store = FakeSnapshotStore()
+        let service = FakeGroceryItemService()
+        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService(), snapshotStore: store)
+
+        await viewModel.addManualItem(name: "Milk", amount: 1, unit: "")
+
+        #expect(store.hasValue(for: .groceryItems))
+        let cached: [GroceryItem]? = store.load([GroceryItem].self, key: .groceryItems)
+        #expect(cached?.map(\.name) == ["Milk"])
+    }
+
     @Test func exportSurfacesErrorMessage() async {
         let reminders = FakeReminderService()
         reminders.errorToThrow = TestError()
         let service = FakeGroceryItemService()
         service.items = [makeItem(name: "Milk")]
-        let viewModel = GroceryListViewModel(service: service, reminderService: reminders)
+        let viewModel = GroceryListViewModel(service: service, reminderService: reminders, snapshotStore: FakeSnapshotStore())
         await viewModel.load()
 
         await viewModel.exportToReminders()
