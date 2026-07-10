@@ -49,14 +49,16 @@ struct HomeViewModelTests {
     private func makeViewModel(
         recipes: FakeHomeRecipeService = FakeHomeRecipeService(),
         forecaster: FakeWeatherForecaster = FakeWeatherForecaster(),
-        store: FakeWeatherPreferenceStore = FakeWeatherPreferenceStore()
+        store: FakeWeatherPreferenceStore = FakeWeatherPreferenceStore(),
+        snapshotStore: FakeSnapshotStore = FakeSnapshotStore()
     ) -> HomeViewModel {
         HomeViewModel(
-            referenceDate: referenceDate,
+            now: { [referenceDate] in referenceDate },
             calendar: utcCalendar,
             recipeService: recipes,
             weatherForecaster: forecaster,
-            weatherPreferenceStore: store
+            weatherPreferenceStore: store,
+            snapshotStore: snapshotStore
         )
     }
 
@@ -171,5 +173,87 @@ struct HomeViewModelTests {
 
         #expect(viewModel.errorMessage == "failed")
         #expect(viewModel.suggestedRecipes.isEmpty)
+    }
+
+    // MARK: - Load reuse (freshness) & day rollover
+
+    @Test func revisitWithinTheHourReusesTheLoadedShelf() async {
+        // `.task` fires on every tab switch; a fresh recent load must not
+        // refetch (and visibly reshuffle) each time.
+        let recipes = FakeHomeRecipeService()
+        recipes.pagesByKeyword = ["salad": [makeRecipe(1, "Greek Salad")]]
+        let viewModel = makeViewModel(recipes: recipes)
+
+        await viewModel.load()
+        let callsAfterFirst = recipes.fetchedPages.count
+        await viewModel.load()
+
+        #expect(recipes.fetchedPages.count == callsAfterFirst)
+        #expect(viewModel.suggestedRecipes.map(\.title) == ["Greek Salad"])
+    }
+
+    @Test func forceReloadAlwaysRefetches() async {
+        let recipes = FakeHomeRecipeService()
+        recipes.pagesByKeyword = ["salad": [makeRecipe(1, "Greek Salad")]]
+        let viewModel = makeViewModel(recipes: recipes)
+
+        await viewModel.load()
+        let callsAfterFirst = recipes.fetchedPages.count
+        await viewModel.load(force: true)
+
+        #expect(recipes.fetchedPages.count > callsAfterFirst)
+    }
+
+    @Test func loadAfterDayRolloverRecomputesTheSuggestion() async {
+        // Created on a summer Tuesday ("salad"); the app stays in memory into
+        // Friday — the next load must re-derive a weekend suggestion (no prep
+        // cap) rather than keep the launch-day one, even within any interval.
+        var current = utcCalendar.date(from: DateComponents(year: 2026, month: 7, day: 7))!
+        let recipes = FakeHomeRecipeService()
+        recipes.pagesByKeyword = ["salad": [makeRecipe(1, "Greek Salad")], "grilled": [makeRecipe(2, "Grilled Corn")]]
+        let viewModel = HomeViewModel(
+            now: { current },
+            calendar: utcCalendar,
+            recipeService: recipes,
+            weatherForecaster: FakeWeatherForecaster(),
+            weatherPreferenceStore: FakeWeatherPreferenceStore(),
+            snapshotStore: FakeSnapshotStore()
+        )
+        await viewModel.load()
+        #expect(viewModel.suggestion.maxPrepTime == 30)
+
+        // Roll to Friday July 10 and load again (e.g. app foregrounded).
+        current = utcCalendar.date(from: DateComponents(year: 2026, month: 7, day: 10))!
+        await viewModel.load()
+
+        #expect(viewModel.suggestion.maxPrepTime == nil)
+        #expect(viewModel.suggestion.keyword == "grilled")
+        #expect(viewModel.suggestedRecipes.map(\.title) == ["Grilled Corn"])
+    }
+
+    @Test func loadPaintsCachedShelfWhenTheFetchFails() async {
+        // Offline: the fetch fails, but the last-persisted shelf still shows.
+        let snapshotStore = FakeSnapshotStore()
+        snapshotStore.save([makeRecipe(9, "Cached Salad")], key: .homeShelf)
+        let recipes = FakeHomeRecipeService()
+        recipes.errorToThrow = TestError()
+        let viewModel = makeViewModel(recipes: recipes, snapshotStore: snapshotStore)
+
+        await viewModel.load()
+
+        #expect(viewModel.suggestedRecipes.map(\.title) == ["Cached Salad"])
+        #expect(viewModel.errorMessage == "failed")
+    }
+
+    @Test func successfulLoadPersistsTheShelf() async {
+        let snapshotStore = FakeSnapshotStore()
+        let recipes = FakeHomeRecipeService()
+        recipes.pagesByKeyword = ["salad": [makeRecipe(1, "Greek Salad")]]
+        let viewModel = makeViewModel(recipes: recipes, snapshotStore: snapshotStore)
+
+        await viewModel.load()
+
+        let cached: [Recipe]? = snapshotStore.load([Recipe].self, key: .homeShelf)
+        #expect(cached?.map(\.title) == ["Greek Salad"])
     }
 }
