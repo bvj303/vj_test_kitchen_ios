@@ -9,6 +9,9 @@ import SwiftUI
 /// Settings via `restart()`.
 struct SpatchTutorialView: View {
     @Environment(SpatchTutorialViewModel.self) private var viewModel
+    // Regular width (iPad, macOS) gets a bigger Spatch on the card — the
+    // 480pt card has plenty of room for him there.
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
         VStack {
@@ -24,7 +27,10 @@ struct SpatchTutorialView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 14) {
                 SpatchCharacterView(mood: viewModel.mood)
-                    .frame(width: 50, height: 106)
+                    .frame(
+                        width: horizontalSizeClass == .regular ? 68 : 50,
+                        height: horizontalSizeClass == .regular ? 144 : 106
+                    )
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text(viewModel.isLeaving ? "Aw, okay…" : viewModel.currentStep.title)
