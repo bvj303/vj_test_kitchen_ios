@@ -90,6 +90,14 @@ struct SpatchStuntPerformanceView: View {
             CGSize(width: characterSize.width * 3.2, height: characterSize.height)
         case .somersault:
             CGSize(width: characterSize.width, height: characterSize.height)
+        case .paperPlane:
+            CGSize(width: characterSize.width * 2.4, height: characterSize.height * 1.15)
+        case .rocketRide:
+            CGSize(width: characterSize.width * 1.4, height: characterSize.height * 1.35)
+        case .parachuteDrop:
+            CGSize(width: characterSize.width * 2.6, height: characterSize.height * 1.62)
+        case .bubbleBounce:
+            CGSize(width: characterSize.height * 1.12, height: characterSize.height * 1.12)
         }
     }
 
@@ -123,6 +131,41 @@ struct SpatchStuntPerformanceView: View {
                 spacewalkStars
                 character(mood: .surprised)
                     .overlay(alignment: .topLeading) { helmet }
+            }
+
+        case .paperPlane:
+            // He rides just above the fold; the plane mirrors with him so the
+            // nose always points the way he's flying.
+            VStack(spacing: -characterSize.height * 0.08) {
+                character(mood: .happy)
+                PaperPlaneShape()
+                    .fill(Color.white)
+                    .overlay(
+                        PaperPlaneShape()
+                            .stroke(Color.black.opacity(0.25), lineWidth: max(1, characterSize.width * 0.02))
+                    )
+                    .frame(width: characterSize.width * 2.4, height: characterSize.height * 0.23)
+                    .scaleEffect(x: facesReversed ? -1 : 1)
+            }
+
+        case .rocketRide:
+            // He *is* the rocket — flame right off the handle tip.
+            VStack(spacing: -characterSize.height * 0.03) {
+                character(mood: .surprised)
+                rocketFlame
+            }
+
+        case .parachuteDrop:
+            VStack(spacing: -characterSize.height * 0.02) {
+                ParachuteCanopyView()
+                    .frame(width: characterSize.width * 2.6, height: characterSize.height * 0.64)
+                character(mood: .winking)
+            }
+
+        case .bubbleBounce:
+            ZStack {
+                character(mood: .laughing)
+                soapBubble
             }
         }
     }
@@ -169,6 +212,56 @@ struct SpatchStuntPerformanceView: View {
             .overlay(glare)
             .frame(width: diameter, height: diameter)
             .offset(x: headCenterX - diameter / 2, y: headCenterY - diameter / 2)
+    }
+
+    /// A two-tone thrust flame off the handle tip, with a couple of faint
+    /// smoke puffs peeling away beside it.
+    private var rocketFlame: some View {
+        let flameWidth: CGFloat = characterSize.width * 0.42
+        let flameHeight: CGFloat = characterSize.height * 0.30
+        let innerFlame = Ellipse()
+            .fill(Color.yellow.opacity(0.9))
+            .frame(width: flameWidth * 0.5, height: flameHeight * 0.6)
+            .offset(y: -flameHeight * 0.12)
+        let puffColor = Color.white.opacity(0.55)
+        return ZStack {
+            Ellipse()
+                .fill(Color.orange)
+                .overlay(innerFlame)
+                .frame(width: flameWidth, height: flameHeight)
+            Circle()
+                .fill(puffColor)
+                .frame(width: flameWidth * 0.5, height: flameWidth * 0.5)
+                .offset(x: -flameWidth * 0.85, y: flameHeight * 0.30)
+            Circle()
+                .fill(puffColor.opacity(0.6))
+                .frame(width: flameWidth * 0.36, height: flameWidth * 0.36)
+                .offset(x: flameWidth * 0.8, y: flameHeight * 0.38)
+        }
+    }
+
+    /// The soap bubble he's sealed inside — a faint teal-tinted sphere with a
+    /// bright rim and a couple of glares, big enough to clear his whole body.
+    private var soapBubble: some View {
+        let diameter: CGFloat = characterSize.height * 1.10
+        let mainGlare = Ellipse()
+            .fill(Color.white.opacity(0.45))
+            .frame(width: diameter * 0.22, height: diameter * 0.10)
+            .rotationEffect(.degrees(-32))
+            .offset(x: -diameter * 0.24, y: -diameter * 0.30)
+        let smallGlare = Circle()
+            .fill(Color.white.opacity(0.3))
+            .frame(width: diameter * 0.06, height: diameter * 0.06)
+            .offset(x: diameter * 0.3, y: diameter * 0.22)
+        return Circle()
+            .fill(SpatchPalette.teal.opacity(0.10))
+            .overlay(
+                Circle().stroke(Color.white.opacity(0.8), lineWidth: max(1.5, diameter * 0.02))
+            )
+            .overlay(mainGlare)
+            .overlay(smallGlare)
+            .frame(width: diameter, height: diameter)
+            .allowsHitTesting(false)
     }
 
     /// A few twinkly companions drifting along with the spacewalk.
@@ -259,6 +352,104 @@ private struct BalloonBunchView: View {
             .overlay(sheen)
             .frame(width: width, height: height)
             .offset(x: w * centerX - width / 2, y: h * centerY - height / 2)
+    }
+}
+
+/// A paper dart seen from the side, nose pointing trailing (right) — the
+/// performer mirrors it when he flies the other way. Two triangles: the big
+/// top wing and the lower fin he perches above.
+private struct PaperPlaneShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let nose = CGPoint(x: rect.maxX, y: rect.minY + rect.height * 0.45)
+        let tailTop = CGPoint(x: rect.minX, y: rect.minY)
+        let notch = CGPoint(x: rect.minX + rect.width * 0.22, y: rect.minY + rect.height * 0.55)
+        let finTip = CGPoint(x: rect.minX + rect.width * 0.12, y: rect.maxY)
+
+        var path = Path()
+        path.move(to: nose)
+        path.addLine(to: tailTop)
+        path.addLine(to: notch)
+        path.closeSubpath()
+        path.move(to: nose)
+        path.addLine(to: notch)
+        path.addLine(to: finTip)
+        path.closeSubpath()
+        return path
+    }
+}
+
+/// The parachute rig: a saffron dome with white panel seams over suspension
+/// lines converging to where Spatch hangs.
+private struct ParachuteCanopyView: View {
+    var body: some View {
+        GeometryReader { proxy in
+            let w = proxy.size.width
+            let h = proxy.size.height
+            ZStack(alignment: .topLeading) {
+                CanopyStringsShape()
+                    .stroke(Color.white.opacity(0.75), lineWidth: max(1, h * 0.02))
+                CanopyShape()
+                    .fill(Color.brandSaffron)
+                    .frame(width: w, height: h * 0.62)
+                CanopySeamsShape()
+                    .stroke(Color.white.opacity(0.55), lineWidth: max(1, h * 0.025))
+                    .frame(width: w, height: h * 0.62)
+            }
+        }
+    }
+}
+
+/// The dome: a high arc over a gently scalloped bottom edge.
+private struct CanopyShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let hemLeft = CGPoint(x: rect.minX + rect.width * 0.05, y: rect.minY + rect.height * 0.86)
+        let hemRight = CGPoint(x: rect.minX + rect.width * 0.95, y: rect.minY + rect.height * 0.86)
+
+        var path = Path()
+        path.move(to: hemLeft)
+        path.addQuadCurve(
+            to: hemRight,
+            control: CGPoint(x: rect.midX, y: rect.minY - rect.height * 0.75)
+        )
+        // Scalloped hem back to the left: three shallow dips.
+        let dip = rect.height * 0.14
+        for (from, to) in [(0.95, 0.65), (0.65, 0.35), (0.35, 0.05)] {
+            path.addQuadCurve(
+                to: CGPoint(x: rect.minX + rect.width * to, y: hemLeft.y),
+                control: CGPoint(x: rect.minX + rect.width * (from + to) / 2, y: hemLeft.y + dip)
+            )
+        }
+        path.closeSubpath()
+        return path
+    }
+}
+
+/// Two curved panel seams from the crown down to the hem.
+private struct CanopySeamsShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let crown = CGPoint(x: rect.midX, y: rect.minY + rect.height * 0.04)
+        for hemX in [0.30, 0.70] {
+            path.move(to: crown)
+            path.addQuadCurve(
+                to: CGPoint(x: rect.minX + rect.width * hemX, y: rect.minY + rect.height * 0.86),
+                control: CGPoint(x: rect.minX + rect.width * (0.5 + (hemX - 0.5) * 0.8), y: rect.minY + rect.height * 0.3)
+            )
+        }
+        return path
+    }
+}
+
+/// Suspension lines from the hem down to the hold point at bottom center.
+private struct CanopyStringsShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let anchor = CGPoint(x: rect.midX, y: rect.maxY)
+        for hemX in [0.08, 0.5, 0.92] {
+            path.move(to: CGPoint(x: rect.minX + rect.width * hemX, y: rect.minY + rect.height * 0.5))
+            path.addLine(to: anchor)
+        }
+        return path
     }
 }
 

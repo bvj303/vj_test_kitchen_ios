@@ -14,6 +14,14 @@ enum SpatchStunt: CaseIterable, Sendable {
     case spacewalk
     /// Zips across at full speed, motion lines trailing behind.
     case dash
+    /// Glides across on a paper airplane, swooping and banking as it descends.
+    case paperPlane
+    /// Blasts off from the bottom and accelerates off the top, flame at the handle.
+    case rocketRide
+    /// Drifts down the whole screen swaying under a striped parachute canopy.
+    case parachuteDrop
+    /// Bounces across the screen sealed inside a big soap bubble.
+    case bubbleBounce
 
     /// How long the whole flyby takes, entrance to exit.
     var duration: TimeInterval {
@@ -22,6 +30,10 @@ enum SpatchStunt: CaseIterable, Sendable {
         case .balloonRide: 8.0
         case .spacewalk: 9.0
         case .dash: 1.6
+        case .paperPlane: 6.5
+        case .rocketRide: 3.2
+        case .parachuteDrop: 9.5
+        case .bubbleBounce: 5.5
         }
     }
 
