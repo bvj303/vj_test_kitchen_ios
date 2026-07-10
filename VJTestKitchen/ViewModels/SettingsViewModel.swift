@@ -19,11 +19,14 @@ final class SettingsViewModel {
 
     /// The icon look currently applied — the system owns the persistence
     /// (`setAlternateIconName` survives relaunches), so this is read back from
-    /// the switcher at init rather than from a store of our own.
+    /// the switcher rather than from a store of our own.
     private(set) var selectedAppIcon: AppIconOption
     var appIconErrorMessage: String?
     /// False on macOS (no alternate-icon API) — Settings hides the picker.
-    let supportsAppIconPicker: Bool
+    /// Computed live, never frozen at init: UIApplication reports false while
+    /// the app is still launching (this view model is created as a root
+    /// `@State` before UIKit finishes), then true once launch completes.
+    var supportsAppIconPicker: Bool { appIconSwitcher.supportsAlternateIcons }
 
     private let store: AppearanceStoring
     private let spatchStore: SpatchPreferenceStoring
@@ -40,7 +43,13 @@ final class SettingsViewModel {
         self.appearanceMode = store.loadAppearanceMode()
         self.showSpatch = spatchStore.loadShowSpatch()
         self.selectedAppIcon = .option(forAlternateIconName: appIconSwitcher.currentAlternateIconName)
-        self.supportsAppIconPicker = appIconSwitcher.supportsAlternateIcons
+    }
+
+    /// Re-reads the system's current icon — the init-time read can predate
+    /// launch completing (see `supportsAppIconPicker`), so Settings calls this
+    /// on appear.
+    func refreshSelectedAppIcon() {
+        selectedAppIcon = .option(forAlternateIconName: appIconSwitcher.currentAlternateIconName)
     }
 
     /// Applies an icon look, keeping the current selection if the system

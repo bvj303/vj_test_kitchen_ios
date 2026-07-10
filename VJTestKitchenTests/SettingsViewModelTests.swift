@@ -106,6 +106,33 @@ struct SettingsViewModelTests {
         #expect(!viewModel.supportsAppIconPicker)
     }
 
+    @Test func supportReflectsTheSystemLive_notFrozenAtInit() {
+        // UIApplication reports supportsAlternateIcons=false while the app is
+        // still launching (when the root view models are created) and true
+        // once launch completes — the picker must not vanish forever because
+        // the flag was read too early.
+        let switcher = FakeAppIconSwitcher()
+        switcher.supportsAlternateIcons = false
+        let viewModel = SettingsViewModel(appIconSwitcher: switcher)
+
+        switcher.supportsAlternateIcons = true
+
+        #expect(viewModel.supportsAppIconPicker)
+    }
+
+    @Test func refreshRereadsTheSystemsCurrentIcon() {
+        // Same early-launch caveat as `supportsAlternateIcons`: the name read
+        // at init can be stale, so Settings re-syncs on appear.
+        let switcher = FakeAppIconSwitcher()
+        let viewModel = SettingsViewModel(appIconSwitcher: switcher)
+        #expect(viewModel.selectedAppIcon == .classic)
+
+        switcher.currentAlternateIconName = "AppIconRocket"
+        viewModel.refreshSelectedAppIcon()
+
+        #expect(viewModel.selectedAppIcon == .rocketRide)
+    }
+
     @Test func selectingAnAlternateIconPassesItsSetName() async {
         let switcher = FakeAppIconSwitcher()
         let viewModel = SettingsViewModel(appIconSwitcher: switcher)
