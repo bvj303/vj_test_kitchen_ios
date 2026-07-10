@@ -11,10 +11,22 @@ final class SettingsViewModel {
         didSet { store.saveAppearanceMode(appearanceMode) }
     }
 
-    private let store: AppearanceStoring
+    /// Whether Spatch shows up at all — gates his cameo pop-ins, stunt
+    /// flybys, and the walkthrough replay (see `SpatchPreferenceStoring`).
+    var showSpatch: Bool {
+        didSet { spatchStore.saveShowSpatch(showSpatch) }
+    }
 
-    init(store: AppearanceStoring = UserDefaultsAppearanceStore()) {
+    private let store: AppearanceStoring
+    private let spatchStore: SpatchPreferenceStoring
+
+    init(
+        store: AppearanceStoring = UserDefaultsAppearanceStore(),
+        spatchStore: SpatchPreferenceStoring = UserDefaultsSpatchPreferenceStore()
+    ) {
         self.store = store
+        self.spatchStore = spatchStore
         self.appearanceMode = store.loadAppearanceMode()
+        self.showSpatch = spatchStore.loadShowSpatch()
     }
 }
