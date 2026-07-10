@@ -2,6 +2,10 @@ import SwiftUI
 
 struct RecipeListView: View {
     @Environment(AppCommands.self) private var appCommands
+    // recipes is account-synced via Supabase, so re-sync when the app returns
+    // to the foreground — a recipe added/edited/deleted on another device
+    // then shows up here without a manual pull-to-refresh.
+    @Environment(\.scenePhase) private var scenePhase
     @State private var viewModel = RecipeListViewModel()
     @State private var showingAddRecipe = false
     @FocusState private var searchFieldFocused: Bool
@@ -81,6 +85,11 @@ struct RecipeListView: View {
             }
         }
         .task(id: reloadToken) { await viewModel.load() }
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .active {
+                Task { await viewModel.load() }
+            }
+        }
         // Menu-bar / keyboard-shortcut commands (⌘N new recipe, ⌘F find, ⌘R reload).
         .onChange(of: appCommands.newRecipeRequests) { _, _ in
             showingAddRecipe = true
