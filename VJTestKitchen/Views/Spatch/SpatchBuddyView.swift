@@ -26,6 +26,10 @@ struct SpatchBuddyView: View {
     // reads as a speck on a 13" screen. Still cameo-small relative to those
     // screens, and he auto-hides/swipes away, so bigger isn't "in the way".
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    // Optional so previews/tests without the app root's injection still work.
+    // While the walkthrough is up, Spatch is *on stage there* — a cameo popping
+    // in at the same time would put two of him on screen at once.
+    @Environment(SpatchTutorialViewModel.self) private var tutorialViewModel: SpatchTutorialViewModel?
 
     @State private var dragOffset: CGSize = .zero
 
@@ -33,13 +37,14 @@ struct SpatchBuddyView: View {
     private let dismissThreshold: CGFloat = 80
 
     var body: some View {
+        let isShowing = viewModel.isVisible && tutorialViewModel?.isPresented != true
         // The ZStack persists across visibility flips so the `if` below is
         // inserted/removed *inside* an animated container — that's what makes
         // the `.transition` actually animate. (Attaching the animation at the
         // host's overlay would work too, but every host would have to
         // remember to.)
         ZStack {
-            if viewModel.isVisible {
+            if isShowing {
                 content
                     .transition(
                         .move(edge: viewModel.corner.slideEdge)
@@ -48,7 +53,7 @@ struct SpatchBuddyView: View {
                     )
             }
         }
-        .animation(.spring(response: 0.45, dampingFraction: 0.68), value: viewModel.isVisible)
+        .animation(.spring(response: 0.45, dampingFraction: 0.68), value: isShowing)
         .onChange(of: viewModel.isVisible) { _, isVisible in
             // A swipe-dismiss leaves `dragOffset` at its flung 3× value; without
             // this reset the *next* pop-in would render him off-position and
