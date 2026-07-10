@@ -87,4 +87,55 @@ struct SpatchTutorialViewModelTests {
         #expect(!viewModel.isLeaving)
         #expect(viewModel.isPresented)
     }
+
+    // MARK: - targetTab (drives MainTabView's real `selection`)
+
+    @Test func introStepHasNoTargetTab() {
+        let viewModel = makeViewModel()
+        #expect(viewModel.targetTab == nil)
+    }
+
+    @Test func eachMiddleStepTargetsItsMatchingTab() {
+        let viewModel = makeViewModel()
+        let expected: [AppTab] = [.home, .recipes, .calendar, .grocery, .planner]
+        for tab in expected {
+            viewModel.advance()
+            #expect(viewModel.targetTab == tab)
+        }
+    }
+
+    @Test func finalStepReturnsToHome() {
+        let viewModel = makeViewModel()
+        for _ in 0..<(viewModel.steps.count - 1) {
+            viewModel.advance()
+        }
+        #expect(viewModel.isLastStep)
+        #expect(viewModel.targetTab == .home)
+    }
+
+    @Test func goingBackToTheIntroClearsTheTargetTab() {
+        let viewModel = makeViewModel()
+        viewModel.advance()
+        #expect(viewModel.targetTab == .home)
+        viewModel.goBack()
+        #expect(viewModel.stepIndex == 0)
+        #expect(viewModel.targetTab == nil)
+    }
+
+    // MARK: - Mood varies across the tour
+
+    @Test func moodVariesAcrossSteps() {
+        let viewModel = makeViewModel()
+        #expect(viewModel.mood == .happy) // intro
+        viewModel.advance() // Home
+        #expect(viewModel.mood == .happy)
+        viewModel.advance() // Recipes
+        #expect(viewModel.mood == .thinking)
+        viewModel.advance() // Calendar
+        viewModel.advance() // Grocery
+        viewModel.advance() // AI Planner
+        #expect(viewModel.mood == .surprised)
+        viewModel.advance() // outro
+        #expect(viewModel.mood == .laughing)
+    }
 }

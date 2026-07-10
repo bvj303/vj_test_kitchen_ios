@@ -1,17 +1,26 @@
 import SwiftUI
 
 /// Spatch's floating cameo companion — a small character + speech bubble, used
-/// as Home's persistent companion and as an occasional pop-in on Recipe Detail
-/// / Cook Mode. Tapping the bubble asks for a fresh line; tapping Spatch
-/// himself just makes him wobble (handled inside `SpatchCharacterView`).
+/// as a pop-in on Home / Recipe Detail / Cook Mode. He shows up at a random
+/// corner (`SpatchBuddyViewModel.corner` — apply via
+/// `.overlay(alignment: viewModel.corner.alignment) { ... .padding(viewModel.corner.edgeInsets) }`),
+/// auto-hides after a delay, and can be sent away early with the × button or
+/// by swiping him in any direction. Tapping the bubble asks for a fresh line;
+/// dragging directly on Spatch still moves his eyes (see
+/// `SpatchCharacterView`) — a drag far enough dismisses him either way.
 struct SpatchBuddyView: View {
     var viewModel: SpatchBuddyViewModel
     /// Produces a fresh line when the bubble is tapped — each screen supplies
     /// its own content source (jokes, recipe-aware lines, etc.).
     var onRequestNewLine: () -> (String, SpatchMood)
-    /// Shows an explicit close button — on for cameos (Recipe/Cook Mode), off
-    /// for Home's persistent companion.
+    /// Shows an explicit close button, in addition to the swipe-to-dismiss
+    /// that's always available.
     var dismissible = false
+
+    @State private var dragOffset: CGSize = .zero
+
+    /// Drag distance past which a swipe counts as "away", in points.
+    private let dismissThreshold: CGFloat = 80
 
     var body: some View {
         if viewModel.isVisible {
@@ -38,7 +47,35 @@ struct SpatchBuddyView: View {
                     .buttonStyle(.plain)
                 }
             }
+            .offset(dragOffset)
+            .opacity(swipeFadeOpacity)
+            // `simultaneousGesture` so this coexists with SpatchCharacterView's
+            // own zero-distance drag (eye-tracking) instead of stealing it.
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 12)
+                    .onChanged { dragOffset = $0.translation }
+                    .onEnded { value in
+                        let distance = (value.translation.width * value.translation.width
+                            + value.translation.height * value.translation.height).squareRoot()
+                        if distance > dismissThreshold {
+                            withAnimation(.easeOut(duration: 0.2)) {
+                                dragOffset = CGSize(width: value.translation.width * 3, height: value.translation.height * 3)
+                            }
+                            viewModel.dismiss()
+                        } else {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+                                dragOffset = .zero
+                            }
+                        }
+                    }
+            )
             .transition(.scale(scale: 0.85).combined(with: .opacity))
+            .animation(.spring(response: 0.45, dampingFraction: 0.75), value: viewModel.corner)
         }
+    }
+
+    private var swipeFadeOpacity: Double {
+        let distance = (dragOffset.width * dragOffset.width + dragOffset.height * dragOffset.height).squareRoot()
+        return 1 - min(1, distance / 260)
     }
 }

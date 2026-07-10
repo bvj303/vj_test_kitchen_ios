@@ -29,39 +29,58 @@ struct MainTabView: View {
     @State private var showLocationPrompt = false
 
     var body: some View {
-        TabView(selection: $selection) {
-            Tab("Home", systemImage: "house", value: AppTab.home) {
-                HomeTab()
+        ZStack {
+            TabView(selection: $selection) {
+                Tab("Home", systemImage: "house", value: AppTab.home) {
+                    HomeTab()
+                }
+                Tab("Recipes", systemImage: "fork.knife", value: AppTab.recipes) {
+                    RecipesTab()
+                }
+                Tab("Groceries", systemImage: "cart", value: AppTab.grocery) {
+                    GroceryListTab()
+                }
+                Tab("AI Planner", systemImage: "sparkles", value: AppTab.planner) {
+                    AIPlannerTab()
+                }
+                Tab("Calendar", systemImage: "calendar", value: AppTab.calendar) {
+                    CalendarTab()
+                }
             }
-            Tab("Recipes", systemImage: "fork.knife", value: AppTab.recipes) {
-                RecipesTab()
-            }
-            Tab("Groceries", systemImage: "cart", value: AppTab.grocery) {
-                GroceryListTab()
-            }
-            Tab("AI Planner", systemImage: "sparkles", value: AppTab.planner) {
-                AIPlannerTab()
-            }
-            Tab("Calendar", systemImage: "calendar", value: AppTab.calendar) {
-                CalendarTab()
+
+            // Spatch's walkthrough overlays the real tabs (rather than
+            // covering them in a sheet) and drives `selection` itself as it
+            // advances — see `SpatchTutorialViewModel.targetTab` — so each
+            // step narrates over the actual screen it introduces. The dimming
+            // layer blocks stray taps on the tab bar/content underneath
+            // without hiding what it's showing off.
+            if spatchTutorialViewModel.isPresented {
+                Color.black.opacity(0.18)
+                    .ignoresSafeArea()
+                    .contentShape(Rectangle())
+                    .onTapGesture {}
+                    .transition(.opacity)
+                SpatchTutorialView()
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         // Load the signed-in user's avatar once for the account button; runs
         // on each sign-in since MainTabView is recreated when auth state flips.
         .task { await accountViewModel.load() }
         // First-launch-only: Spatch's walkthrough, shown ahead of the location
-        // prompt below so a brand-new user isn't hit with two sheets at once.
+        // prompt below so a brand-new user isn't hit with two prompts at once.
         .task {
             spatchTutorialViewModel.maybePresentOnLaunch()
             if !spatchTutorialViewModel.isPresented, homeLocationViewModel.shouldPromptForLocation {
                 showLocationPrompt = true
             }
         }
-        .sheet(isPresented: Binding(
-            get: { spatchTutorialViewModel.isPresented },
-            set: { spatchTutorialViewModel.isPresented = $0 }
-        )) {
-            SpatchTutorialView()
+        // Follow the tour's target tab live, so each step shows the real
+        // screen rather than a static mockup.
+        .onChange(of: spatchTutorialViewModel.stepIndex) { _, _ in
+            if let tab = spatchTutorialViewModel.targetTab {
+                selection = tab
+            }
         }
         // First-login-only: offer to set a home location for the weather
         // outlook. Gated so it's shown at most once (the prompt itself records

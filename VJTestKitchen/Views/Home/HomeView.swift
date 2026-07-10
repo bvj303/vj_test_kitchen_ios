@@ -9,7 +9,7 @@ struct HomeView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(AppCommands.self) private var appCommands
     @State private var viewModel = HomeViewModel()
-    @State private var spatchViewModel = SpatchBuddyViewModel(initialMessage: SpatchContent.randomEncouragement(), initialMood: .idle)
+    @State private var spatchViewModel = SpatchBuddyViewModel(startsVisible: false)
 
     /// Cap + center the content on very wide screens so a landscape iPad reads
     /// as a centered dashboard rather than a few stretched-out rows.
@@ -28,18 +28,13 @@ struct HomeView: View {
             .padding(isRegular ? 24 : 16)
         }
         .background(Color.platformGroupedBackground)
-        .overlay(alignment: .bottomTrailing) {
+        .overlay(alignment: spatchViewModel.corner.alignment) {
             SpatchBuddyView(
                 viewModel: spatchViewModel,
-                onRequestNewLine: {
-                    if Bool.random(), let title = viewModel.suggestedRecipes.randomElement()?.title {
-                        return (SpatchContent.recommendationLine(recipeTitle: title), .happy)
-                    }
-                    return (SpatchContent.randomJoke(), .laughing)
-                }
+                onRequestNewLine: { Self.randomSpatchLine(recipes: viewModel.suggestedRecipes) },
+                dismissible: true
             )
-            .padding(.trailing, 12)
-            .padding(.bottom, 12)
+            .padding(spatchViewModel.corner.edgeInsets)
         }
         .navigationTitle("Home")
         .task { await viewModel.load() }
@@ -48,11 +43,26 @@ struct HomeView: View {
         .onChange(of: appCommands.refreshRequests) { _, _ in
             Task { await viewModel.load() }
         }
-        // Once the shelf's actual suggestion is in, swap Spatch's line to
-        // reference it instead of the generic placeholder line he started with.
-        .onChange(of: viewModel.suggestedRecipes.isEmpty) { _, isEmpty in
-            guard !isEmpty else { return }
-            spatchViewModel.cycle(to: SpatchContent.recommendationLine(recipeTitle: viewModel.suggestedRecipes.first?.title), mood: .happy)
+        // First pop-in shortly after the shelf's actual suggestion is in —
+        // referencing the real recommended recipe rather than a placeholder.
+        .task(id: viewModel.suggestedRecipes.isEmpty) {
+            guard !viewModel.suggestedRecipes.isEmpty else { return }
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            spatchViewModel.show(
+                message: SpatchContent.recommendationLine(recipeTitle: viewModel.suggestedRecipes.first?.title),
+                mood: .happy
+            )
+        }
+        // "Every now and again" — Spatch pops back in with a fresh line for as
+        // long as Home stays on screen, rather than being a permanent fixture.
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(.random(in: 45...75)))
+                guard !Task.isCancelled, !viewModel.suggestedRecipes.isEmpty else { continue }
+                let (message, mood) = Self.randomSpatchLine(recipes: viewModel.suggestedRecipes)
+                spatchViewModel.show(message: message, mood: mood)
+            }
         }
         .alert(
             "Couldn't Load Home",
@@ -171,5 +181,14 @@ struct HomeView: View {
         }
         .frame(maxWidth: .infinity, minHeight: 120)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    /// Spatch's Home pop-in line: usually a recommendation tied to the actual
+    /// shelf, occasionally just a joke — with a mood to match either.
+    private static func randomSpatchLine(recipes: [Recipe]) -> (String, SpatchMood) {
+        if Bool.random(), let title = recipes.randomElement()?.title {
+            return (SpatchContent.recommendationLine(recipeTitle: title), .happy)
+        }
+        return (SpatchContent.randomJoke(), [.laughing, .surprised].randomElement() ?? .laughing)
     }
 }
