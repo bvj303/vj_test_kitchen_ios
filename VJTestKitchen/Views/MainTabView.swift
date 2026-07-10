@@ -24,7 +24,9 @@ struct MainTabView: View {
     @Environment(AccountViewModel.self) private var accountViewModel
     @Environment(HomeLocationViewModel.self) private var homeLocationViewModel
     @Environment(AppCommands.self) private var appCommands
+    @Environment(SettingsViewModel.self) private var settingsViewModel
     @Environment(SpatchTutorialViewModel.self) private var spatchTutorialViewModel
+    @Environment(SpatchStuntCoordinator.self) private var spatchStuntCoordinator
     @State private var selection: AppTab = .home
     @State private var showLocationPrompt = false
 
@@ -57,6 +59,11 @@ struct MainTabView: View {
             // works: it disables the actual controls across the bridge.
             .disabled(spatchTutorialViewModel.isPresented)
 
+            // Spatch's surprise stunt flybys play on a non-interactive layer
+            // above the tabs (below the walkthrough, though the coordinator
+            // never runs the two at once). See SpatchStuntCoordinator.
+            SpatchStuntStageView()
+
             // Spatch's walkthrough overlays the real tabs (rather than
             // covering them in a sheet) and drives `selection` itself as it
             // advances — see `SpatchTutorialViewModel.targetTab` — so each
@@ -83,6 +90,20 @@ struct MainTabView: View {
             if !spatchTutorialViewModel.isPresented, homeLocationViewModel.shouldPromptForLocation {
                 showLocationPrompt = true
             }
+        }
+        // Spatch's stunt scheduler runs for the life of the signed-in UI (this
+        // task cancels on sign-out). The gate carries what the coordinator
+        // can't see itself: the Settings toggle and the walkthrough. Cameo
+        // visibility is tracked inside the coordinator by the cameo views.
+        .task {
+            await spatchStuntCoordinator.run {
+                settingsViewModel.showSpatch && !spatchTutorialViewModel.isPresented
+            }
+        }
+        // Turning Spatch off mid-performance yanks him off stage immediately
+        // rather than letting the current flyby finish.
+        .onChange(of: settingsViewModel.showSpatch) { _, show in
+            if !show { spatchStuntCoordinator.cancelActiveStunt() }
         }
         // Follow the tour's target tab live, so each step shows the real
         // screen rather than a static mockup.
@@ -125,4 +146,5 @@ struct MainTabView: View {
         .environment(HomeLocationViewModel())
         .environment(AppCommands())
         .environment(SpatchTutorialViewModel())
+        .environment(SpatchStuntCoordinator())
 }

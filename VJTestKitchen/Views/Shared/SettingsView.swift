@@ -28,13 +28,19 @@ struct SettingsView: View {
             weatherSection(homeLocationViewModel: homeLocationViewModel)
 
             Section {
+                Toggle(isOn: $settingsViewModel.showSpatch) {
+                    Label("Show Spatch", systemImage: "face.smiling")
+                }
                 Button {
                     spatchTutorialViewModel.restart()
                 } label: {
                     Label("Meet Spatch Again", systemImage: "hand.wave.fill")
                 }
+                .disabled(!settingsViewModel.showSpatch)
+            } header: {
+                Text("Spatch")
             } footer: {
-                Text("Replay the walkthrough with Spatch, your kitchen sidekick.")
+                Text("Spatch is your kitchen sidekick — he pops in with tips and the occasional stunt. Turn him off to hide his visits and animations, or replay his walkthrough anytime.")
             }
         }
         .navigationTitle("Settings")
