@@ -19,6 +19,9 @@ struct SettingsView: View {
                     }
                 }
                 .pickerStyle(.inline)
+                // The section header already says "Appearance" — without this
+                // the inline picker repeats its label as a first row.
+                .labelsHidden()
             } header: {
                 Text("Appearance")
             } footer: {
@@ -59,6 +62,9 @@ struct SettingsView: View {
         }
         .navigationTitle("Settings")
         .inlineNavigationTitle()
+        // The init-time read of the current icon can predate launch
+        // completing — re-sync whenever Settings appears.
+        .task { settingsViewModel.refreshSelectedAppIcon() }
         .scrollDismissesKeyboard(.interactively)
         .dismissesKeyboardOnBackgroundTap()
         .keyboardDoneButton()
