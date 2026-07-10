@@ -110,6 +110,55 @@ enum SpatchStuntChoreography {
             placement.y = baseY - abs(sin(p * .pi * 2.5)) * stage.height * 0.17
             placement.rotationDegrees = sin(Double(p) * .pi * 2.5) * 12 * travelSign(run)
             return placement
+
+        case .whiskBroom:
+            var placement = horizontalTravel(run: run, progress: p, stage: stage, performer: performer)
+            // A witch's cruise: a smooth bob with a steady nose-down lean into
+            // the flight, plus a little flutter on top.
+            let baseY = stage.height * (0.24 + 0.30 * run.lane)
+            placement.y = baseY + sin(p * .pi * 3) * stage.height * 0.035
+            placement.rotationDegrees = (-7 + sin(Double(p) * .pi * 6) * 4) * travelSign(run)
+            return placement
+
+        case .pizzaSurf:
+            var placement = horizontalTravel(run: run, progress: p, stage: stage, performer: performer)
+            // Surfing: bigger waves than the broom, carving (max tilt) right
+            // where each wave is steepest — rotation is the bob's cosine.
+            let baseY = stage.height * (0.35 + 0.30 * run.lane)
+            placement.y = baseY + sin(p * .pi * 4) * stage.height * 0.05
+            placement.rotationDegrees = cos(Double(p) * .pi * 4) * 9 * travelSign(run)
+            return placement
+
+        case .rollingPin:
+            var placement = horizontalTravel(run: run, progress: p, stage: stage, performer: performer)
+            // Log-rolling near the floor: quick tiny jitters, arms-out wobble.
+            let baseY = stage.height * (0.72 + 0.12 * run.lane)
+            placement.y = baseY - abs(sin(p * .pi * 5)) * stage.height * 0.012
+            placement.rotationDegrees = sin(Double(p) * .pi * 5) * 4 * travelSign(run)
+            return placement
+
+        case .toastPop:
+            // Ballistic pop from the bottom edge: sin(p·π) is fastest at the
+            // ends and hangs at the apex, so it reads as a real toaster launch
+            // — up, hover, drop back out of sight. lane picks the slot.
+            let baseX = stage.width * (0.25 + 0.50 * run.lane)
+            // A few points of slack below the edge: sin(π) isn't exactly zero
+            // in floating point, and the endpoints must be decisively offstage.
+            let startY = stage.height + performer.height / 2 + 8
+            let rise = stage.height * 0.62 + performer.height
+            return Placement(
+                x: baseX,
+                y: startY - sin(p * .pi) * rise,
+                rotationDegrees: sin(Double(p) * .pi * 2) * 6
+            )
+
+        case .potSail:
+            var placement = horizontalTravel(run: run, progress: p, stage: stage, performer: performer)
+            // A slow cruise on gentle swells, rocking harder than it bobs.
+            let baseY = stage.height * (0.55 + 0.25 * run.lane)
+            placement.y = baseY + sin(p * .pi * 2.4) * stage.height * 0.02
+            placement.rotationDegrees = sin(Double(p) * .pi * 3.2) * 7 * travelSign(run)
+            return placement
         }
     }
 

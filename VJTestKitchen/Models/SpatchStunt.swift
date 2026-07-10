@@ -22,6 +22,18 @@ enum SpatchStunt: CaseIterable, Sendable {
     case parachuteDrop
     /// Bounces across the screen sealed inside a big soap bubble.
     case bubbleBounce
+    /// Flies across witch-style astride a giant balloon whisk, bristles back.
+    case whiskBroom
+    /// Surfs a pepperoni pizza across the screen, carving into each wave.
+    case pizzaSurf
+    /// Log-rolls along the bottom of the screen balanced on a rolling pin.
+    case rollingPin
+    /// Pops up from the bottom edge like toast from a toaster, hangs at the
+    /// apex, and drops back out of sight — the one stunt that enters and
+    /// exits the same edge.
+    case toastPop
+    /// Sails across sitting in a steaming stockpot, rocking like a boat.
+    case potSail
 
     /// How long the whole flyby takes, entrance to exit.
     var duration: TimeInterval {
@@ -34,6 +46,11 @@ enum SpatchStunt: CaseIterable, Sendable {
         case .rocketRide: 3.2
         case .parachuteDrop: 9.5
         case .bubbleBounce: 5.5
+        case .whiskBroom: 5.5
+        case .pizzaSurf: 6.0
+        case .rollingPin: 4.5
+        case .toastPop: 3.8
+        case .potSail: 8.0
         }
     }
 
