@@ -62,6 +62,54 @@ enum SpatchStuntChoreography {
                 y: startY + (endY - startY) * p,
                 rotationDegrees: sin(Double(p) * .pi * 3) * 6
             )
+
+        case .paperPlane:
+            var placement = horizontalTravel(run: run, progress: p, stage: stage, performer: performer)
+            // A glide that loses a little altitude overall, with swoops on the
+            // way and a matching bank into each one.
+            let baseY = stage.height * (0.22 + 0.28 * run.lane)
+            let descent: CGFloat = p * stage.height * 0.16
+            let swoop: CGFloat = sin(p * .pi * 2.4) * stage.height * 0.05
+            placement.y = baseY + descent + swoop
+            placement.rotationDegrees = (8 + cos(Double(p) * .pi * 2.4) * 10) * travelSign(run)
+            return placement
+
+        case .rocketRide:
+            // Straight up with a tiny thrust wiggle, accelerating as he climbs
+            // (squared progress: slow off the pad, flat out by the top).
+            let eased = p * p
+            let baseX = stage.width * (0.25 + 0.50 * run.lane)
+            let wiggle = sin(p * .pi * 6) * stage.width * 0.015
+            let startY = stage.height + performer.height / 2
+            let endY = -performer.height / 2
+            return Placement(
+                x: baseX + wiggle,
+                y: startY + (endY - startY) * eased,
+                rotationDegrees: sin(Double(p) * .pi * 5) * 3
+            )
+
+        case .parachuteDrop:
+            // The balloon ride's mirror image: in from above the top edge,
+            // out below the bottom, swinging like a pendulum under the canopy
+            // — the tilt tracks the swing so canopy and rig lean together.
+            let baseX = stage.width * (0.25 + 0.50 * run.lane)
+            let swing = sin(p * .pi * 3) * stage.width * 0.06
+            let startY = -performer.height / 2
+            let endY = stage.height + performer.height / 2
+            return Placement(
+                x: baseX + swing,
+                y: startY + (endY - startY) * p,
+                rotationDegrees: sin(Double(p) * .pi * 3) * 9
+            )
+
+        case .bubbleBounce:
+            var placement = horizontalTravel(run: run, progress: p, stage: stage, performer: performer)
+            // Two-and-a-half big lazy arcs — floatier and slower than the
+            // somersault's hops — with a gentle roll inside the bubble.
+            let baseY = stage.height * (0.55 + 0.25 * run.lane)
+            placement.y = baseY - abs(sin(p * .pi * 2.5)) * stage.height * 0.17
+            placement.rotationDegrees = sin(Double(p) * .pi * 2.5) * 12 * travelSign(run)
+            return placement
         }
     }
 

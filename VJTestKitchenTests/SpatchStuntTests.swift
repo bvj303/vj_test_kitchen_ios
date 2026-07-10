@@ -87,6 +87,31 @@ struct SpatchStuntChoreographyTests {
         }
     }
 
+    @Test func verticalStuntsTravelTheRightWay() {
+        // Up-and-away stunts must exit off the top; the parachute must fall
+        // off the bottom — a sign flip here would look absurd, not just wrong.
+        for (stunt, travelsUp) in [
+            (SpatchStunt.balloonRide, true),
+            (.rocketRide, true),
+            (.parachuteDrop, false),
+        ] {
+            let run = run(stunt)
+            let entrance = SpatchStuntChoreography.placement(run: run, progress: 0, stage: stage, performer: performer)
+            let exit = SpatchStuntChoreography.placement(run: run, progress: 1, stage: stage, performer: performer)
+            #expect((exit.y < entrance.y) == travelsUp, "\(stunt) travels the wrong way")
+        }
+    }
+
+    @Test func rocketAcceleratesAsItClimbs() {
+        // The launch should ease in: the first half of the ride covers less
+        // ground than the second.
+        let run = run(.rocketRide)
+        let start = SpatchStuntChoreography.placement(run: run, progress: 0, stage: stage, performer: performer)
+        let mid = SpatchStuntChoreography.placement(run: run, progress: 0.5, stage: stage, performer: performer)
+        let end = SpatchStuntChoreography.placement(run: run, progress: 1, stage: stage, performer: performer)
+        #expect(abs(mid.y - start.y) < abs(end.y - mid.y))
+    }
+
     @Test func progressIsClampedToTheAnimationRange() {
         let run = run(.somersault)
         let below = SpatchStuntChoreography.placement(run: run, progress: -0.5, stage: stage, performer: performer)
