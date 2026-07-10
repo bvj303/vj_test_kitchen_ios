@@ -9,10 +9,14 @@ import SwiftUI
 /// little spring wobble on release, like bopping a googly-eye toy. A subtle
 /// breathing scale keeps him feeling alive even at rest.
 ///
-/// He always renders at a fixed, deliberately narrow aspect ratio (a real
-/// spatula silhouette, not a rounded blob) regardless of the frame he's given
-/// — `fittedSize(in:)` fits that ratio inside the available space and centers
-/// it, so callers can just hand him a bounding box.
+/// He renders at whatever size the caller's frame gives him — pass a narrow
+/// (tall) frame for a spatula-like silhouette rather than a square one; there
+/// is deliberately no internal "fit and re-center" step here (an earlier
+/// version tried that via a nested `GeometryReader` computation and a
+/// `.position()`-placed arm, which occasionally rendered at the wrong scale
+/// in the running app despite looking correct in static previews — everything
+/// below sticks to plain proxy sizing and `.offset()`, which cannot affect
+/// layout/sizing the way `.position()` can).
 struct SpatchCharacterView: View {
     var mood: SpatchMood = .idle
     /// Flips him horizontally — the arm/spoon (drawn on the trailing side by
@@ -31,25 +35,22 @@ struct SpatchCharacterView: View {
 
     /// How far the pupils can travel from center, in points.
     private let pupilTravel: CGFloat = 6
-    /// Width ÷ height of the whole character — narrower than a plain blob so
-    /// he reads as an actual spatula silhouette.
-    private let aspectRatio: CGFloat = 0.42
 
     var body: some View {
         GeometryReader { proxy in
-            let size = fittedSize(in: proxy.size)
+            let width = proxy.size.width
+            let height = proxy.size.height
 
             ZStack(alignment: .top) {
-                VStack(spacing: -size.height * 0.03) {
-                    head(width: size.width, height: size.height * 0.68)
-                    handle(width: size.width * 0.3, height: size.height * 0.34)
+                VStack(spacing: -height * 0.03) {
+                    head(width: width, height: height * 0.68)
+                    handle(width: width * 0.3, height: height * 0.34)
                 }
-                .frame(width: size.width, height: size.height, alignment: .top)
+                .frame(width: width, height: height, alignment: .top)
 
-                arm(characterSize: size)
+                arm(width: width, height: height)
             }
-            .frame(width: size.width, height: size.height)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            .frame(width: width, height: height)
             .scaleEffect(x: isMirrored ? -1 : 1, y: isBreathing ? 1.03 : 1, anchor: .bottom)
             .rotationEffect(wobble, anchor: .bottom)
             .contentShape(Rectangle())
@@ -70,17 +71,6 @@ struct SpatchCharacterView: View {
         }
         .task { await runIdleLoop() }
         .task { await runBreathingLoop() }
-    }
-
-    /// Fits `aspectRatio` inside `available`, centered — so he's always the
-    /// same narrow shape no matter what bounding box a caller provides.
-    private func fittedSize(in available: CGSize) -> CGSize {
-        let widthFromHeight = available.height * aspectRatio
-        if widthFromHeight <= available.width {
-            return CGSize(width: widthFromHeight, height: available.height)
-        } else {
-            return CGSize(width: available.width, height: available.width / aspectRatio)
-        }
     }
 
     /// A quick spring rotation, like bopping a googly-eye toy — triggered when
@@ -283,19 +273,24 @@ struct SpatchCharacterView: View {
     /// A little curled wire arm holding a spoon, emerging from the trailing
     /// side of the neck — the asymmetric detail from the reference photo, and
     /// what makes `isMirrored` visually read as "facing the other way" rather
-    /// than a no-op flip of an otherwise-symmetric face.
-    private func arm(characterSize: CGSize) -> some View {
-        let armWidth = characterSize.width * 0.55
-        let armHeight = characterSize.height * 0.2
+    /// than a no-op flip of an otherwise-symmetric face. Sized to its own
+    /// small fixed box and placed purely with `.offset()` (never
+    /// `.position()`), so a bad placement calculation can only ever shift it a
+    /// few points — not balloon its rendered size.
+    private func arm(width: CGFloat, height: CGFloat) -> some View {
+        let armWidth = width * 0.7
+        let armHeight = height * 0.22
 
         return ZStack(alignment: .topLeading) {
             ArmPath()
-                .stroke(Color(white: 0.6), style: StrokeStyle(lineWidth: max(1.5, characterSize.width * 0.05), lineCap: .round))
-            spoon(width: characterSize.width * 0.26)
-                .position(x: armWidth * 0.95, y: armHeight * 0.92)
+                .stroke(Color(white: 0.6), style: StrokeStyle(lineWidth: max(1.5, width * 0.08), lineCap: .round))
+                .frame(width: armWidth, height: armHeight)
+            spoon(width: width * 0.32)
+                .offset(x: armWidth * 0.78, y: armHeight * 0.6)
         }
-        .frame(width: armWidth, height: armHeight)
-        .position(x: characterSize.width * 0.78, y: characterSize.height * 0.64)
+        .frame(width: armWidth, height: armHeight, alignment: .topLeading)
+        .offset(x: width * 0.34, y: height * 0.44)
+        .allowsHitTesting(false)
     }
 
     private func spoon(width: CGFloat) -> some View {
@@ -346,7 +341,7 @@ private struct ArmPath: Shape {
     HStack(spacing: 24) {
         ForEach(SpatchMood.allCases, id: \.self) { mood in
             SpatchCharacterView(mood: mood)
-                .frame(width: 90, height: 130)
+                .frame(width: 60, height: 130)
         }
     }
     .padding()
@@ -355,9 +350,9 @@ private struct ArmPath: Shape {
 #Preview("Mirrored") {
     HStack(spacing: 24) {
         SpatchCharacterView(mood: .happy, isMirrored: false)
-            .frame(width: 90, height: 130)
+            .frame(width: 60, height: 130)
         SpatchCharacterView(mood: .happy, isMirrored: true)
-            .frame(width: 90, height: 130)
+            .frame(width: 60, height: 130)
     }
     .padding()
 }

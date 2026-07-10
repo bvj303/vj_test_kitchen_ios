@@ -112,8 +112,7 @@ struct RecipeDetailView: View {
                 viewModel: spatchViewModel,
                 onRequestNewLine: {
                     (SpatchContent.recipeCameoLine(prepTime: viewModel.detail?.prepTime, tag: viewModel.detail?.tagNames.first), .happy)
-                },
-                dismissible: true
+                }
             )
             .padding(spatchViewModel.corner.edgeInsets)
         }

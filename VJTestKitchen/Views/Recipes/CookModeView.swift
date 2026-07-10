@@ -79,8 +79,7 @@ struct CookModeView: View {
                 viewModel: spatchViewModel,
                 onRequestNewLine: {
                     (SpatchContent.cookModeEncouragement(progress: stepProgress ?? 0), .happy)
-                },
-                dismissible: true
+                }
             )
             .padding(spatchViewModel.corner.edgeInsets)
         }

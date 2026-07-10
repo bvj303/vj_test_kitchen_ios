@@ -31,8 +31,7 @@ struct HomeView: View {
         .overlay(alignment: spatchViewModel.corner.alignment) {
             SpatchBuddyView(
                 viewModel: spatchViewModel,
-                onRequestNewLine: { Self.randomSpatchLine(recipes: viewModel.suggestedRecipes) },
-                dismissible: true
+                onRequestNewLine: { Self.randomSpatchLine(recipes: viewModel.suggestedRecipes) }
             )
             .padding(spatchViewModel.corner.edgeInsets)
         }
