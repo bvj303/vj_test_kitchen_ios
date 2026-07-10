@@ -27,7 +27,25 @@ struct SpatchCornerTests {
     @Test func onlyTrailingCornersReportIsTrailing() {
         #expect(SpatchCorner.topTrailing.isTrailing)
         #expect(SpatchCorner.bottomTrailing.isTrailing)
+        #expect(SpatchCorner.midTrailing.isTrailing)
         #expect(!SpatchCorner.topLeading.isTrailing)
         #expect(!SpatchCorner.bottomLeading.isTrailing)
+        #expect(!SpatchCorner.midLeading.isTrailing)
+    }
+
+    @Test func slideEdgeMatchesTheScreenSideEachPositionHugs() {
+        #expect(SpatchCorner.topLeading.slideEdge == .top)
+        #expect(SpatchCorner.topTrailing.slideEdge == .top)
+        #expect(SpatchCorner.bottomLeading.slideEdge == .bottom)
+        #expect(SpatchCorner.bottomTrailing.slideEdge == .bottom)
+        #expect(SpatchCorner.midLeading.slideEdge == .leading)
+        #expect(SpatchCorner.midTrailing.slideEdge == .trailing)
+    }
+
+    @Test func popPositionsCoverAllFourScreenSides() {
+        // The whole point of the mid-edge positions: Spatch can emerge from
+        // any of the four sides of the screen, not just top/bottom corners.
+        let edges = Set(SpatchCorner.allCases.map(\.slideEdge))
+        #expect(edges.count == 4)
     }
 }
