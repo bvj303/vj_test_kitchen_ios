@@ -25,6 +25,20 @@ struct SettingsView: View {
                 Text("System matches your device's Light/Dark Mode setting.")
             }
 
+            // macOS has no alternate-icon API, so the picker only exists on
+            // iOS/iPadOS (see AppIconSwitching).
+            if settingsViewModel.supportsAppIconPicker {
+                Section {
+                    NavigationLink {
+                        AppIconPickerView()
+                    } label: {
+                        LabeledContent("App Icon", value: settingsViewModel.selectedAppIcon.title)
+                    }
+                } footer: {
+                    Text("Pick which pose Spatch strikes on your Home Screen.")
+                }
+            }
+
             weatherSection(homeLocationViewModel: homeLocationViewModel)
 
             Section {

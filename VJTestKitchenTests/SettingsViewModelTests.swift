@@ -17,6 +17,20 @@ final class FakeSpatchPreferenceStore: SpatchPreferenceStoring, @unchecked Senda
 }
 
 @MainActor
+final class FakeAppIconSwitcher: AppIconSwitching {
+    var supportsAlternateIcons = true
+    var currentAlternateIconName: String?
+    var setNames: [String?] = []
+    var errorToThrow: Error?
+
+    func setAlternateIcon(named name: String?) async throws {
+        if let errorToThrow { throw errorToThrow }
+        setNames.append(name)
+        currentAlternateIconName = name
+    }
+}
+
+@MainActor
 struct SettingsViewModelTests {
     @Test func loadsInitialModeFromStore() {
         let store = FakeAppearanceStore()
@@ -64,6 +78,86 @@ struct SettingsViewModelTests {
         viewModel.showSpatch = false
 
         #expect(store.showSpatch == false)
+    }
+
+    // MARK: - App icon
+
+    @Test func defaultsToClassicIconWhenSystemReportsNone() {
+        let viewModel = SettingsViewModel(appIconSwitcher: FakeAppIconSwitcher())
+
+        #expect(viewModel.selectedAppIcon == .classic)
+    }
+
+    @Test func readsCurrentAlternateIconFromSystem() {
+        let switcher = FakeAppIconSwitcher()
+        switcher.currentAlternateIconName = "AppIconPizza"
+
+        let viewModel = SettingsViewModel(appIconSwitcher: switcher)
+
+        #expect(viewModel.selectedAppIcon == .pizzaSurf)
+    }
+
+    @Test func exposesWhetherThePlatformSupportsIconSwitching() {
+        let switcher = FakeAppIconSwitcher()
+        switcher.supportsAlternateIcons = false
+
+        let viewModel = SettingsViewModel(appIconSwitcher: switcher)
+
+        #expect(!viewModel.supportsAppIconPicker)
+    }
+
+    @Test func selectingAnAlternateIconPassesItsSetName() async {
+        let switcher = FakeAppIconSwitcher()
+        let viewModel = SettingsViewModel(appIconSwitcher: switcher)
+
+        await viewModel.selectAppIcon(.rocketRide)
+
+        #expect(switcher.setNames == ["AppIconRocket"])
+        #expect(viewModel.selectedAppIcon == .rocketRide)
+    }
+
+    @Test func selectingClassicPassesNilToRestoreThePrimaryIcon() async {
+        let switcher = FakeAppIconSwitcher()
+        switcher.currentAlternateIconName = "AppIconBalloon"
+        let viewModel = SettingsViewModel(appIconSwitcher: switcher)
+
+        await viewModel.selectAppIcon(.classic)
+
+        #expect(switcher.setNames == [nil])
+        #expect(viewModel.selectedAppIcon == .classic)
+    }
+
+    @Test func reselectingTheCurrentIconDoesNotCallTheSystem() async {
+        let switcher = FakeAppIconSwitcher()
+        let viewModel = SettingsViewModel(appIconSwitcher: switcher)
+
+        await viewModel.selectAppIcon(.classic)
+
+        #expect(switcher.setNames.isEmpty)
+    }
+
+    @Test func failedSwitchKeepsSelectionAndSurfacesError() async {
+        let switcher = FakeAppIconSwitcher()
+        switcher.errorToThrow = URLError(.cannotConnectToHost)
+        let viewModel = SettingsViewModel(appIconSwitcher: switcher)
+
+        await viewModel.selectAppIcon(.pizzaSurf)
+
+        #expect(viewModel.selectedAppIcon == .classic)
+        #expect(viewModel.appIconErrorMessage != nil)
+    }
+
+    @Test func successfulSwitchClearsAnEarlierError() async {
+        let switcher = FakeAppIconSwitcher()
+        switcher.errorToThrow = URLError(.cannotConnectToHost)
+        let viewModel = SettingsViewModel(appIconSwitcher: switcher)
+        await viewModel.selectAppIcon(.pizzaSurf)
+
+        switcher.errorToThrow = nil
+        await viewModel.selectAppIcon(.balloonRide)
+
+        #expect(viewModel.appIconErrorMessage == nil)
+        #expect(viewModel.selectedAppIcon == .balloonRide)
     }
 }
 
