@@ -93,17 +93,13 @@ struct SpatchCharacterView: View {
         )
     }
 
-    // MARK: - Palette (local to the mascot — brand roles in Theme.swift don't
-    // cover "cheerful teal silicone" or "light wood", and the mascot shouldn't
-    // repaint if the brand palette shifts)
-
-    private var siliconeTeal: Color { Color.dynamic(light: 0x4FB0A5, dark: 0x53BCB0) }
-    private var siliconeTealDeep: Color { Color.dynamic(light: 0x3E958B, dark: 0x429D92) }
-    private var woodLight: Color { Color.dynamic(light: 0xC08A52, dark: 0xB37F4A) }
-    private var woodDark: Color { Color.dynamic(light: 0x9C6C3C, dark: 0x8F6236) }
-    private var blushPink: Color { Color.dynamic(light: 0xF08C8C, dark: 0xE98A8A) }
-    private var wireGray: Color { Color.dynamic(light: 0x8E9296, dark: 0xA6AAAE) }
-    private var spoonGray: Color { Color.dynamic(light: 0xB4B8BC, dark: 0xC2C6CA) }
+    private var siliconeTeal: Color { SpatchPalette.teal }
+    private var siliconeTealDeep: Color { SpatchPalette.tealDeep }
+    private var woodLight: Color { SpatchPalette.woodLight }
+    private var woodDark: Color { SpatchPalette.woodDark }
+    private var blushPink: Color { SpatchPalette.blushPink }
+    private var wireGray: Color { SpatchPalette.wireGray }
+    private var spoonGray: Color { SpatchPalette.spoonGray }
 
     // MARK: - Head (the paddle face)
 
@@ -349,6 +345,22 @@ struct SpatchCharacterView: View {
     private var pupilOffset: CGSize {
         isDragging ? dragOffset : idleLookOffset
     }
+}
+
+/// Spatch's own colors — the mascot's identity, deliberately separate from
+/// the brand palette in Theme.swift (whose roles don't cover "cheerful teal
+/// silicone" or "light wood", and the mascot shouldn't repaint if the brand
+/// palette shifts). Shared by every Spatch-branded surface — the character
+/// itself, his speech bubble, and the tutorial card — so they can't drift
+/// apart the way the old sage-tinted chrome did after his teal redesign.
+enum SpatchPalette {
+    static let teal = Color.dynamic(light: 0x4FB0A5, dark: 0x53BCB0)
+    static let tealDeep = Color.dynamic(light: 0x3E958B, dark: 0x429D92)
+    static let woodLight = Color.dynamic(light: 0xC08A52, dark: 0xB37F4A)
+    static let woodDark = Color.dynamic(light: 0x9C6C3C, dark: 0x8F6236)
+    static let blushPink = Color.dynamic(light: 0xF08C8C, dark: 0xE98A8A)
+    static let wireGray = Color.dynamic(light: 0x8E9296, dark: 0xA6AAAE)
+    static let spoonGray = Color.dynamic(light: 0xB4B8BC, dark: 0xC2C6CA)
 }
 
 // MARK: - Shapes
