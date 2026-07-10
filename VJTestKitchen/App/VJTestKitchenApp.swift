@@ -10,6 +10,9 @@ struct VJTestKitchenApp: App {
     @State private var homeLocationViewModel = HomeLocationViewModel()
     // Menu-bar / keyboard-shortcut command bus (see AppCommands).
     @State private var appCommands = AppCommands()
+    // Shared so the first-launch walkthrough (MainTabView) and Settings'
+    // "Meet Spatch Again" replay read and write the same instance.
+    @State private var spatchTutorialViewModel = SpatchTutorialViewModel()
 
     init() {
         // Give `URLSession.shared` (and therefore every `RemoteImage`) a roomy
@@ -31,6 +34,7 @@ struct VJTestKitchenApp: App {
                 .environment(accountViewModel)
                 .environment(homeLocationViewModel)
                 .environment(appCommands)
+                .environment(spatchTutorialViewModel)
                 .preferredColorScheme(settingsViewModel.appearanceMode.colorScheme)
                 // Two kinds of vjtestkitchen:// deep links land here:
                 //  • Widget taps (host = a tab, e.g. vjtestkitchen://calendar) →
@@ -102,6 +106,7 @@ struct VJTestKitchenApp: App {
                 .environment(settingsViewModel)
                 .environment(accountViewModel)
                 .environment(homeLocationViewModel)
+                .environment(spatchTutorialViewModel)
                 .preferredColorScheme(settingsViewModel.appearanceMode.colorScheme)
                 .frame(minWidth: 420, minHeight: 320)
         }

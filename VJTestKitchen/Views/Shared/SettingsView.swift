@@ -5,6 +5,7 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(SettingsViewModel.self) private var settingsViewModel
     @Environment(HomeLocationViewModel.self) private var homeLocationViewModel
+    @Environment(SpatchTutorialViewModel.self) private var spatchTutorialViewModel
 
     var body: some View {
         @Bindable var settingsViewModel = settingsViewModel
@@ -25,6 +26,16 @@ struct SettingsView: View {
             }
 
             weatherSection(homeLocationViewModel: homeLocationViewModel)
+
+            Section {
+                Button {
+                    spatchTutorialViewModel.restart()
+                } label: {
+                    Label("Meet Spatch Again", systemImage: "hand.wave.fill")
+                }
+            } footer: {
+                Text("Replay the walkthrough with Spatch, your kitchen sidekick.")
+            }
         }
         .navigationTitle("Settings")
         .inlineNavigationTitle()
@@ -93,4 +104,5 @@ struct SettingsView: View {
     }
     .environment(SettingsViewModel())
     .environment(HomeLocationViewModel())
+    .environment(SpatchTutorialViewModel())
 }
