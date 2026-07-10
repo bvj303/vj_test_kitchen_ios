@@ -97,6 +97,9 @@ struct RecipeFormView: View {
         }
         .navigationTitle(viewModel.isEditing ? "Edit Recipe" : "New Recipe")
         .inlineNavigationTitle()
+        .scrollDismissesKeyboard(.interactively)
+        .dismissesKeyboardOnBackgroundTap()
+        .keyboardDoneButton()
         .toolbar {
             if showsCancelButton {
                 ToolbarItem(placement: .cancellationAction) {

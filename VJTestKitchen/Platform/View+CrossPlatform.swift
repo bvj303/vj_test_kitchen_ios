@@ -121,6 +121,93 @@ extension View {
     }
 }
 
+// MARK: - Keyboard dismissal
+
+#if os(iOS)
+/// Ends whatever text editing is in progress, regardless of which view (or
+/// which screen's `@FocusState`) currently holds it — `sendAction` resolves
+/// `nil` to "whatever's first responder," so callers don't need a reference
+/// to the specific field. Any bound `@FocusState` updates automatically,
+/// since it's just SwiftUI's mirror of first-responder state.
+private func dismissKeyboard() {
+    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+}
+
+/// Declines to recognize taps that land on a text field/editor itself, so a
+/// tap meant to focus a *different* field in the same Form doesn't
+/// immediately un-focus it again. A plain SwiftUI `.onTapGesture`/
+/// `.simultaneousGesture` on the containing Form would race that tap, since
+/// it fires alongside — not instead of — the field's own tap-to-focus.
+private final class KeyboardDismissTapDelegate: NSObject, UIGestureRecognizerDelegate {
+    static let shared = KeyboardDismissTapDelegate()
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        !(touch.view is UITextField || touch.view is UITextView)
+    }
+
+    @objc func handleTap() {
+        dismissKeyboard()
+    }
+}
+
+/// Installs (once per window) a tap recognizer that dismisses the keyboard
+/// when the user taps anywhere that isn't a text input control — SwiftUI has
+/// no built-in modifier for this. Goes one level below SwiftUI's own gesture
+/// system (see `KeyboardDismissTapDelegate`) rather than attaching a
+/// `.simultaneousGesture` directly, which would race field-to-field taps.
+private struct KeyboardDismissTapInstaller: UIViewRepresentable {
+    private static let gestureName = "vjtestkitchen.dismissKeyboardTap"
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView(frame: .zero)
+        view.isUserInteractionEnabled = false
+        DispatchQueue.main.async {
+            guard let window = view.window,
+                  window.gestureRecognizers?.contains(where: { $0.name == Self.gestureName }) != true
+            else { return }
+            let tap = UITapGestureRecognizer(target: KeyboardDismissTapDelegate.shared, action: #selector(KeyboardDismissTapDelegate.handleTap))
+            tap.name = Self.gestureName
+            tap.cancelsTouchesInView = false
+            tap.delegate = KeyboardDismissTapDelegate.shared
+            window.addGestureRecognizer(tap)
+        }
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {}
+}
+#endif
+
+extension View {
+    /// Tap anywhere that isn't a text field/editor to dismiss the keyboard.
+    /// No-op on macOS (no on-screen keyboard to dismiss).
+    @ViewBuilder
+    func dismissesKeyboardOnBackgroundTap() -> some View {
+        #if os(iOS)
+        self.background(KeyboardDismissTapInstaller())
+        #else
+        self
+        #endif
+    }
+
+    /// Adds a "Done" button to the keyboard's own accessory toolbar that ends
+    /// editing — the other standard way users expect to dismiss a keyboard.
+    /// No-op on macOS.
+    @ViewBuilder
+    func keyboardDoneButton() -> some View {
+        #if os(iOS)
+        self.toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") { dismissKeyboard() }
+            }
+        }
+        #else
+        self
+        #endif
+    }
+}
+
 // MARK: - Toolbar placements
 
 extension ToolbarItemPlacement {

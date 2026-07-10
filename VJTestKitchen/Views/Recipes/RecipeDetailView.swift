@@ -54,8 +54,11 @@ struct RecipeDetailView: View {
             }
             .padding()
         }
+        .scrollDismissesKeyboard(.interactively)
         .navigationTitle(viewModel.detail?.title ?? "Recipe")
         .inlineNavigationTitle()
+        .dismissesKeyboardOnBackgroundTap()
+        .keyboardDoneButton()
         .toolbar {
             // Any signed-in user can schedule any recipe onto their own
             // (RLS-scoped) calendar — this isn't gated on ownership the way

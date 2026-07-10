@@ -58,7 +58,10 @@ struct RecipeListView: View {
                 }
             }
             .refreshable { await viewModel.load() }
+            .scrollDismissesKeyboard(.interactively)
         }
+        .dismissesKeyboardOnBackgroundTap()
+        .keyboardDoneButton()
         .toolbar {
             ToolbarItem(placement: .platformPrimaryAction) {
                 Button {

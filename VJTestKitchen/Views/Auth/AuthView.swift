@@ -91,8 +91,11 @@ struct AuthView: View {
                     .padding(.horizontal)
                     .frame(maxWidth: .infinity)
                 }
+                .scrollDismissesKeyboard(.interactively)
             }
         }
+        .dismissesKeyboardOnBackgroundTap()
+        .keyboardDoneButton()
     }
 }
 

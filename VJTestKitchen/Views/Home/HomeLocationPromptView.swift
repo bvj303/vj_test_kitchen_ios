@@ -58,6 +58,8 @@ struct HomeLocationPromptView: View {
                 }
             }
         }
+        .dismissesKeyboardOnBackgroundTap()
+        .keyboardDoneButton()
         // Mark as shown the moment it appears, so it never reappears regardless
         // of how the user leaves it (button, "Not now", or a swipe-dismiss).
         .task { viewModel.markPrompted() }
