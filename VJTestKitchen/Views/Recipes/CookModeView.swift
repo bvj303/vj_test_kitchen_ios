@@ -17,6 +17,9 @@ struct CookModeView: View {
     /// Holds the display-sleep assertion for the duration of the session
     /// (see `Platform/KeepAwake.swift`).
     @State private var keepAwake = KeepAwake()
+    @State private var spatchViewModel = SpatchBuddyViewModel(startsVisible: false)
+    /// So the halfway-point cameo only ever fires once per session.
+    @State private var didShowHalfwayCameo = false
 
     /// Instruction steps (numbered) and section headers, derived once.
     private var rows: [Row] {
@@ -37,6 +40,13 @@ struct CookModeView: View {
 
     private var stepCount: Int {
         rows.reduce(0) { if case .step = $1 { return $0 + 1 } else { return $0 } }
+    }
+
+    /// Fraction of steps checked off, used to key Spatch's cameo. Nil when
+    /// there are no steps to track (e.g. an ingredients-only recipe).
+    private var stepProgress: Double? {
+        guard stepCount > 0 else { return nil }
+        return Double(checkedSteps.count) / Double(stepCount)
     }
 
     var body: some View {
@@ -64,6 +74,26 @@ struct CookModeView: View {
         // Keep the screen awake while cooking; restore on exit.
         .onAppear { keepAwake.enable() }
         .onDisappear { keepAwake.disable() }
+        .overlay(alignment: .bottomTrailing) {
+            SpatchBuddyView(
+                viewModel: spatchViewModel,
+                onRequestNewLine: {
+                    (SpatchContent.cookModeEncouragement(progress: stepProgress ?? 0), .happy)
+                },
+                dismissible: true
+            )
+            .padding(.trailing, 12)
+            .padding(.bottom, 12)
+        }
+        .onChange(of: checkedSteps) { _, _ in
+            guard let stepProgress else { return }
+            if stepProgress >= 1 {
+                spatchViewModel.show(message: SpatchContent.randomCompletionLine(), mood: .laughing)
+            } else if stepProgress >= 0.5 && !didShowHalfwayCameo {
+                didShowHalfwayCameo = true
+                spatchViewModel.show(message: SpatchContent.cookModeEncouragement(progress: stepProgress), mood: .happy)
+            }
+        }
     }
 
     // MARK: - Ingredients
