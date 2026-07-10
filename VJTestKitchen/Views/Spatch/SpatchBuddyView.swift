@@ -22,6 +22,11 @@ struct SpatchBuddyView: View {
     /// its own content source (jokes, recipe-aware lines, etc.).
     var onRequestNewLine: () -> (String, SpatchMood)
 
+    // Regular width (iPad, macOS) gets a noticeably bigger Spatch — 30×64
+    // reads as a speck on a 13" screen. Still cameo-small relative to those
+    // screens, and he auto-hides/swipes away, so bigger isn't "in the way".
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
     @State private var dragOffset: CGSize = .zero
 
     /// Drag distance past which a swipe counts as "away", in points.
@@ -109,7 +114,10 @@ struct SpatchBuddyView: View {
         // inward by the entrance's random tilt, pivoting at his handle end —
         // like he's peeking in around the screen edge.
         SpatchCharacterView(mood: viewModel.mood, isMirrored: viewModel.corner.isTrailing)
-            .frame(width: 30, height: 64)
+            .frame(
+                width: horizontalSizeClass == .regular ? 46 : 30,
+                height: horizontalSizeClass == .regular ? 98 : 64
+            )
             .rotationEffect(.degrees(viewModel.tilt), anchor: .bottom)
     }
 
