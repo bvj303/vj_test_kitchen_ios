@@ -19,6 +19,13 @@ enum SpatchCorner: CaseIterable, Sendable {
         }
     }
 
+    /// Whether this corner sits on the right side of the screen — used to
+    /// mirror `SpatchCharacterView` so he pops in "facing inward" rather than
+    /// always facing the same way regardless of which side he's on.
+    var isTrailing: Bool {
+        self == .topTrailing || self == .bottomTrailing
+    }
+
     var edgeInsets: EdgeInsets {
         switch self {
         case .topLeading: EdgeInsets(top: 64, leading: 12, bottom: 0, trailing: 0)

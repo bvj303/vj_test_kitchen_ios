@@ -7,7 +7,9 @@ import SwiftUI
 /// auto-hides after a delay, and can be sent away early with the × button or
 /// by swiping him in any direction. Tapping the bubble asks for a fresh line;
 /// dragging directly on Spatch still moves his eyes (see
-/// `SpatchCharacterView`) — a drag far enough dismisses him either way.
+/// `SpatchCharacterView`) — a drag far enough dismisses him either way. He's
+/// mirrored on trailing (right-side) corners so he faces inward rather than
+/// always facing the same way regardless of which side he popped in on.
 struct SpatchBuddyView: View {
     var viewModel: SpatchBuddyViewModel
     /// Produces a fresh line when the bubble is tapped — each screen supplies
@@ -33,7 +35,9 @@ struct SpatchBuddyView: View {
                 }
                 .buttonStyle(.plain)
 
-                SpatchCharacterView(mood: viewModel.mood)
+                // Face inward: mirrored on the right side of the screen,
+                // upright on the left, rather than always facing one way.
+                SpatchCharacterView(mood: viewModel.mood, isMirrored: viewModel.corner.isTrailing)
                     .frame(width: 44, height: 64)
 
                 if dismissible {
