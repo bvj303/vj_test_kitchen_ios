@@ -29,4 +29,41 @@ enum PrepTimeFormat {
         guard let minutes, minutes > 0 else { return nil }
         return string(minutes: minutes)
     }
+
+    /// The inverse for *input*: parses user-typed prep time into minutes,
+    /// accepting the ways people naturally write it — "45", "45 min",
+    /// "1 hour", "1.5 hr", "1 hr 30 min", "1h30m". Returns nil for anything it
+    /// can't confidently read (e.g. stray words), so the form can flag the
+    /// field instead of silently saving no prep time (`Int("45 min")` is nil,
+    /// which is exactly what the old form did).
+    static func parseMinutes(_ text: String) -> Int? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        // The common case: a bare minute count.
+        if let plain = Int(trimmed) { return plain >= 0 ? plain : nil }
+
+        // `(?![a-z])` rather than \b so "1h30m" parses (h→3 is no \b boundary)
+        // while "1 hello" still doesn't.
+        let hours = #/(\d+(?:\.\d+)?)\s*(?:hours?|hrs?|h)(?![a-z])/#
+        let minutes = #/(\d+(?:\.\d+)?)\s*(?:minutes?|mins?|m)(?![a-z])/#
+
+        var remainder = trimmed.lowercased()
+        var total: Double = 0
+        var matchedAnything = false
+        while let match = remainder.firstMatch(of: hours) {
+            total += (Double(match.1) ?? 0) * 60
+            remainder.removeSubrange(match.range)
+            matchedAnything = true
+        }
+        while let match = remainder.firstMatch(of: minutes) {
+            total += Double(match.1) ?? 0
+            remainder.removeSubrange(match.range)
+            matchedAnything = true
+        }
+        // Anything meaningful left over means we didn't understand the input —
+        // refuse rather than guess ("45 foo" shouldn't quietly become 45).
+        let leftovers = remainder.filter { $0.isLetter || $0.isNumber }
+        guard matchedAnything, leftovers.isEmpty else { return nil }
+        return Int(total.rounded())
+    }
 }
