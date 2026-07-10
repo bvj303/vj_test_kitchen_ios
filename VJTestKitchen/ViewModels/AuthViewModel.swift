@@ -80,6 +80,7 @@ final class AuthViewModel {
 
     private let authService: AuthServicing
     private let profileService: ProfileServicing
+    private let snapshotStore: LocalSnapshotStoring
     private let usernameDebouncer: Debouncer
     private let launchFallbackDelay: Duration
     // deinit is always non-isolated (even in a @MainActor class), and
@@ -97,11 +98,13 @@ final class AuthViewModel {
     init(
         authService: AuthServicing = AuthService(),
         profileService: ProfileServicing = ProfileService(),
+        snapshotStore: LocalSnapshotStoring = FileSnapshotStore.shared,
         usernameDebounceDelay: Duration = .milliseconds(300),
         launchFallbackDelay: Duration = AuthViewModel.defaultLaunchFallbackDelay
     ) {
         self.authService = authService
         self.profileService = profileService
+        self.snapshotStore = snapshotStore
         self.usernameDebouncer = Debouncer(delay: usernameDebounceDelay)
         self.launchFallbackDelay = launchFallbackDelay
         observationTask = Task { [weak self] in
@@ -187,7 +190,12 @@ final class AuthViewModel {
     }
 
     func signOut() async {
-        await perform { try await authService.signOut() }
+        await perform {
+            try await authService.signOut()
+            // Drop the offline snapshots so this account's data can't paint
+            // for whoever signs in next on this device.
+            snapshotStore.clearAll()
+        }
     }
 
     /// Proactively refreshes the stored session at launch so a valid auth token
@@ -217,7 +225,11 @@ final class AuthViewModel {
     }
 
     func deleteAccount() async {
-        await perform { try await authService.deleteAccount() }
+        await perform {
+            try await authService.deleteAccount()
+            // Same as sign-out: no stale offline data for the next account.
+            snapshotStore.clearAll()
+        }
     }
 
     private func perform(_ operation: () async throws -> Void) async {
