@@ -1,9 +1,10 @@
 import SwiftUI
 
 /// The speech-bubble callout used everywhere Spatch talks — the tutorial, the
-/// Home companion, and his Recipe/Cook Mode cameos. A sage-tinted glass card,
-/// matching the house pattern for custom Liquid Glass surfaces
-/// (`.glassEffect(.regular.tint(...), in:)`, see `RecipeDetailView`'s tag chips).
+/// Home companion, and his Recipe/Cook Mode cameos. A glass card in the house
+/// pattern for custom Liquid Glass surfaces (`.glassEffect(.regular.tint(...),
+/// in:)`, see `RecipeDetailView`'s tag chips), tinted with Spatch's own teal
+/// (`SpatchPalette`) so his chrome matches him rather than the brand palette.
 struct SpatchBubbleView: View {
     let text: String
 
@@ -15,7 +16,7 @@ struct SpatchBubbleView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
             .frame(maxWidth: 240, alignment: .leading)
-            .glassEffect(.regular.tint(Color.brandSage.opacity(0.18)), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .glassEffect(.regular.tint(SpatchPalette.teal.opacity(0.18)), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 }
 

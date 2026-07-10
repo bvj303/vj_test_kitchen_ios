@@ -46,15 +46,17 @@ struct SpatchTutorialView: View {
         }
         .padding(18)
         .frame(maxWidth: 480)
+        // Glass *before* the centering frame: applied after it, the glass slab
+        // itself spanned edge-to-edge on iPad instead of hugging the 480pt card.
+        .glassEffect(.regular.tint(SpatchPalette.teal.opacity(0.2)), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .frame(maxWidth: .infinity)
-        .glassEffect(.regular.tint(Color.brandSage.opacity(0.2)), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
     }
 
     private var pageDots: some View {
         HStack(spacing: 6) {
             ForEach(viewModel.steps.indices, id: \.self) { index in
                 Circle()
-                    .fill(index == viewModel.stepIndex ? Color.brandSage : Color.brandSage.opacity(0.25))
+                    .fill(index == viewModel.stepIndex ? SpatchPalette.teal : SpatchPalette.teal.opacity(0.25))
                     .frame(width: 6, height: 6)
             }
         }
