@@ -22,6 +22,7 @@ struct AddToCalendarViewModelTests {
             recipeId: 42,
             recipeTitle: "Carbonara",
             referenceDate: Self.referenceDate(),
+            timeZone: TimeZone(identifier: "UTC")!,
             mealPlanService: FakeMealPlanService()
         )
 
@@ -36,11 +37,28 @@ struct AddToCalendarViewModelTests {
         #expect(viewModel.days.last?.date == "2026-07-18")
     }
 
+    @Test func todayIsTheLocalCalendarDayNotUTCs() {
+        // 00:30 UTC on July 5 is still the evening of July 4 in New York — the
+        // "Today" option must be the user's calendar day, not UTC's.
+        let halfPastMidnightUTC = Self.referenceDate().addingTimeInterval(1800)
+        let viewModel = AddToCalendarViewModel(
+            recipeId: 42,
+            recipeTitle: "Carbonara",
+            referenceDate: halfPastMidnightUTC,
+            timeZone: TimeZone(identifier: "America/New_York")!,
+            mealPlanService: FakeMealPlanService()
+        )
+
+        #expect(viewModel.days.first?.date == "2026-07-04")
+        #expect(viewModel.days.first?.label == "Today")
+    }
+
     @Test func defaultsToFirstDayAndDinner() {
         let viewModel = AddToCalendarViewModel(
             recipeId: 1,
             recipeTitle: "Tacos",
             referenceDate: Self.referenceDate(),
+            timeZone: TimeZone(identifier: "UTC")!,
             mealPlanService: FakeMealPlanService()
         )
 
@@ -55,6 +73,7 @@ struct AddToCalendarViewModelTests {
             recipeId: 7,
             recipeTitle: "Pasta",
             referenceDate: Self.referenceDate(),
+            timeZone: TimeZone(identifier: "UTC")!,
             mealPlanService: service
         )
         viewModel.selectedMealType = "Lunch"
@@ -78,6 +97,7 @@ struct AddToCalendarViewModelTests {
             recipeId: 3,
             recipeTitle: "Soup",
             referenceDate: Self.referenceDate(),
+            timeZone: TimeZone(identifier: "UTC")!,
             mealPlanService: service
         )
 

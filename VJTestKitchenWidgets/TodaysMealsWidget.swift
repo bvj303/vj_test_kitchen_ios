@@ -30,10 +30,12 @@ struct TodaysMealsEntry: TimelineEntry {
 }
 
 struct TodaysMealsProvider: TimelineProvider {
-    /// UTC "yyyy-MM-dd", matching how `meal_plans.date` / the calendar VM key days.
+    /// **Local** "yyyy-MM-dd", matching how `MealCalendarViewModel` keys days —
+    /// the user's calendar day, not UTC's (which rolls over at 7–8pm in US time
+    /// zones and made the widget show tomorrow's plan during dinner prep).
     private func todayString(_ date: Date = Date()) -> String {
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "UTC")!
+        calendar.timeZone = .current
         let c = calendar.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
     }
@@ -168,7 +170,7 @@ struct TodaysMealsView: View {
 extension TodaysMealsSnapshot {
     static let preview = TodaysMealsSnapshot(
         date: {
-            var c = Calendar(identifier: .gregorian); c.timeZone = TimeZone(identifier: "UTC")!
+            var c = Calendar(identifier: .gregorian); c.timeZone = .current
             let d = c.dateComponents([.year, .month, .day], from: Date())
             return String(format: "%04d-%02d-%02d", d.year ?? 0, d.month ?? 0, d.day ?? 0)
         }(),

@@ -37,10 +37,10 @@ struct HomeView: View {
         }
         .navigationTitle("Home")
         .task { await viewModel.load() }
-        .refreshable { await viewModel.load() }
+        .refreshable { await viewModel.load(force: true) }
         // ⌘R reloads the dashboard when Home is the visible tab.
         .onChange(of: appCommands.refreshRequests) { _, _ in
-            Task { await viewModel.load() }
+            Task { await viewModel.load(force: true) }
         }
         // First pop-in shortly after the shelf's actual suggestion is in —
         // referencing the real recommended recipe rather than a placeholder.

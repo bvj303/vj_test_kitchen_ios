@@ -80,23 +80,38 @@ final class RecipeListViewModel {
     private let tagService: TagServicing
     private let favoritesService: FavoritesServicing
     private let imagePrefetcher: ImagePrefetching
+    private let snapshotStore: LocalSnapshotStoring
     private let debouncer: Debouncer
+
+    /// Bumped by every `reload()`. A page fetch that started under an older
+    /// generation is discarded when it lands — without this, a page requested
+    /// with the previous search/filters (and the previous list's offset) could
+    /// resume after the reload replaced `items` and append mismatched rows.
+    @ObservationIgnored private var loadGeneration = 0
 
     init(
         recipeService: RecipeServicing = RecipeService(),
         tagService: TagServicing = TagService(),
         favoritesService: FavoritesServicing = FavoritesService(),
         imagePrefetcher: ImagePrefetching = ImagePrefetcher.shared,
+        snapshotStore: LocalSnapshotStoring = FileSnapshotStore.shared,
         debounceDelay: Duration = .milliseconds(300)
     ) {
         self.recipeService = recipeService
         self.tagService = tagService
         self.favoritesService = favoritesService
         self.imagePrefetcher = imagePrefetcher
+        self.snapshotStore = snapshotStore
         self.debouncer = Debouncer(delay: debounceDelay)
     }
 
     func load() async {
+        // Paint the last-loaded first page immediately (fresh launch only —
+        // `items` is empty exactly once) while the real reload runs; offline,
+        // it's what keeps the catalog readable at all.
+        if items.isEmpty, let cached = snapshotStore.load([Recipe].self, key: .recipesFirstPage) {
+            items = cached
+        }
         if availableTags.isEmpty {
             await loadTags()
         }
@@ -136,7 +151,10 @@ final class RecipeListViewModel {
     /// Called from the list row's `.onAppear` (wrapped in a `Task` by the
     /// view, since `onAppear` itself isn't async) to drive infinite scroll.
     func loadMoreIfNeeded(currentItem: Recipe) async {
-        guard hasMorePages, !isLoadingPage,
+        // `!isLoading` matters: while a reload is replacing the list, a row's
+        // `.onAppear` firing mid-flight would otherwise request "the next page"
+        // of a list that's about to be swapped out.
+        guard hasMorePages, !isLoadingPage, !isLoading,
               let index = items.firstIndex(where: { $0.id == currentItem.id }),
               index >= items.count - Self.prefetchThreshold
         else { return }
@@ -150,6 +168,8 @@ final class RecipeListViewModel {
     }
 
     private func reload() async {
+        loadGeneration += 1
+        let generation = loadGeneration
         errorMessage = nil
         isLoading = true
         defer { isLoading = false }
@@ -158,6 +178,7 @@ final class RecipeListViewModel {
                 // Favorites are a small, bounded set: fetch them all by id and
                 // narrow by the search text client-side (no pagination).
                 let favorites = try await recipeService.fetchByIds(favoriteIds.sorted())
+                guard generation == loadGeneration else { return }
                 items = filteredBySearch(favorites)
                 hasMorePages = false
                 prefetchImages(for: items)
@@ -168,10 +189,17 @@ final class RecipeListViewModel {
                 matching: normalizedSearch, tag: selectedTag,
                 minPrepTime: prepTimeFilter?.minMinutes, maxPrepTime: prepTimeFilter?.maxMinutes
             )
+            guard generation == loadGeneration else { return }
             items = page
             hasMorePages = page.count == Self.pageSize
             prefetchImages(for: page)
+            // Only the unfiltered first page is worth persisting — it's what a
+            // fresh launch shows before (or without) the network.
+            if normalizedSearch == nil, !hasActiveFilters {
+                snapshotStore.save(page, key: .recipesFirstPage)
+            }
         } catch {
+            guard generation == loadGeneration else { return }
             errorMessage = ErrorPresenter.message(for: error)
         }
     }
@@ -183,6 +211,7 @@ final class RecipeListViewModel {
     }
 
     private func loadNextPage() async {
+        let generation = loadGeneration
         isLoadingPage = true
         defer { isLoadingPage = false }
         do {
@@ -191,10 +220,17 @@ final class RecipeListViewModel {
                 matching: normalizedSearch, tag: selectedTag,
                 minPrepTime: prepTimeFilter?.minMinutes, maxPrepTime: prepTimeFilter?.maxMinutes
             )
-            items.append(contentsOf: page)
+            // A reload superseded this page while it was in flight — its rows
+            // belong to the previous search/filter state, so drop them.
+            guard generation == loadGeneration else { return }
+            // Dedupe by id: duplicate Identifiable ids in the List's ForEach is
+            // undefined behavior, so never let an overlapping page introduce one.
+            let existingIds = Set(items.map(\.id))
+            items.append(contentsOf: page.filter { !existingIds.contains($0.id) })
             hasMorePages = page.count == Self.pageSize
             prefetchImages(for: page)
         } catch {
+            guard generation == loadGeneration else { return }
             errorMessage = ErrorPresenter.message(for: error)
         }
     }
