@@ -46,13 +46,22 @@ struct RecipeFormView: View {
                     .lineLimit(4...10)
             }
 
-            Section("Quick Stats") {
+            Section {
                 HStack {
                     TextField("Prep time (min)", text: $viewModel.prepTimeText)
                         .platformKeyboardType(.numberPad)
                     Divider()
                     TextField("Servings", text: $viewModel.servingsText)
                         .platformKeyboardType(.numberPad)
+                }
+            } header: {
+                Text("Quick Stats")
+            } footer: {
+                // Inline validation: unreadable input used to be *silently
+                // dropped* on save ("45 min" saved no prep time at all).
+                if let message = viewModel.quickStatsValidationMessage {
+                    Text(message)
+                        .foregroundStyle(.red)
                 }
             }
 
