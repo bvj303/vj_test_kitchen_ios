@@ -1,22 +1,24 @@
 import SwiftUI
 
-/// Spatch: the app's mascot — a sage-green silicone spatula with a wooden
-/// handle, a curled wire arm holding a spoon (echoing the reference photo),
-/// and reactive googly eyes. Pure vector SwiftUI (no image assets), shared
-/// verbatim between iOS and macOS. Eyes drift on their own when idle, follow a
-/// drag within a small radius (the "reactive googly eyes" bit — like the real
-/// toy, they track whatever's nudging them), and the whole head gives a
-/// little spring wobble on release, like bopping a googly-eye toy. A subtle
-/// breathing scale keeps him feeling alive even at rest.
+/// Spatch: the app's mascot — a teal silicone spatula with a long wooden
+/// handle, a curled wire arm holding a measuring spoon, and reactive googly
+/// eyes (all echoing the reference photo). Pure vector SwiftUI (no image
+/// assets), shared verbatim between iOS and macOS. Eyes drift on their own
+/// when idle, follow a drag within a small radius (like the real toy, they
+/// track whatever's nudging them), and the whole body gives a little spring
+/// wobble on release, like bopping a googly-eye toy. A subtle breathing scale
+/// keeps him feeling alive even at rest.
 ///
-/// He renders at whatever size the caller's frame gives him — pass a narrow
-/// (tall) frame for a spatula-like silhouette rather than a square one; there
-/// is deliberately no internal "fit and re-center" step here (an earlier
-/// version tried that via a nested `GeometryReader` computation and a
-/// `.position()`-placed arm, which occasionally rendered at the wrong scale
-/// in the running app despite looking correct in static previews — everything
-/// below sticks to plain proxy sizing and `.offset()`, which cannot affect
-/// layout/sizing the way `.position()` can).
+/// Every part is laid out in a fixed **design coordinate space**
+/// (`designSize`, 112×220 units) and multiplied by one uniform scale factor
+/// (`min(frameWidth/112, frameHeight/220)`), then centered. That makes his
+/// proportions immune to the caller's frame shape — a too-wide frame yields a
+/// centered, correctly-proportioned spatula with side margins, never a fat
+/// one. Placement uses only fixed `.frame`s and `.offset()` (an earlier
+/// version that computed a fit via nested `GeometryReader` + `.position()`
+/// rendered at the wrong scale in the running app despite looking correct in
+/// static previews — `.offset` is a pure render-time translation and cannot
+/// affect layout/sizing the way `.position()` can).
 struct SpatchCharacterView: View {
     var mood: SpatchMood = .idle
     /// Flips him horizontally — the arm/spoon (drawn on the trailing side by
@@ -33,45 +35,259 @@ struct SpatchCharacterView: View {
     @State private var isDragging = false
     @State private var isBreathing = false
 
-    /// How far the pupils can travel from center, in points.
-    private let pupilTravel: CGFloat = 6
+    /// The fixed canvas every part is positioned in, in design units.
+    private static let designSize = CGSize(width: 112, height: 220)
+
+    /// How far the pupils can travel from their eye's center, in design units
+    /// (scaled with him, so pupils stay inside the eye at cameo size too).
+    private let pupilTravelUnits: CGFloat = 4.5
 
     var body: some View {
         GeometryReader { proxy in
-            let width = proxy.size.width
-            let height = proxy.size.height
-
-            ZStack(alignment: .top) {
-                VStack(spacing: -height * 0.03) {
-                    head(width: width, height: height * 0.68)
-                    handle(width: width * 0.3, height: height * 0.34)
-                }
-                .frame(width: width, height: height, alignment: .top)
-
-                arm(width: width, height: height)
-            }
-            .frame(width: width, height: height)
-            .scaleEffect(x: isMirrored ? -1 : 1, y: isBreathing ? 1.03 : 1, anchor: .bottom)
-            .rotationEffect(wobble, anchor: .bottom)
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { value in
-                        isDragging = true
-                        dragOffset = clamp(value.translation)
-                    }
-                    .onEnded { _ in
-                        isDragging = false
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.5)) {
-                            dragOffset = .zero
-                        }
-                        bop()
-                    }
+            let unit = min(
+                proxy.size.width / Self.designSize.width,
+                proxy.size.height / Self.designSize.height
             )
+
+            character(unit: unit)
+                .frame(width: Self.designSize.width * unit, height: Self.designSize.height * unit)
+                .scaleEffect(x: isMirrored ? -1 : 1, y: isBreathing ? 1.02 : 1, anchor: .bottom)
+                .rotationEffect(wobble, anchor: .bottom)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            isDragging = true
+                            dragOffset = clamp(value.translation, radius: pupilTravelUnits * unit)
+                        }
+                        .onEnded { _ in
+                            isDragging = false
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.5)) {
+                                dragOffset = .zero
+                            }
+                            bop()
+                        }
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity) // center in whatever frame the caller gave
         }
         .task { await runIdleLoop() }
         .task { await runBreathingLoop() }
     }
+
+    // MARK: - Assembly
+
+    /// All parts positioned in the design space, back to front: the wire arm
+    /// tucks *behind* the handle (so its joint is hidden, like the reference
+    /// photo), then handle, then the paddle head with the face.
+    private func character(unit: CGFloat) -> some View {
+        ZStack(alignment: .topLeading) {
+            arm(unit: unit)
+            spoon(unit: unit)
+            handle(unit: unit)
+            head(unit: unit)
+        }
+        .frame(
+            width: Self.designSize.width * unit,
+            height: Self.designSize.height * unit,
+            alignment: .topLeading
+        )
+    }
+
+    // MARK: - Palette (local to the mascot — brand roles in Theme.swift don't
+    // cover "cheerful teal silicone" or "light wood", and the mascot shouldn't
+    // repaint if the brand palette shifts)
+
+    private var siliconeTeal: Color { Color.dynamic(light: 0x4FB0A5, dark: 0x53BCB0) }
+    private var siliconeTealDeep: Color { Color.dynamic(light: 0x3E958B, dark: 0x429D92) }
+    private var woodLight: Color { Color.dynamic(light: 0xC08A52, dark: 0xB37F4A) }
+    private var woodDark: Color { Color.dynamic(light: 0x9C6C3C, dark: 0x8F6236) }
+    private var blushPink: Color { Color.dynamic(light: 0xF08C8C, dark: 0xE98A8A) }
+    private var wireGray: Color { Color.dynamic(light: 0x8E9296, dark: 0xA6AAAE) }
+    private var spoonGray: Color { Color.dynamic(light: 0xB4B8BC, dark: 0xC2C6CA) }
+
+    // MARK: - Head (the paddle face)
+
+    /// A real spatula-paddle silhouette: generous rounding, a top edge that
+    /// slants gently down toward the trailing side, and sides that taper
+    /// inward toward the neck — not a symmetric rounded blob.
+    private func head(unit: CGFloat) -> some View {
+        ZStack(alignment: .topLeading) {
+            SpatulaHeadShape()
+                .fill(
+                    LinearGradient(
+                        colors: [siliconeTeal, siliconeTealDeep],
+                        startPoint: .top, endPoint: .bottom
+                    )
+                )
+            // A soft sheen so the silicone reads as glossy, not flat.
+            Ellipse()
+                .fill(Color.white.opacity(0.14))
+                .frame(width: 34 * unit, height: 14 * unit)
+                .rotationEffect(.degrees(-18))
+                .offset(x: 10 * unit, y: 8 * unit)
+
+            eyebrow(unit: unit)
+                .rotationEffect(.degrees(Double(-mood.eyebrowTilt) * 14))
+                .offset(x: 21 * unit, y: 17 * unit)
+            eyebrow(unit: unit)
+                .rotationEffect(.degrees(Double(mood.eyebrowTilt) * 14))
+                .offset(x: 49 * unit, y: 18 * unit)
+
+            eye(unit: unit)
+                .offset(x: 17 * unit, y: 29 * unit)
+            eye(unit: unit, isRightEye: true)
+                .offset(x: 45 * unit, y: 29 * unit)
+
+            blushDot(unit: unit).offset(x: 13 * unit, y: 59 * unit)
+            blushDot(unit: unit).offset(x: 63 * unit, y: 59 * unit)
+
+            mouth(unit: unit)
+        }
+        .frame(width: 88 * unit, height: 94 * unit, alignment: .topLeading)
+        .offset(x: 2 * unit, y: 2 * unit)
+    }
+
+    /// A thin arched brow — a stroked curve, not a heavy filled bar.
+    private func eyebrow(unit: CGFloat) -> some View {
+        BrowShape()
+            .stroke(Color.black.opacity(0.7), style: StrokeStyle(lineWidth: max(1.2, 2.4 * unit), lineCap: .round))
+            .frame(width: 18 * unit, height: 6 * unit)
+    }
+
+    /// A googly eye: white with a thin dark rim (like the plastic toy), pupil
+    /// + catch-light inside.
+    private func eye(unit: CGFloat, isRightEye: Bool = false) -> some View {
+        let size = 26 * unit
+        return ZStack {
+            Circle()
+                .fill(Color.white)
+                .overlay(Circle().stroke(Color.black.opacity(0.55), lineWidth: max(0.8, 1.6 * unit)))
+                .shadow(color: .black.opacity(0.18), radius: 1.5 * unit, y: 1 * unit)
+            if mood.isWinking && isRightEye {
+                Capsule()
+                    .fill(Color.black)
+                    .frame(width: size * 0.62, height: max(1.5, size * 0.12))
+            } else {
+                ZStack {
+                    Circle()
+                        .fill(Color.black)
+                        .frame(width: size * 0.46, height: size * 0.46)
+                    Circle()
+                        .fill(Color.white.opacity(0.9))
+                        .frame(width: size * 0.14, height: size * 0.14)
+                        .offset(x: -size * 0.1, y: -size * 0.1)
+                }
+                .offset(pupilOffset)
+            }
+        }
+        .frame(width: size, height: size)
+        .scaleEffect(y: isBlinking ? 0.15 : 1, anchor: .center)
+    }
+
+    @ViewBuilder
+    private func mouth(unit: CGFloat) -> some View {
+        switch mood.openMouthKind {
+        case .laugh:
+            openSmile(unit: unit, width: 38, height: 21)
+                .offset(x: 25 * unit, y: 58 * unit)
+        case .surprised:
+            Circle()
+                .fill(Color.black.opacity(0.82))
+                .frame(width: 12 * unit, height: 12 * unit)
+                .offset(x: 38 * unit, y: 61 * unit)
+        case nil where mood.mouthCurve >= 0.7:
+            // A big happy grin renders open (dark mouth + tongue), like the
+            // reference photo — a closed stroke only for calmer moods.
+            openSmile(unit: unit, width: 30, height: 16)
+                .offset(x: 29 * unit, y: 60 * unit)
+        case nil:
+            MouthShape(curve: mood.mouthCurve)
+                .stroke(Color.black.opacity(0.85), style: StrokeStyle(lineWidth: max(1.8, 3.4 * unit), lineCap: .round))
+                .frame(width: 28 * unit, height: 10 * unit)
+                .offset(x: 30 * unit, y: 63 * unit)
+        }
+    }
+
+    /// The open-smile "D" (flat-ish top, deep curved bottom) with a tongue —
+    /// the reference photo's expression.
+    private func openSmile(unit: CGFloat, width: CGFloat, height: CGFloat) -> some View {
+        ZStack(alignment: .bottom) {
+            OpenSmileShape()
+                .fill(Color.black.opacity(0.85))
+            Ellipse()
+                .fill(blushPink)
+                .frame(width: width * 0.62 * unit, height: height * 0.5 * unit)
+                .offset(y: height * 0.16 * unit)
+        }
+        .frame(width: width * unit, height: height * unit)
+        .clipShape(OpenSmileShape())
+    }
+
+    private func blushDot(unit: CGFloat) -> some View {
+        Ellipse()
+            .fill(blushPink.opacity(0.65))
+            .frame(width: 12 * unit, height: 7 * unit)
+    }
+
+    // MARK: - Handle
+
+    private func handle(unit: CGFloat) -> some View {
+        ZStack(alignment: .bottom) {
+            RoundedRectangle(cornerRadius: 8 * unit, style: .continuous)
+                .fill(
+                    LinearGradient(colors: [woodLight, woodDark], startPoint: .top, endPoint: .bottom)
+                )
+            // The hang-hole near the base, like a real spatula handle.
+            Circle()
+                .fill(Color.black.opacity(0.28))
+                .frame(width: 8 * unit, height: 8 * unit)
+                .padding(.bottom, 10 * unit)
+        }
+        .frame(width: 17 * unit, height: 118 * unit)
+        .offset(x: 37.5 * unit, y: 92 * unit)
+    }
+
+    // MARK: - Arm + measuring spoon
+
+    /// The curled wire arm, emerging from *behind the handle* at the neck (so
+    /// it never crosses the face) and swooping out to hold the spoon beside
+    /// the paddle — the asymmetric detail from the reference photo, and what
+    /// makes `isMirrored` visually read as "facing the other way" rather than
+    /// a no-op flip of an otherwise-symmetric face.
+    private func arm(unit: CGFloat) -> some View {
+        ArmPath()
+            .stroke(wireGray, style: StrokeStyle(lineWidth: max(1.4, 3.2 * unit), lineCap: .round))
+            .frame(width: 52 * unit, height: 44 * unit)
+            .offset(x: 50 * unit, y: 74 * unit)
+            .allowsHitTesting(false)
+    }
+
+    private func spoon(unit: CGFloat) -> some View {
+        VStack(spacing: -2 * unit) {
+            ZStack {
+                Ellipse()
+                    .fill(
+                        LinearGradient(
+                            colors: [spoonGray, wireGray],
+                            startPoint: .topLeading, endPoint: .bottomTrailing
+                        )
+                    )
+                Ellipse()
+                    .fill(Color.white.opacity(0.35))
+                    .frame(width: 5 * unit, height: 4 * unit)
+                    .offset(x: -2.5 * unit, y: -4 * unit)
+            }
+            .frame(width: 14 * unit, height: 17 * unit)
+            Capsule()
+                .fill(wireGray)
+                .frame(width: 3.2 * unit, height: 16 * unit)
+        }
+        .frame(width: 14 * unit, alignment: .center)
+        .offset(x: 89 * unit, y: 52 * unit)
+        .allowsHitTesting(false)
+    }
+
+    // MARK: - Life
 
     /// A quick spring rotation, like bopping a googly-eye toy — triggered when
     /// a drag/tap ends.
@@ -96,8 +312,8 @@ struct SpatchCharacterView: View {
             guard !Task.isCancelled, !isDragging else { continue }
             withAnimation(.easeInOut(duration: 0.5)) {
                 idleLookOffset = CGSize(
-                    width: .random(in: -pupilTravel...pupilTravel),
-                    height: .random(in: -pupilTravel * 0.6...pupilTravel * 0.6)
+                    width: .random(in: -2...2),
+                    height: .random(in: -1.2...1.2)
                 )
             }
             try? await Task.sleep(for: .milliseconds(150))
@@ -122,216 +338,106 @@ struct SpatchCharacterView: View {
     /// Negates the x-component when mirrored, so the pupils — drawn in this
     /// pre-mirror coordinate space — still visually track the real drag
     /// direction once the whole view is flipped for rendering.
-    private func clamp(_ translation: CGSize) -> CGSize {
+    private func clamp(_ translation: CGSize, radius: CGFloat) -> CGSize {
         let signed = isMirrored ? CGSize(width: -translation.width, height: translation.height) : translation
         let distance = (signed.width * signed.width + signed.height * signed.height).squareRoot()
-        guard distance > pupilTravel else { return signed }
-        let scale = pupilTravel / distance
+        guard distance > radius else { return signed }
+        let scale = radius / distance
         return CGSize(width: signed.width * scale, height: signed.height * scale)
     }
 
     private var pupilOffset: CGSize {
         isDragging ? dragOffset : idleLookOffset
     }
+}
 
-    // MARK: - Head
+// MARK: - Shapes
 
-    /// Flatter and more rectangular than a plain rounded blob — rounded top
-    /// corners (the paddle face), tighter bottom corners (the neck meeting the
-    /// handle) — via `UnevenRoundedRectangle`, closer to a real spatula head.
-    private func head(width: CGFloat, height: CGFloat) -> some View {
-        ZStack {
-            UnevenRoundedRectangle(
-                topLeadingRadius: width * 0.34,
-                bottomLeadingRadius: width * 0.1,
-                bottomTrailingRadius: width * 0.1,
-                topTrailingRadius: width * 0.34,
-                style: .continuous
-            )
-            .fill(Color.brandSage)
+/// The paddle silhouette: big rounded top corners with the top edge slanting
+/// gently down toward the trailing side, sides tapering inward to the neck.
+private struct SpatulaHeadShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let w = rect.width
+        let h = rect.height
+        // Corner points in unit-ish proportions of the design (88x94 box).
+        let topLeading = CGPoint(x: rect.minX, y: rect.minY)
+        let topTrailing = CGPoint(x: rect.minX + w, y: rect.minY + h * 0.13)
+        let bottomTrailing = CGPoint(x: rect.minX + w * 0.84, y: rect.maxY)
+        let bottomLeading = CGPoint(x: rect.minX + w * 0.16, y: rect.maxY)
 
-            // A faint center seam, like the mold-line on a real silicone spatula.
-            Capsule()
-                .fill(Color.black.opacity(0.06))
-                .frame(width: max(1.5, width * 0.02), height: height * 0.55)
-                .offset(y: height * 0.18)
-
-            VStack(spacing: height * 0.04) {
-                eyebrows(width: width, height: height)
-                eyes(width: width, height: height)
-                mouth(width: width, height: height)
-            }
-            .padding(.top, height * 0.16)
-
-            blush(width: width, height: height)
-        }
-        .frame(width: width, height: height)
+        var path = Path()
+        path.move(to: CGPoint(x: rect.midX, y: rect.maxY))
+        path.addArc(tangent1End: bottomLeading, tangent2End: topLeading, radius: w * 0.11)
+        path.addArc(tangent1End: topLeading, tangent2End: topTrailing, radius: w * 0.30)
+        path.addArc(tangent1End: topTrailing, tangent2End: bottomTrailing, radius: w * 0.24)
+        path.addArc(tangent1End: bottomTrailing, tangent2End: bottomLeading, radius: w * 0.11)
+        path.closeSubpath()
+        return path
     }
+}
 
-    private func eyebrows(width: CGFloat, height: CGFloat) -> some View {
-        HStack(spacing: width * 0.16) {
-            eyebrow(width: width * 0.26, height: height)
-                .rotationEffect(.degrees(Double(-mood.eyebrowTilt) * 16))
-            eyebrow(width: width * 0.26, height: height)
-                .rotationEffect(.degrees(Double(mood.eyebrowTilt) * 16))
-        }
-    }
-
-    private func eyebrow(width: CGFloat, height: CGFloat) -> some View {
-        Capsule()
-            .fill(Color.black.opacity(0.6))
-            .frame(width: width, height: max(2.5, height * 0.03))
-    }
-
-    private func eyes(width: CGFloat, height: CGFloat) -> some View {
-        HStack(spacing: width * 0.1) {
-            eye(size: width * 0.28)
-            eye(size: width * 0.28, isRightEye: true)
-        }
-    }
-
-    private func eye(size: CGFloat, isRightEye: Bool = false) -> some View {
-        ZStack {
-            Circle()
-                .fill(Color.white)
-                .shadow(color: .black.opacity(0.15), radius: 1, y: 1)
-            if mood.isWinking && isRightEye {
-                Capsule()
-                    .fill(Color.black)
-                    .frame(width: size * 0.7, height: size * 0.12)
-            } else {
-                ZStack {
-                    Circle()
-                        .fill(Color.black)
-                        .frame(width: size * 0.44, height: size * 0.44)
-                    // A small catch-light so the pupil doesn't read as a flat dot.
-                    Circle()
-                        .fill(Color.white.opacity(0.85))
-                        .frame(width: size * 0.12, height: size * 0.12)
-                        .offset(x: -size * 0.1, y: -size * 0.1)
-                }
-                .offset(pupilOffset)
-            }
-        }
-        .frame(width: size, height: size)
-        .scaleEffect(y: isBlinking ? 0.15 : 1, anchor: .center)
-    }
-
-    @ViewBuilder
-    private func mouth(width: CGFloat, height: CGFloat) -> some View {
-        switch mood.openMouthKind {
-        case .laugh:
-            ZStack {
-                Ellipse().fill(Color.black.opacity(0.85))
-                Ellipse()
-                    .fill(Color.white.opacity(0.9))
-                    .frame(height: height * 0.06)
-                    .offset(y: -height * 0.055)
-            }
-            .frame(width: width * 0.44, height: height * 0.22)
-        case .surprised:
-            Circle()
-                .fill(Color.black.opacity(0.8))
-                .frame(width: width * 0.18, height: width * 0.18)
-        case nil:
-            MouthShape(curve: mood.mouthCurve)
-                .fill(Color.black)
-                .frame(width: width * 0.5, height: height * 0.18)
-        }
-    }
-
-    private func blush(width: CGFloat, height: CGFloat) -> some View {
-        HStack(spacing: width * 0.32) {
-            Capsule().fill(Color.brandSaffron.opacity(0.4)).frame(width: width * 0.16, height: width * 0.08)
-            Capsule().fill(Color.brandSaffron.opacity(0.4)).frame(width: width * 0.16, height: width * 0.08)
-        }
-        .offset(y: height * 0.2)
-    }
-
-    // MARK: - Handle
-
-    private func handle(width: CGFloat, height: CGFloat) -> some View {
-        ZStack(alignment: .bottom) {
-            RoundedRectangle(cornerRadius: width * 0.3, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [Color(red: 0.62, green: 0.44, blue: 0.27), Color(red: 0.5, green: 0.34, blue: 0.2)],
-                        startPoint: .top, endPoint: .bottom
-                    )
-                )
-            // The hang-hole near the base, like a real spatula handle.
-            Circle()
-                .fill(Color.black.opacity(0.2))
-                .frame(width: width * 0.4, height: width * 0.4)
-                .padding(.bottom, height * 0.14)
-        }
-        .frame(width: width, height: height)
-    }
-
-    // MARK: - Arm + spoon
-
-    /// A little curled wire arm holding a spoon, emerging from the trailing
-    /// side of the neck — the asymmetric detail from the reference photo, and
-    /// what makes `isMirrored` visually read as "facing the other way" rather
-    /// than a no-op flip of an otherwise-symmetric face. Sized to its own
-    /// small fixed box and placed purely with `.offset()` (never
-    /// `.position()`), so a bad placement calculation can only ever shift it a
-    /// few points — not balloon its rendered size.
-    private func arm(width: CGFloat, height: CGFloat) -> some View {
-        let armWidth = width * 0.7
-        let armHeight = height * 0.22
-
-        return ZStack(alignment: .topLeading) {
-            ArmPath()
-                .stroke(Color(white: 0.6), style: StrokeStyle(lineWidth: max(1.5, width * 0.08), lineCap: .round))
-                .frame(width: armWidth, height: armHeight)
-            spoon(width: width * 0.32)
-                .offset(x: armWidth * 0.78, y: armHeight * 0.6)
-        }
-        .frame(width: armWidth, height: armHeight, alignment: .topLeading)
-        .offset(x: width * 0.34, y: height * 0.44)
-        .allowsHitTesting(false)
-    }
-
-    private func spoon(width: CGFloat) -> some View {
-        VStack(spacing: -width * 0.08) {
-            Ellipse()
-                .fill(Color(white: 0.7))
-                .frame(width: width * 0.6, height: width * 0.85)
-            Capsule()
-                .fill(Color(white: 0.62))
-                .frame(width: width * 0.18, height: width)
-        }
+/// A thin arched eyebrow.
+private struct BrowShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.maxX, y: rect.maxY),
+            control: CGPoint(x: rect.midX, y: rect.minY - rect.height * 0.4)
+        )
+        return path
     }
 }
 
 /// A closed smile/frown curve, driven by `SpatchMood.mouthCurve` (-1 frown ...
-/// +1 big smile). Open-mouth moods (laugh/surprised) are drawn separately by
-/// `SpatchCharacterView.mouth`.
+/// +1 big smile). Open-mouth moods are drawn by `openSmile`/`OpenSmileShape`.
 private struct MouthShape: Shape {
     var curve: CGFloat
 
     func path(in rect: CGRect) -> Path {
         var path = Path()
-        let start = CGPoint(x: rect.minX, y: rect.midY)
-        let end = CGPoint(x: rect.maxX, y: rect.midY)
-        let control = CGPoint(x: rect.midX, y: rect.midY + rect.height * curve)
-        path.move(to: start)
-        path.addQuadCurve(to: end, control: control)
-        return path.strokedPath(StrokeStyle(lineWidth: max(2, rect.height * 0.18), lineCap: .round))
+        path.move(to: CGPoint(x: rect.minX, y: rect.midY))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.maxX, y: rect.midY),
+            control: CGPoint(x: rect.midX, y: rect.midY + rect.height * curve * 1.6)
+        )
+        return path
     }
 }
 
-/// A gently curled wire, like the reference photo's spoon-holding arm —
-/// bowing outward from the neck before curling back in toward the spoon.
+/// The open grin: a gently curved top lip and a deep round bottom — a "D"
+/// lying on its flat side.
+private struct OpenSmileShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY + rect.height * 0.18))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.maxX, y: rect.minY + rect.height * 0.18),
+            control: CGPoint(x: rect.midX, y: rect.minY)
+        )
+        path.addQuadCurve(
+            to: CGPoint(x: rect.minX, y: rect.minY + rect.height * 0.18),
+            control: CGPoint(x: rect.midX, y: rect.minY + rect.height * 1.9)
+        )
+        path.closeSubpath()
+        return path
+    }
+}
+
+/// The wire arm: out from behind the handle, a low outward swoop, then curling
+/// up to meet the spoon's stem.
 private struct ArmPath: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
-        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.move(to: CGPoint(x: rect.minX + rect.width * 0.04, y: rect.maxY * 0.86))
         path.addCurve(
-            to: CGPoint(x: rect.maxX * 0.92, y: rect.maxY * 0.88),
-            control1: CGPoint(x: rect.maxX * 0.75, y: rect.minY + rect.height * 0.05),
-            control2: CGPoint(x: rect.maxX * 0.55, y: rect.maxY * 0.75)
+            to: CGPoint(x: rect.maxX * 0.77, y: rect.maxY * 0.55),
+            control1: CGPoint(x: rect.maxX * 0.5, y: rect.maxY * 1.05),
+            control2: CGPoint(x: rect.maxX * 0.82, y: rect.maxY * 0.85)
+        )
+        path.addQuadCurve(
+            to: CGPoint(x: rect.maxX * 0.85, y: rect.minY + rect.height * 0.14),
+            control: CGPoint(x: rect.maxX * 0.72, y: rect.maxY * 0.28)
         )
         return path
     }

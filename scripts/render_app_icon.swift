@@ -29,33 +29,45 @@ struct SpatchIconArt: View {
     }
 
     private var spatch: some View {
-        VStack(spacing: -6) {
+        VStack(spacing: -8) {
             head
             handle
         }
-        .offset(y: -10)
+        .offset(y: -6)
     }
 
-    private var sage: Color {
-        dark ? Color(red: 0.541, green: 0.659, blue: 0.463) : Color(red: 0.431, green: 0.545, blue: 0.357)
+    // Mirrors SpatchCharacterView's teal-silicone palette (the mascot's own
+    // colors, independent of the brand palette).
+    private var teal: Color {
+        dark ? Color(red: 0.325, green: 0.737, blue: 0.690) : Color(red: 0.310, green: 0.690, blue: 0.647)
     }
+    private var tealDeep: Color {
+        dark ? Color(red: 0.259, green: 0.616, blue: 0.573) : Color(red: 0.243, green: 0.584, blue: 0.545)
+    }
+    private var blushPink: Color { Color(red: 0.941, green: 0.549, blue: 0.549) }
 
     private var head: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 210, style: .continuous)
-                .fill(sage)
-                .frame(width: 500, height: 560)
-            VStack(spacing: 34) {
+            IconHeadShape()
+                .fill(LinearGradient(colors: [teal, tealDeep], startPoint: .top, endPoint: .bottom))
+                .frame(width: 520, height: 540)
+            // Silicone sheen, top-leading like the character view.
+            Ellipse()
+                .fill(Color.white.opacity(0.14))
+                .frame(width: 190, height: 80)
+                .rotationEffect(.degrees(-18))
+                .offset(x: -115, y: -195)
+            VStack(spacing: 30) {
                 eyes
                 mouth
             }
-            .offset(y: -30)
+            .offset(y: -16)
             blush
         }
     }
 
     private var eyes: some View {
-        HStack(spacing: 62) {
+        HStack(spacing: 14) {
             eye
             eye
         }
@@ -63,44 +75,93 @@ struct SpatchIconArt: View {
 
     private var eye: some View {
         ZStack {
-            Circle().fill(Color.white).frame(width: 128, height: 128)
-                .shadow(color: .black.opacity(0.22), radius: 3, y: 2)
-            Circle().fill(Color.black).frame(width: 54, height: 54)
-                .offset(x: 8, y: 6)
+            Circle().fill(Color.white).frame(width: 150, height: 150)
+                .overlay(Circle().stroke(Color.black.opacity(0.55), lineWidth: 9))
+                .shadow(color: .black.opacity(0.2), radius: 6, y: 4)
+            ZStack {
+                Circle().fill(Color.black).frame(width: 68, height: 68)
+                Circle().fill(Color.white.opacity(0.9)).frame(width: 20, height: 20)
+                    .offset(x: -14, y: -14)
+            }
+            .offset(x: 6, y: 6)
         }
     }
 
     private var mouth: some View {
-        SmilePath()
-            .stroke(Color.black, style: StrokeStyle(lineWidth: 24, lineCap: .round))
-            .frame(width: 200, height: 60)
+        ZStack(alignment: .bottom) {
+            IconSmileShape()
+                .fill(Color.black.opacity(0.85))
+            Ellipse()
+                .fill(blushPink)
+                .frame(width: 110, height: 46)
+                .offset(y: 14)
+        }
+        .frame(width: 175, height: 95)
+        .clipShape(IconSmileShape())
     }
 
     private var blush: some View {
-        HStack(spacing: 250) {
-            Capsule().fill(Color.orange.opacity(0.5)).frame(width: 68, height: 32)
-            Capsule().fill(Color.orange.opacity(0.5)).frame(width: 68, height: 32)
+        HStack(spacing: 320) {
+            Ellipse().fill(blushPink.opacity(0.65)).frame(width: 74, height: 42)
+            Ellipse().fill(blushPink.opacity(0.65)).frame(width: 74, height: 42)
         }
-        .offset(y: 26)
+        .offset(y: 60)
     }
 
     private var handle: some View {
-        RoundedRectangle(cornerRadius: 55, style: .continuous)
-            .fill(
-                LinearGradient(
-                    colors: [Color(red: 0.62, green: 0.44, blue: 0.27), Color(red: 0.46, green: 0.31, blue: 0.17)],
-                    startPoint: .top, endPoint: .bottom
+        ZStack(alignment: .bottom) {
+            RoundedRectangle(cornerRadius: 46, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [Color(red: 0.753, green: 0.541, blue: 0.322), Color(red: 0.612, green: 0.424, blue: 0.235)],
+                        startPoint: .top, endPoint: .bottom
+                    )
                 )
-            )
-            .frame(width: 130, height: 280)
+            Circle()
+                .fill(Color.black.opacity(0.28))
+                .frame(width: 44, height: 44)
+                .padding(.bottom, 42)
+        }
+        .frame(width: 100, height: 300)
     }
 }
 
-private struct SmilePath: Shape {
+/// The paddle silhouette from SpatchCharacterView, scaled for the icon: big
+/// rounded top slanting gently toward the trailing side, sides tapering to
+/// the neck.
+private struct IconHeadShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let w = rect.width
+        let topLeading = CGPoint(x: rect.minX, y: rect.minY)
+        let topTrailing = CGPoint(x: rect.maxX, y: rect.minY + rect.height * 0.13)
+        let bottomTrailing = CGPoint(x: rect.minX + w * 0.84, y: rect.maxY)
+        let bottomLeading = CGPoint(x: rect.minX + w * 0.16, y: rect.maxY)
+
+        var path = Path()
+        path.move(to: CGPoint(x: rect.midX, y: rect.maxY))
+        path.addArc(tangent1End: bottomLeading, tangent2End: topLeading, radius: w * 0.11)
+        path.addArc(tangent1End: topLeading, tangent2End: topTrailing, radius: w * 0.30)
+        path.addArc(tangent1End: topTrailing, tangent2End: bottomTrailing, radius: w * 0.24)
+        path.addArc(tangent1End: bottomTrailing, tangent2End: bottomLeading, radius: w * 0.11)
+        path.closeSubpath()
+        return path
+    }
+}
+
+/// The open grin from SpatchCharacterView: curved top lip, deep round bottom.
+private struct IconSmileShape: Shape {
     func path(in rect: CGRect) -> Path {
         var p = Path()
-        p.move(to: CGPoint(x: rect.minX, y: rect.minY))
-        p.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.minY), control: CGPoint(x: rect.midX, y: rect.maxY))
+        p.move(to: CGPoint(x: rect.minX, y: rect.minY + rect.height * 0.18))
+        p.addQuadCurve(
+            to: CGPoint(x: rect.maxX, y: rect.minY + rect.height * 0.18),
+            control: CGPoint(x: rect.midX, y: rect.minY)
+        )
+        p.addQuadCurve(
+            to: CGPoint(x: rect.minX, y: rect.minY + rect.height * 0.18),
+            control: CGPoint(x: rect.midX, y: rect.minY + rect.height * 1.9)
+        )
+        p.closeSubpath()
         return p
     }
 }
