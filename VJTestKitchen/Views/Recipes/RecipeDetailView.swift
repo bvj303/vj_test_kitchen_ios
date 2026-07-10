@@ -258,7 +258,7 @@ struct RecipeDetailView: View {
                 } label: {
                     Label(viewModel.didAddAllToGroceryList ? "Added" : "Add All",
                           systemImage: viewModel.didAddAllToGroceryList ? "checkmark.circle.fill" : "cart.badge.plus")
-                        .font(.subheadline)
+                        .font(.callout.weight(.medium))
                 }
                 .foregroundStyle(Color.brandSage)
                 .disabled(viewModel.didAddAllToGroceryList)
@@ -273,14 +273,25 @@ struct RecipeDetailView: View {
                     Text(amount.name)
                     Spacer()
                     Button {
-                        Task { await viewModel.addIngredientToGroceryList(ingredient, scale: scale) }
+                        Task {
+                            if viewModel.isInGroceryList(ingredient) {
+                                await viewModel.removeIngredientFromGroceryList(ingredient)
+                            } else {
+                                await viewModel.addIngredientToGroceryList(ingredient, scale: scale)
+                            }
+                        }
                     } label: {
-                        Image(systemName: viewModel.addedIngredientIds.contains(ingredient.id) ? "checkmark.circle.fill" : "plus.circle")
+                        Image(systemName: viewModel.isInGroceryList(ingredient) ? "checkmark.circle.fill" : "plus.circle")
+                            .font(.title3)
                             .foregroundStyle(Color.brandSage)
                     }
                     .buttonStyle(.plain)
-                    .disabled(viewModel.addedIngredientIds.contains(ingredient.id))
-                    .accessibilityLabel("Add \(amount.name) to Grocery List")
+                    .padding(4)
+                    .accessibilityLabel(
+                        viewModel.isInGroceryList(ingredient)
+                            ? "Remove \(amount.name) from Grocery List"
+                            : "Add \(amount.name) to Grocery List"
+                    )
                 }
                 .font(.subheadline)
             }
