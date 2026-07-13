@@ -117,8 +117,6 @@ Running log of architectural/product decisions for the VJ Test Kitchen iOS rebui
 **If this recurs**: worth checking `docker network inspect supabase_network_<project>` for driver/IPAM config, and whether Docker Desktop's own network settings (proxy, VPN interaction) are involved — but only if a future Edge Function genuinely needs a package that isn't reasonably avoidable this way.
 
 ## 2026-07-06 — Siri via App Intents, no separate Intents extension target
-
-## 2026-07-06 — Siri via App Intents, no separate Intents extension target
 **Decision**: `PlanMealIntent` + `VJTestKitchenShortcuts` (`AppShortcutsProvider`) live directly in the main app target and reuse `AIService` as-is.
 **Why**: Modern `AppIntents`-based Siri integration (iOS 16+) doesn't require a separate Intents Extension target, a Siri entitlement, or an `NSSiriUsageDescription` privacy key — all of that was specific to the older SiriKit custom-intent (`.intentdefinition`) approach. Running in the main app's process means the intent shares the same signed-in Supabase session already in memory/Keychain, with no Keychain-sharing entitlement needed.
 **Known limitation**: if the user isn't signed in, the intent catches the failure and returns a spoken message asking them to open the app and sign in — it doesn't (and can't reasonably) drive the sign-in flow itself from a Siri context.
