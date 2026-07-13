@@ -1,9 +1,12 @@
 import SwiftUI
+import PhotosUI
 
 struct RecipeFormView: View {
     @State private var viewModel: RecipeFormViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var showingDeleteConfirmation = false
+    /// Picked recipe photo to scan (Apple Intelligence prefill).
+    @State private var scanPickerItem: PhotosPickerItem?
 
     /// Called after a successful save, in addition to `dismiss()`. `dismiss()`
     /// is a no-op when this view is a tab's root rather than something
@@ -31,10 +34,39 @@ struct RecipeFormView: View {
         self.onDeleted = onDeleted
     }
 
+    /// On-device recipe-photo scanner entry. A computed property (not inlined)
+    /// so its `viewModel` reads reference the view's `@State`, not the body's
+    /// shadowed `@Bindable` local — which the compiler flags as a captured var.
+    private var scanSection: some View {
+        Section {
+            PhotosPicker(selection: $scanPickerItem, matching: .images) {
+                if viewModel.isScanningPhoto {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                        Text("Reading recipe…").foregroundStyle(.secondary)
+                    }
+                } else {
+                    Label("Scan from Photo", systemImage: "text.viewfinder")
+                        .foregroundStyle(Color.brandPrimary)
+                }
+            }
+            .disabled(viewModel.isScanningPhoto)
+        } footer: {
+            Text("Pick a photo of a recipe and Apple Intelligence will fill in the form — entirely on your device.")
+        }
+    }
+
     var body: some View {
         @Bindable var viewModel = viewModel
 
         Form {
+            // Apple Intelligence: OCR a recipe photo on-device and prefill the
+            // form. Create-only (so it never clobbers an in-progress edit) and
+            // hidden on devices without on-device Apple Intelligence.
+            if !viewModel.isEditing && viewModel.canScanPhoto {
+                scanSection
+            }
+
             Section("Basics") {
                 TextField("Title", text: $viewModel.title)
                 TextField("Description", text: $viewModel.description, axis: .vertical)
@@ -129,6 +161,26 @@ struct RecipeFormView: View {
             }
         }
         .task { await viewModel.loadIfNeeded() }
+        .onChange(of: scanPickerItem) { _, newItem in
+            guard let newItem else { return }
+            Task {
+                if let data = try? await newItem.loadTransferable(type: Data.self) {
+                    await viewModel.scanRecipe(from: data)
+                }
+                scanPickerItem = nil
+            }
+        }
+        .alert(
+            "Couldn't Scan Recipe",
+            isPresented: Binding(
+                get: { viewModel.scanErrorMessage != nil },
+                set: { if !$0 { viewModel.scanErrorMessage = nil } }
+            )
+        ) {
+            Button("OK") { viewModel.scanErrorMessage = nil }
+        } message: {
+            Text(viewModel.scanErrorMessage ?? "")
+        }
         .confirmationDialog(
             "Delete this recipe?",
             isPresented: $showingDeleteConfirmation,
