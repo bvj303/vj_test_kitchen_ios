@@ -63,20 +63,50 @@ enum SpatchContent {
 
     // MARK: - Home recommendation line
 
+    /// The pool of Home recommendation lines for a given recipe title, exposed
+    /// separately from `recommendationLine` so it's unit-testable (e.g. for
+    /// tone — these are meant to read as gentle nudges, not a hard sell).
+    static func recommendationTemplates(for recipeTitle: String) -> [String] {
+        [
+            "Psst — I've got a good feeling about \(recipeTitle) today.",
+            "If I had hands, I'd already be making \(recipeTitle).",
+            "\(recipeTitle) is calling your name. Spatulas have great ears.",
+            "How about \(recipeTitle)? Just a thought.",
+            "\(recipeTitle) has been on my mind today, no idea why.",
+            "No pressure, but \(recipeTitle) sounds pretty good right about now.",
+            "\(recipeTitle) crossed my mind. That's all, just putting it out there.",
+        ]
+    }
+
     /// A line tying Spatch's Home cameo to the dashboard's actual suggested
     /// recipe, falling back to generic encouragement when none is loaded yet.
     static func recommendationLine(recipeTitle: String?) -> String {
         guard let recipeTitle else { return randomEncouragement() }
-        let templates = [
-            "Psst — I've got a good feeling about \(recipeTitle) today.",
-            "If I had hands, I'd already be making \(recipeTitle).",
-            "\(recipeTitle) is calling your name. Spatulas have great ears.",
-            "How about \(recipeTitle)? Trust me on this one.",
-            "\(recipeTitle) has been living rent-free in my head all day.",
-            "I did some very scientific research and \(recipeTitle) is the move tonight.",
-            "Not to be dramatic, but \(recipeTitle) might change your whole week.",
-        ]
+        let templates = recommendationTemplates(for: recipeTitle)
         return templates.randomElement() ?? "How about \(recipeTitle)?"
+    }
+
+    // MARK: - Catchphrases
+
+    /// Spatch's signature one-liners — short, punchy, and recognizably "him,"
+    /// distinct from the puns in `jokes` and the softer support in
+    /// `encouragements`. Mixed into the Home cameo rotation alongside jokes so
+    /// he doesn't read as constantly pitching a recipe.
+    static let catchphrases: [String] = [
+        "Let's get flipping!",
+        "Kitchen's open. Let's go.",
+        "Spatula up. Let's do this.",
+        "Whisk happens. Cook anyway.",
+        "Aprons on, puns loaded.",
+        "Today's forecast: a good chance of dinner.",
+        "Let's make something worth telling people about.",
+        "Heat's on whenever you're ready.",
+        "One flip at a time. That's the whole philosophy.",
+        "Good things come to those who preheat.",
+    ]
+
+    static func randomCatchphrase() -> String {
+        catchphrases.randomElement() ?? catchphrases[0]
     }
 
     // MARK: - Recipe Detail cameo lines

@@ -42,11 +42,13 @@ struct HomeView: View {
         .onChange(of: appCommands.refreshRequests) { _, _ in
             Task { await viewModel.load(force: true) }
         }
-        // First pop-in shortly after the shelf's actual suggestion is in —
+        // First pop-in a few beats after the shelf's actual suggestion is in —
         // referencing the real recommended recipe rather than a placeholder.
+        // Held off longer than a bare load-complete beat so he doesn't read as
+        // pouncing on the dashboard the instant it appears.
         .task(id: viewModel.suggestedRecipes.isEmpty) {
             guard !viewModel.suggestedRecipes.isEmpty else { return }
-            try? await Task.sleep(for: .seconds(1))
+            try? await Task.sleep(for: .seconds(4))
             guard !Task.isCancelled else { return }
             spatchViewModel.show(
                 message: SpatchContent.recommendationLine(recipeTitle: viewModel.suggestedRecipes.first?.title),
@@ -55,9 +57,11 @@ struct HomeView: View {
         }
         // "Every now and again" — Spatch pops back in with a fresh line for as
         // long as Home stays on screen, rather than being a permanent fixture.
+        // A longer, wider gap than earlier drafts — frequent recipe pitches on
+        // the main dashboard read as pushy rather than helpful.
         .task {
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(.random(in: 45...75)))
+                try? await Task.sleep(for: .seconds(.random(in: 100...160)))
                 guard !Task.isCancelled, !viewModel.suggestedRecipes.isEmpty else { continue }
                 let (message, mood) = Self.randomSpatchLine(recipes: viewModel.suggestedRecipes)
                 spatchViewModel.show(message: message, mood: mood)
@@ -182,12 +186,19 @@ struct HomeView: View {
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
-    /// Spatch's Home pop-in line: usually a recommendation tied to the actual
-    /// shelf, occasionally just a joke — with a mood to match either.
+    /// Spatch's Home pop-in line. A recipe recommendation is only one option
+    /// among several (roughly a third of the time) rather than the default —
+    /// the rest of the time it's a joke or a catchphrase, so repeat pop-ins
+    /// read as company, not a recurring pitch.
     private static func randomSpatchLine(recipes: [Recipe]) -> (String, SpatchMood) {
-        if Bool.random(), let title = recipes.randomElement()?.title {
+        switch Double.random(in: 0..<1) {
+        case ..<0.3:
+            guard let title = recipes.randomElement()?.title else { fallthrough }
             return (SpatchContent.recommendationLine(recipeTitle: title), .happy)
+        case ..<0.65:
+            return (SpatchContent.randomJoke(), [.laughing, .surprised].randomElement() ?? .laughing)
+        default:
+            return (SpatchContent.randomCatchphrase(), .happy)
         }
-        return (SpatchContent.randomJoke(), [.laughing, .surprised].randomElement() ?? .laughing)
     }
 }
