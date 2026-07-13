@@ -11,6 +11,11 @@ final class FakeAIService: AIServicing, @unchecked Sendable {
     var responseToReturn = "Here's a plan!"
     var recipesToReturn: [AIRecipeRef] = []
     var errorToThrow: Error?
+    /// When set, the fake reports the assistant as unavailable (as an
+    /// ineligible device would) — used to exercise the Planner's fallback UI.
+    var unavailableReasonToReturn: String?
+
+    var unavailableReason: String? { unavailableReasonToReturn }
 
     func sendMessage(_ history: [AIChatTurn]) async throws -> AIChatResponse {
         receivedHistories.append(history)
@@ -139,5 +144,22 @@ struct AIPlannerViewModelTests {
         viewModel.clearChat()
 
         #expect(viewModel.messages.isEmpty)
+    }
+
+    @Test func refreshAvailabilitySurfacesUnavailableReason() {
+        let ai = FakeAIService()
+        ai.unavailableReasonToReturn = "Kitchen Concierge needs Apple Intelligence."
+        let viewModel = AIPlannerViewModel(aiService: ai)
+        #expect(viewModel.unavailableReason == nil)
+
+        viewModel.refreshAvailability()
+
+        #expect(viewModel.unavailableReason == "Kitchen Concierge needs Apple Intelligence.")
+    }
+
+    @Test func availableAssistantHasNoUnavailableReason() {
+        let viewModel = AIPlannerViewModel(aiService: FakeAIService())
+        viewModel.refreshAvailability()
+        #expect(viewModel.unavailableReason == nil)
     }
 }

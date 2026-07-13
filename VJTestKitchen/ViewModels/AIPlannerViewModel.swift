@@ -22,11 +22,20 @@ final class AIPlannerViewModel {
     var inputText = ""
     private(set) var isSending = false
     var errorMessage: String?
+    /// Non-`nil` when the on-device assistant can't run on this device — the
+    /// view shows this copy instead of the chat. Refreshed from the service in
+    /// `refreshAvailability()` (called from the view's `.task`) since Apple
+    /// Intelligence can finish setting up, or be enabled, after launch.
+    private(set) var unavailableReason: String?
 
     private let aiService: AIServicing
 
-    init(aiService: AIServicing = AIService()) {
+    init(aiService: AIServicing = AppleIntelligenceAIService()) {
         self.aiService = aiService
+    }
+
+    func refreshAvailability() {
+        unavailableReason = aiService.unavailableReason
     }
 
     func send() async {

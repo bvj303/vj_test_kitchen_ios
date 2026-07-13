@@ -18,37 +18,42 @@ struct AIPlannerView: View {
         VStack(spacing: 0) {
             header
 
-            ScrollViewReader { proxy in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        if viewModel.messages.isEmpty {
-                            emptyState
-                        } else {
-                            ForEach(viewModel.messages) { message in
-                                messageBubble(message)
-                                    .id(message.id)
+            if let reason = viewModel.unavailableReason {
+                unavailableState(reason)
+            } else {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 16) {
+                            if viewModel.messages.isEmpty {
+                                emptyState
+                            } else {
+                                ForEach(viewModel.messages) { message in
+                                    messageBubble(message)
+                                        .id(message.id)
+                                }
+                            }
+                            if viewModel.isSending {
+                                HStack {
+                                    ProgressView()
+                                    Text("Thinking...").foregroundStyle(.secondary)
+                                }
+                                .padding()
                             }
                         }
-                        if viewModel.isSending {
-                            HStack {
-                                ProgressView()
-                                Text("Thinking...").foregroundStyle(.secondary)
-                            }
-                            .padding()
+                        .padding()
+                    }
+                    .onChange(of: viewModel.messages) { _, _ in
+                        if let last = viewModel.messages.last {
+                            withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
                         }
                     }
-                    .padding()
+                    .scrollDismissesKeyboard(.interactively)
                 }
-                .onChange(of: viewModel.messages) { _, _ in
-                    if let last = viewModel.messages.last {
-                        withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
-                    }
-                }
-                .scrollDismissesKeyboard(.interactively)
-            }
 
-            inputBar
+                inputBar
+            }
         }
+        .task { viewModel.refreshAvailability() }
         .navigationTitle("AI Planner")
         .inlineNavigationTitle()
         .dismissesKeyboardOnBackgroundTap()
@@ -125,6 +130,29 @@ struct AIPlannerView: View {
                 .padding(.top, 8)
         }
         .padding(.top, 40)
+    }
+
+    /// Shown instead of the chat when the on-device model can't run here
+    /// (device not eligible, or Apple Intelligence turned off). Kitchen
+    /// Concierge is fully on-device now, so there's no cloud fallback.
+    private func unavailableState(_ reason: String) -> some View {
+        VStack(spacing: 16) {
+            Spacer()
+            Image(systemName: "sparkles.slash")
+                .font(.system(size: 44))
+                .foregroundStyle(.secondary)
+            Text("Kitchen Concierge Unavailable")
+                .font(.title3.bold())
+                .multilineTextAlignment(.center)
+            Text(reason)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding()
     }
 
     @ViewBuilder
