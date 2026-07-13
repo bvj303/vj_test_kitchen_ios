@@ -15,6 +15,20 @@ struct SpatchContentTests {
         #expect(SpatchContent.encouragements.contains(SpatchContent.randomEncouragement()))
     }
 
+    @Test func catchphrasePoolIsNonEmptyAndReturnsALine() {
+        #expect(!SpatchContent.catchphrases.isEmpty)
+        #expect(SpatchContent.catchphrases.contains(SpatchContent.randomCatchphrase()))
+    }
+
+    @Test func recommendationLinesAvoidPushyLanguage() {
+        // Softer nudges, not a hard sell — no "trust me", guilt, or urgency framing.
+        let lines = SpatchContent.recommendationTemplates(for: "Test Recipe").map { $0.lowercased() }
+        let pushyPhrases = ["trust me", "the move tonight", "might change your whole week"]
+        for phrase in pushyPhrases {
+            #expect(!lines.contains { $0.contains(phrase) })
+        }
+    }
+
     // MARK: - Home recommendation line
 
     @Test func recommendationLineFallsBackToEncouragementWithoutATitle() {
