@@ -256,13 +256,28 @@ struct RecipeDetailView: View {
                     label: scale == 1 ? "Servings" : "Servings (\(scaleLabel))"
                 )
             }
+            if let atkRating = detail.atkRating {
+                statTile(
+                    icon: "star.fill",
+                    value: String(format: "%.1f", atkRating),
+                    label: atkRatingLabel(detail.atkRatingCount),
+                    tint: Color.brandSaffron
+                )
+            }
         }
     }
 
-    private func statTile(icon: String, value: String, label: String) -> some View {
+    /// "ATK Rating" alone when the review count is unknown, otherwise folds the
+    /// count in ("ATK Rating (23)") so the tile stays a single compact label.
+    private func atkRatingLabel(_ count: Int?) -> String {
+        guard let count, count > 0 else { return "ATK Rating" }
+        return "ATK Rating (\(count))"
+    }
+
+    private func statTile(icon: String, value: String, label: String, tint: Color = .brandPrimary) -> some View {
         VStack(spacing: 4) {
             Image(systemName: icon)
-                .foregroundStyle(Color.brandPrimary)
+                .foregroundStyle(tint)
             Text(value).font(.headline)
             Text(label).font(.caption2).foregroundStyle(.secondary)
         }
