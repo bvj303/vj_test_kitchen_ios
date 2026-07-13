@@ -31,17 +31,66 @@ final class RecipeFormViewModel {
     var errorMessage: String?
     private(set) var didSave = false
 
+    /// Recipe-photo scan (Apple Intelligence) state.
+    private(set) var isScanningPhoto = false
+    var scanErrorMessage: String?
+
     private let recipeService: RecipeServicing
     private let saveService: RecipeSaving
+    private let photoImportService: RecipePhotoImportService
 
     init(
         mode: Mode,
         recipeService: RecipeServicing = RecipeService(),
-        saveService: RecipeSaving = RecipeSaveService()
+        saveService: RecipeSaving = RecipeSaveService(),
+        photoImportService: RecipePhotoImportService = RecipePhotoImportService()
     ) {
         self.mode = mode
         self.recipeService = recipeService
         self.saveService = saveService
+        self.photoImportService = photoImportService
+    }
+
+    /// Whether the "Scan from Photo" affordance should be offered — false on
+    /// devices without on-device Apple Intelligence, so the button doesn't lead
+    /// to a dead end.
+    var canScanPhoto: Bool {
+        photoImportService.unavailableReason == nil
+    }
+
+    /// OCRs a picked recipe photo and prefills the form from it (on-device).
+    /// Best-effort: a failure surfaces in `scanErrorMessage` and leaves the
+    /// form untouched.
+    func scanRecipe(from imageData: Data) async {
+        scanErrorMessage = nil
+        isScanningPhoto = true
+        defer { isScanningPhoto = false }
+        do {
+            let scanned = try await photoImportService.importRecipe(from: imageData)
+            apply(scanned)
+        } catch {
+            scanErrorMessage = ErrorPresenter.message(for: error)
+        }
+    }
+
+    /// Prefills the form fields from an extracted recipe, only overwriting a
+    /// field when the scan actually found something for it. Pure enough to test
+    /// without OCR or the model.
+    func apply(_ scanned: ScannedRecipe) {
+        func filled(_ text: String) -> Bool {
+            !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        if filled(scanned.title) { title = scanned.title }
+        if filled(scanned.summary) { description = scanned.summary }
+        if filled(scanned.instructions) { instructions = scanned.instructions }
+        if scanned.totalMinutes > 0 { prepTimeText = String(scanned.totalMinutes) }
+        if scanned.servings > 0 { servingsText = String(scanned.servings) }
+
+        let rows = scanned.ingredients
+            .map { RecipeIngredientLineParser.parse($0) }
+            .filter { !$0.name.isEmpty || !$0.amount.isEmpty }
+            .map { IngredientRow(amount: $0.amount, unit: $0.unit, name: $0.name) }
+        if !rows.isEmpty { ingredientRows = rows }
     }
 
     var isEditing: Bool {
