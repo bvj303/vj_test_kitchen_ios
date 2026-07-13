@@ -16,8 +16,8 @@ protocol WeatherForecasting: Sendable {
 /// DECISIONS.md.) The protocol boundary means that swap is this one struct.
 ///
 /// URL building and response parsing are split into pure static helpers so they
-/// can be unit-tested without a network round-trip (same split as `ai-chat`'s
-/// `buildSearchRecipesUrl`).
+/// can be unit-tested without a network round-trip (the same pure-helper split
+/// the `delete-account` Edge Function uses for its testable handler).
 struct OpenMeteoForecastService: WeatherForecasting {
     /// A few days past the visible week, so a day-boundary/time-zone skew can't
     /// leave the last day of the week without a forecast.
