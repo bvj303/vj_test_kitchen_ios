@@ -15,6 +15,11 @@ struct RecipeDetail: Codable, Sendable, Identifiable {
     var prepTime: Int?
     var servings: Int?
     let createdAt: Date
+    /// America's Test Kitchen's own average rating (0–5) and review count,
+    /// scraped from the public recipe page — see scripts/scrape_atk_ratings.py.
+    /// Distinct from `recipe_ratings` (household members' own ratings).
+    var atkRating: Double? = nil
+    var atkRatingCount: Int? = nil
     var ingredients: [Ingredient]
     var recipeTags: [RecipeTagJoin]
 
