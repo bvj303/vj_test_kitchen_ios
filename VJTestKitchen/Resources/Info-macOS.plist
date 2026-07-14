@@ -32,9 +32,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.1</string>
+	<string>1.2</string>
 	<key>CFBundleVersion</key>
-	<string>3</string>
+	<string>4</string>
 	<!-- macOS counterpart of the iOS plist. Deliberately DROPS the iOS-only
 	     keys: LSRequiresIPhoneOS, UILaunchScreen, and the
 	     UISupportedInterfaceOrientations~* arrays (meaningless on macOS). -->
