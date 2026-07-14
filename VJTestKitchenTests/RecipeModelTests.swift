@@ -27,6 +27,27 @@ struct RecipeModelTests {
         #expect(recipe.servings == 2)
     }
 
+    @Test func decodesRecipeWithAtkRating() throws {
+        let json = """
+        {
+          "id": 42,
+          "user_id": null,
+          "title": "Carbonara",
+          "description": null,
+          "instructions": null,
+          "image_path": null,
+          "prep_time": 20,
+          "servings": 2,
+          "created_at": "2026-07-06T01:20:29+00:00",
+          "atk_rating": 4.57
+        }
+        """.data(using: .utf8)!
+
+        let recipe = try SupabaseDecoding.decoder.decode(Recipe.self, from: json)
+
+        #expect(recipe.atkRating == 4.57)
+    }
+
     @Test func decodesRecipeWithNullUserAndOptionalFields() throws {
         let json = """
         {
