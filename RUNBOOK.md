@@ -1,0 +1,161 @@
+# Runbook
+
+Operational reference for VJ Test Kitchen (iOS/macOS) — how to **run, build, test, deploy**, and manage **environments**. Architecture and the *why* behind decisions live in [`CLAUDE.md`](CLAUDE.md) and [`DECISIONS.md`](DECISIONS.md); this file is the *how*.
+
+- **Supabase (prod)**: ref `aviyhrmjsqygoyzjprii`, region `us-east-2`, Postgres 17.
+- **Schemes**: `VJTestKitchen` (iOS/iPadOS), `VJTestKitchenMac` (macOS). Both build from one shared source tree.
+- **Bundle id**: `com.bvj303.vjtestkitchen`.
+
+---
+
+## First-time setup (per clone)
+
+```bash
+# 1. Install the git hooks that keep the generated .xcodeproj in sync with project.yml
+./.githooks/install.sh
+
+# 2. Client secrets (gitignored). Fill in the real Supabase URL + publishable key
+#    from Dashboard → Settings → API. Note the https:/$()/ escaping in the file.
+cp Config/Secrets.xcconfig.example Config/Secrets.xcconfig
+
+# 3. Generate the Xcode project (it's gitignored — always regenerated from project.yml)
+xcodegen generate
+
+# 4. Open and build
+open VJTestKitchen.xcodeproj
+```
+
+**Tooling:** Xcode **26+**, [`xcodegen`](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`), the [Supabase CLI](https://supabase.com/docs/guides/cli) (`SUPABASE_ACCESS_TOKEN` in your shell profile), and [Deno](https://deno.com) for the Edge Functions.
+
+> The `.xcodeproj` is gitignored and regenerated from `project.yml`. The git hooks regenerate it after a pull/checkout/rebase, and an Xcode pre-build guard fails the build if `project.yml` is newer than the generated project. If you ever see "cannot find `<Type>` in scope" after a branch switch, run `xcodegen generate`.
+
+---
+
+## Run
+
+- **Simulator / device**: pick the `VJTestKitchen` or `VJTestKitchenMac` scheme in Xcode and Run.
+- **Both form factors at once** (the standard review step after a feature):
+  ```bash
+  scripts/review-sims.sh          # builds once, installs + launches on a booted iPhone + iPad sim
+  # Device names override via REVIEW_IPHONE / REVIEW_IPAD env vars.
+  ```
+
+---
+
+## Test
+
+Unit tests use **Swift Testing** (`@Test`/`#expect`), not XCTest.
+
+```bash
+# iOS
+xcodebuild test -scheme VJTestKitchen \
+  -destination 'platform=iOS Simulator,name=iPhone 17'
+
+# macOS
+xcodebuild test -scheme VJTestKitchenMac -destination 'platform=macOS'
+
+# Edge Functions (Deno)
+deno test --allow-net supabase/functions/
+deno check supabase/functions/ai-chat/index.ts supabase/functions/delete-account/index.ts
+```
+
+Follow the TDD lifecycle (red → green → refactor) — see `CLAUDE.md`.
+
+---
+
+## Continuous Integration
+
+`.github/workflows/ci.yml` runs the suite as a **merge gate** on PRs to `main` (and on pushes to `main`):
+
+| Job | What it runs | Runner |
+|---|---|---|
+| iOS build & unit tests | `xcodegen generate` → download iOS 26 sim runtime → `xcodebuild test` | `macos-26` |
+| macOS build & unit tests | `xcodebuild test` (VJTestKitchenMac) | `macos-26` |
+| Edge Function checks | `deno check` + `deno test --allow-net` | `ubuntu-latest` |
+
+- CI seeds **placeholder** secrets from `Secrets.xcconfig.example` — no GitHub secrets needed for CI (the unhosted unit tests inject their own bundle).
+- The `macos-26` image ships Xcode 26 but **not** the iOS 26 simulator runtime, so the iOS job downloads it (`xcodebuild -downloadPlatform iOS`).
+- **Watch a run**: `gh pr checks <pr#> --watch`; on failure, `gh run view <run-id> --log-failed`.
+- **Make it enforced**: GitHub → Settings → Branches → branch-protection rule on `main` → "Require status checks to pass" → select the three checks.
+
+---
+
+## Environments
+
+Two Supabase projects: **prod** (ships to TestFlight/App Store) and **staging** (dev/simulator). Credentials are kept separate per environment on purpose — a dev run must never read or mutate prod data or burn prod quota.
+
+- Client wiring lives in `project.yml` under `configFiles`, one xcconfig per build config:
+  - **Release** → `Config/Secrets.xcconfig` (prod)
+  - **Debug** → `Config/Secrets.staging.xcconfig` (staging), once activated
+- Both files are gitignored; only the `*.example` templates are tracked.
+
+### Activating staging (one-time)
+
+1. **Create the project** — Dashboard → New project: `vjtk-staging`, region `us-east-2`, Postgres 17. Save the DB password; note the ref (`<STAGING_REF>`).
+2. **Apply the schema** (migrations carry schema + RLS + the `avatars` storage bucket), without disturbing the prod link:
+   ```bash
+   supabase db push --db-url "postgresql://postgres:<PASSWORD>@db.<STAGING_REF>.supabase.co:5432/postgres"
+   ```
+3. **Deploy the functions:**
+   ```bash
+   supabase functions deploy ai-chat        --project-ref <STAGING_REF>
+   supabase functions deploy delete-account  --project-ref <STAGING_REF>
+   ```
+4. **Set function secrets** (`service_role` is auto-injected — don't set it):
+   ```bash
+   supabase secrets set GEMINI_API_KEY=<KEY> --project-ref <STAGING_REF>
+   ```
+5. **Mirror auth settings** in the staging dashboard. Tip: staging can keep email autoconfirm **on** for fast test signups while prod requires confirmation.
+6. **Fill in the client file:**
+   ```bash
+   cp Config/Secrets.staging.xcconfig.example Config/Secrets.staging.xcconfig
+   # edit → SUPABASE_URL / SUPABASE_ANON_KEY for the staging project (mind the https:/$()/ escaping)
+   ```
+7. **Flip the build config** in `project.yml`, then `xcodegen generate`:
+   ```yaml
+   configFiles:
+     Debug:   Config/Secrets.staging.xcconfig   # dev / simulator → staging
+     Release: Config/Secrets.xcconfig           # TestFlight / App Store → prod
+   ```
+8. **Verify**: a Debug build signs up a throwaway user → it lands in **staging** Auth, not prod. A Release build still points at prod.
+
+> Debug→staging means simulator builds hit **remote staging**. To develop against the **local** `supabase start` stack instead, that's a separate xcconfig pointing at `127.0.0.1` — don't overload the staging file for it.
+
+---
+
+## Deploy
+
+Deploys are currently **manual** (a pipeline for these is the planned CD phase — see `CLAUDE.md`).
+
+### Backend (Supabase)
+
+```bash
+# Database migrations → prod (gated; confirm before pushing to prod)
+supabase db push
+
+# Edge Functions → prod
+supabase functions deploy ai-chat
+supabase functions deploy delete-account
+```
+
+- **Server secrets** (`GEMINI_API_KEY`, and `service_role` bypasses RLS) live **only** as Supabase secrets — never in the client, `.env`, or git:
+  ```bash
+  supabase secrets set GEMINI_API_KEY=<KEY> --project-ref <REF>
+  ```
+- **Ship order gotcha**: the client sends `messages` to `ai-chat` and uses the atomic `save_recipe` RPC — deploy the function and `db push` the migration **before/with** any client release, or those paths 4xx against the deployed backend.
+
+### Client (TestFlight / App Store)
+
+Distribution signing (Mac App Store / Developer ID / App Store Connect) is not yet automated. For local device builds and the current signing setup, see `CLAUDE.md` and the device-signing notes. Archive the `VJTestKitchen` scheme (Release → prod) and upload via Xcode Organizer / `xcodebuild archive` + `xcrun altool`/`notarytool` when that step is set up.
+
+---
+
+## Common tasks
+
+| Task | Command |
+|---|---|
+| Regenerate Xcode project | `xcodegen generate` |
+| Reset local Supabase + reapply migrations | `supabase db reset` |
+| Import ATK test recipes | `python3 scripts/import_atk_recipes.py --limit 250` (see `CLAUDE.md` for flags) |
+| Re-render app icons | `swift scripts/render_app_icon.swift VJTestKitchen/Resources/Assets.xcassets` |
+| Launch on both sims for review | `scripts/review-sims.sh` |
