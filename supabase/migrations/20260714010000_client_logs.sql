@@ -50,4 +50,12 @@ create policy "client_logs_select_own" on public.client_logs
   for select to authenticated
   using (auth.uid() = user_id);
 
+-- Be deterministic about grants: hosted Supabase auto-grants ALL privileges to
+-- `authenticated` (and `anon`) on new public-schema tables at creation, which
+-- differs from the local CLI stack (the same local-vs-remote grant divergence
+-- documented in DECISIONS.md, 2026-07-06). RLS already blocks update/delete
+-- (no matching policy), but leaving those grants in place contradicts this
+-- table's append-only intent — so strip everything, then grant back only what
+-- the policies actually use.
+revoke all on public.client_logs from authenticated, anon;
 grant select, insert on public.client_logs to authenticated;
