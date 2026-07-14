@@ -38,7 +38,9 @@ jobs:
         # Real Supabase values aren't needed to compile or run the unhosted unit
         # tests — AppConfigTests injects its own synthetic Bundle. The build only
         # needs the xcconfig vars *defined* for Info.plist substitution.
-        run: cp Config/Secrets.xcconfig.example Config/Secrets.xcconfig
+        run: |
+          cp Config/Secrets.xcconfig.example Config/Secrets.xcconfig
+          cp Config/Secrets.staging.xcconfig.example Config/Secrets.staging.xcconfig
 
       - name: Generate Xcode project
         run: xcodegen generate
@@ -98,7 +100,9 @@ jobs:
         run: brew install xcodegen
 
       - name: Seed placeholder secrets
-        run: cp Config/Secrets.xcconfig.example Config/Secrets.xcconfig
+        run: |
+          cp Config/Secrets.xcconfig.example Config/Secrets.xcconfig
+          cp Config/Secrets.staging.xcconfig.example Config/Secrets.staging.xcconfig
 
       - name: Generate Xcode project
         run: xcodegen generate
