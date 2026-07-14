@@ -1,0 +1,130 @@
+name: CI
+
+# Runs the full test suite as a merge gate (Engineering Principles: "deploys
+# come from the pipeline" — this is the CI half; CD lands in a later phase).
+#
+# NOTE: the Apple jobs require a macOS runner image that ships **Xcode 26+**
+# (this project targets iOS/macOS 26). Adjust the `runs-on` label and the
+# setup-xcode version to whatever image carries Xcode 26 on your GitHub plan.
+# The first run must be watched by a human — the runner image, simulator device
+# availability, and macOS test-host signing can't be validated without executing
+# Actions.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ios-tests:
+    name: iOS build & unit tests
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode 26
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.0'
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Seed placeholder secrets
+        # Real Supabase values aren't needed to compile or run the unhosted unit
+        # tests — AppConfigTests injects its own synthetic Bundle. The build only
+        # needs the xcconfig vars *defined* for Info.plist substitution.
+        run: cp Config/Secrets.xcconfig.example Config/Secrets.xcconfig
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Resolve an available iPhone simulator
+        id: sim
+        run: |
+          UDID=$(xcrun simctl list devices available -j \
+            | python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; ids=[x['udid'] for rt,l in d.items() if 'iOS' in rt for x in l if 'iPhone' in x['name']]; print(ids[0] if ids else '')")
+          if [ -z "$UDID" ]; then echo 'No iPhone simulator available on this runner'; exit 1; fi
+          echo "Using simulator $UDID"
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+
+      - name: Run iOS unit tests
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -scheme VJTestKitchen \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -resultBundlePath TestResults-iOS.xcresult \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Upload iOS test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-test-results
+          path: TestResults-iOS.xcresult
+          if-no-files-found: ignore
+
+  macos-tests:
+    name: macOS build & unit tests
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode 26
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.0'
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Seed placeholder secrets
+        run: cp Config/Secrets.xcconfig.example Config/Secrets.xcconfig
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Run macOS unit tests
+        # The mac target runs under App Sandbox; on some runners the sandboxed
+        # test host may need a real signing identity to launch. Ad-hoc ('-')
+        # works locally — if the test host fails to launch in CI, add a keychain
+        # step that imports a Development cert and drop the CODE_SIGNING_* flags.
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -scheme VJTestKitchenMac \
+            -destination 'platform=macOS' \
+            -resultBundlePath TestResults-macOS.xcresult \
+            CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
+
+      - name: Upload macOS test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-test-results
+          path: TestResults-macOS.xcresult
+          if-no-files-found: ignore
+
+  edge-functions:
+    name: Edge Function checks (Deno)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Type-check functions
+        run: |
+          deno check supabase/functions/ai-chat/index.ts
+          deno check supabase/functions/delete-account/index.ts
+
+      - name: Run function tests
+        run: deno test --allow-net supabase/functions/
