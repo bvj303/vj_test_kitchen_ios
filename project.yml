@@ -6,14 +6,15 @@ options:
     macOS: "26.0"
   developmentLanguage: en
 
-# Both configs currently read the single (prod) Secrets.xcconfig. Once a
-# separate STAGING Supabase project exists, flip Debug to
-# Config/Secrets.staging.xcconfig so dev/simulator builds hit staging while
-# Release keeps shipping prod — see Config/Secrets.staging.xcconfig.example for
-# the exact activation steps. (Kept on prod until the staging file exists so a
-# missing-file error can't break local/CI builds.)
+# Dev/simulator builds (Debug) hit the staging Supabase project; Release
+# (TestFlight/App Store) hits prod — separate credentials per environment.
+# Both files are gitignored (only the *.example templates are tracked), and
+# xcodegen validates that each config file EXISTS at generate time, so anyone
+# regenerating the project must have Config/Secrets.staging.xcconfig present —
+# see Config/Secrets.staging.xcconfig.example for how to create it. CI seeds a
+# placeholder from that example before `xcodegen generate` (see ci.yml).
 configFiles:
-  Debug: Config/Secrets.xcconfig
+  Debug: Config/Secrets.staging.xcconfig
   Release: Config/Secrets.xcconfig
 
 settings:
