@@ -3,12 +3,11 @@ name: CI
 # Runs the full test suite as a merge gate (Engineering Principles: "deploys
 # come from the pipeline" — this is the CI half; CD lands in a later phase).
 #
-# NOTE: the Apple jobs require a macOS runner image that ships **Xcode 26+**
-# (this project targets iOS/macOS 26). Adjust the `runs-on` label and the
-# setup-xcode version to whatever image carries Xcode 26 on your GitHub plan.
-# The first run must be watched by a human — the runner image, simulator device
-# availability, and macOS test-host signing can't be validated without executing
-# Actions.
+# Verified on the `macos-26` image (Xcode 26.0.1): the macOS sandboxed test host
+# launches with ad-hoc signing and the Deno checks pass. The image ships Xcode 26
+# but NOT the iOS 26 simulator runtime, so the iOS job downloads it (see the
+# "Install the iOS 26 simulator runtime" step). If you're on a different plan/
+# image, adjust the `runs-on` label and the setup-xcode version accordingly.
 
 on:
   pull_request:
@@ -44,13 +43,24 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
-      - name: Resolve an available iPhone simulator
+      - name: Install the iOS 26 simulator runtime
+        # The macos-26 image ships Xcode 26 but NOT the iOS 26 simulator runtime,
+        # and this app's deployment target is iOS 26 — so the app can't install on
+        # any older runtime. Download the runtime for the selected Xcode.
+        run: xcodebuild -downloadPlatform iOS
+
+      - name: Create an iOS 26 simulator
         id: sim
+        # Downloading a runtime doesn't auto-create devices, so make one explicitly
+        # from the newest available iOS runtime + any iPhone device type.
         run: |
-          UDID=$(xcrun simctl list devices available -j \
-            | python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; ids=[x['udid'] for rt,l in d.items() if 'iOS' in rt for x in l if 'iPhone' in x['name']]; print(ids[0] if ids else '')")
-          if [ -z "$UDID" ]; then echo 'No iPhone simulator available on this runner'; exit 1; fi
-          echo "Using simulator $UDID"
+          RUNTIME=$(xcrun simctl list runtimes -j | python3 -c "import json,sys; r=[x['identifier'] for x in json.load(sys.stdin)['runtimes'] if x.get('isAvailable') and x.get('platform')=='iOS']; print(r[-1] if r else '')")
+          DEVTYPE=$(xcrun simctl list devicetypes -j | python3 -c "import json,sys; d=[x['identifier'] for x in json.load(sys.stdin)['devicetypes'] if 'iPhone' in x['name']]; print(d[-1] if d else '')")
+          if [ -z "$RUNTIME" ] || [ -z "$DEVTYPE" ]; then echo 'No iOS runtime / iPhone device type available'; xcrun simctl list runtimes; exit 1; fi
+          echo "Runtime=$RUNTIME  DeviceType=$DEVTYPE"
+          UDID=$(xcrun simctl create ci-iphone "$DEVTYPE" "$RUNTIME")
+          xcrun simctl boot "$UDID" || true
+          echo "Created simulator $UDID"
           echo "udid=$UDID" >> "$GITHUB_OUTPUT"
 
       - name: Run iOS unit tests
