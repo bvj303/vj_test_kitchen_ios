@@ -1,0 +1,119 @@
+name: Deploy
+
+# Continuous Deployment — the "deploys come from the pipeline, not a laptop" half
+# of CI/CD (CI is the merge gate in ci.yml). Two targets, each idempotent:
+#   - Edge Functions  (ai-chat, delete-account) -> `supabase functions deploy`
+#   - DB migrations   -> `supabase db push` (only applies un-applied migrations)
+#
+# Staging is automatic on every merge to main. Production is deliberate: it only
+# fires on a release tag (v*), and is wrapped in the `production` GitHub
+# Environment so its required-reviewer protection rule makes the deploy pause for
+# a one-click human approval before it touches prod.
+#
+# --- Required GitHub secrets ------------------------------------------------
+#   SUPABASE_ACCESS_TOKEN  Personal access token (Dashboard -> Account -> Access
+#                          Tokens). Used by `functions deploy`; the CLI reads it
+#                          from the environment automatically.
+#   STAGING_DB_URL         Full SESSION-POOLER connection string for staging,
+#                          password included (Dashboard -> Connect -> Session
+#                          pooler). GitHub runners are IPv4-only and the direct
+#                          db.<ref>.supabase.co host is IPv6-only, so the pooler
+#                          (IPv4) is what actually connects from CI.
+#   PROD_DB_URL            Same, for prod.
+# Project refs are NOT secret (they're in CLAUDE.md/RUNBOOK) — kept as env below.
+#
+# --- One-time GitHub setup --------------------------------------------------
+#   Settings -> Environments -> New environment "production" -> add a
+#   "Required reviewers" protection rule (yourself). That rule is what gates the
+#   prod job below; without it the tag push would deploy prod unattended.
+# ---------------------------------------------------------------------------
+
+on:
+  push:
+    branches: [main]     # -> staging (automatic)
+    tags: ['v*']         # -> production (gated by the `production` environment)
+  workflow_dispatch:     # manual escape hatch (re-run a deploy to either target)
+    inputs:
+      target:
+        description: 'Which environment to deploy'
+        required: true
+        type: choice
+        default: staging
+        options: [staging, production]
+
+env:
+  SUPABASE_CLI_VERSION: '2.109.0'    # pinned; matches the version verified locally
+  STAGING_PROJECT_REF: gmqjhffdtsrpkwrygimz   # vjtk-staging, us-west-2
+  PROD_PROJECT_REF: aviyhrmjsqygoyzjprii      # prod, us-east-2
+
+# Serialize deploys per target so two overlapping runs can't race a `db push`.
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy-staging:
+    name: Deploy backend → staging
+    # Merges to main, or a manual dispatch that picked staging.
+    if: >-
+      github.ref == 'refs/heads/main' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'staging')
+    runs-on: ubuntu-latest
+    environment: staging
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: ${{ env.SUPABASE_CLI_VERSION }}
+
+      - name: Deploy Edge Functions
+        # --use-api bundles server-side (no Docker); matches the zero-import
+        # functions, which don't need local bundling.
+        run: |
+          supabase functions deploy ai-chat        --project-ref "$STAGING_PROJECT_REF" --use-api
+          supabase functions deploy delete-account --project-ref "$STAGING_PROJECT_REF" --use-api
+
+      - name: Push database migrations
+        # Idempotent: applies only migrations not yet in the remote history table.
+        # NOTE: if the cosmetic `pgdelta ... certificate` line ever exits non-zero
+        # here (it prints but the migration still applies), the next step is the
+        # real source of truth — make this step tolerant and gate on that instead.
+        run: supabase db push --db-url "${{ secrets.STAGING_DB_URL }}" --yes
+
+      - name: Verify remote migration history
+        run: supabase migration list --db-url "${{ secrets.STAGING_DB_URL }}"
+
+  deploy-production:
+    name: Deploy backend → production
+    # Release tags (v*), or a manual dispatch that picked production.
+    if: >-
+      startsWith(github.ref, 'refs/tags/v') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'production')
+    runs-on: ubuntu-latest
+    # The `production` environment carries the required-reviewer protection rule,
+    # so this job pauses for manual approval before any step runs.
+    environment: production
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: ${{ env.SUPABASE_CLI_VERSION }}
+
+      - name: Deploy Edge Functions
+        run: |
+          supabase functions deploy ai-chat        --project-ref "$PROD_PROJECT_REF" --use-api
+          supabase functions deploy delete-account --project-ref "$PROD_PROJECT_REF" --use-api
+
+      - name: Push database migrations
+        run: supabase db push --db-url "${{ secrets.PROD_DB_URL }}" --yes
+
+      - name: Verify remote migration history
+        run: supabase migration list --db-url "${{ secrets.PROD_DB_URL }}"

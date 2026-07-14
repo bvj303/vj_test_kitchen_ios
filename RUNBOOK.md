@@ -145,9 +145,31 @@ Crash reporting and structured logging live in `VJTestKitchen/Services/Observabi
 
 ---
 
-## Deploy
+## Continuous Deployment
 
-Deploys are currently **manual** (a pipeline for these is the planned CD phase — see `CLAUDE.md`).
+`.github/workflows/deploy.yml` deploys the **backend** (Edge Functions + DB migrations) from the pipeline, not a laptop. Both actions are idempotent, so re-runs are safe.
+
+| Target | Trigger | What deploys |
+|---|---|---|
+| **staging** (`gmqjhffdtsrpkwrygimz`) | **automatic** on every push/merge to `main` | `functions deploy ai-chat` + `delete-account`, then `db push` |
+| **production** (`aviyhrmjsqygoyzjprii`) | a **release tag** `v*` (or a manual `workflow_dispatch`), **gated** by the `production` Environment's required-reviewer rule | same two steps against prod |
+
+- **Ship a release to prod**: `git tag v1.3 && git push origin v1.3` → the run pauses on the `production` environment for a one-click approval, then deploys. Manual re-run: Actions → Deploy → *Run workflow* → pick `production`.
+- **Required GitHub secrets** (Settings → Secrets and variables → Actions):
+  | Secret | Value |
+  |---|---|
+  | `SUPABASE_ACCESS_TOKEN` | Personal access token (Dashboard → Account → Access Tokens) |
+  | `STAGING_DB_URL` | Full **session-pooler** URL incl. password (Dashboard → Connect → Session pooler). The direct `db.<ref>.supabase.co` host is IPv6-only; GitHub runners are IPv4, so CI must use the IPv4 pooler. |
+  | `PROD_DB_URL` | Same, for prod |
+
+  Project refs are non-secret and live as `env` in the workflow.
+- **One-time gate setup**: Settings → Environments → **New environment** `production` → add a **Required reviewers** protection rule (yourself). Without it, a tag push would deploy prod unattended. (A `staging` environment is referenced too, for deployment tracking — no protection rule needed there.)
+- The `pgdelta … certificate` line `db push` may print at the end is **cosmetic** (the migration still applies); the `Verify remote migration history` step (`migration list`) is the source of truth.
+- **Not yet automated**: the client (TestFlight / App Store) upload — see below.
+
+## Deploy (manual / local)
+
+The pipeline above is the normal path. Run these by hand only for a hotfix from a laptop or when reproducing a CD step locally.
 
 ### Backend (Supabase)
 
