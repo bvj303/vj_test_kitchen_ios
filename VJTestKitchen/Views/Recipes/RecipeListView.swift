@@ -95,7 +95,14 @@ struct RecipeListView: View {
             showingAddRecipe = true
         }
         .onChange(of: appCommands.searchRequests) { _, _ in
-            searchFieldFocused = true
+            // A tiny delay so this survives a concurrent tab switch/nav-stack
+            // pop (e.g. Home's search shortcut, which does both at once):
+            // setting @FocusState synchronously during that transition is a
+            // known SwiftUI race that can silently fail to raise the keyboard.
+            Task {
+                try? await Task.sleep(for: .milliseconds(300))
+                searchFieldFocused = true
+            }
         }
         .onChange(of: appCommands.refreshRequests) { _, _ in
             Task { await viewModel.load() }
