@@ -185,12 +185,17 @@ struct HomeView: View {
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            if let prepLabel = PrepTimeFormat.label(minutes: recipe.prepTime) {
-                Label(prepLabel, systemImage: "clock")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .labelStyle(.compact)
+            HStack(spacing: 12) {
+                if let prepLabel = PrepTimeFormat.label(minutes: recipe.prepTime) {
+                    Label(prepLabel, systemImage: "clock")
+                }
+                if let atkRating = recipe.atkRating {
+                    Label(String(format: "%.1f", atkRating), systemImage: "star.fill")
+                }
             }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .labelStyle(.compact)
         }
     }
 
