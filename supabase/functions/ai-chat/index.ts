@@ -43,10 +43,14 @@ Deno.serve(async (req: Request) => {
     );
   }
 
+  // Reads the modern APP_PUBLISHABLE_KEY (an explicit Edge Function
+  // secret) rather than the legacy auto-injected SUPABASE_ANON_KEY — see
+  // DECISIONS.md, 2026-07-14: that legacy key is a JWT signed by the
+  // project's legacy JWT secret, which was being retired.
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
+  const anonKey = Deno.env.get("APP_PUBLISHABLE_KEY");
   if (!supabaseUrl || !anonKey) {
-    console.error("SUPABASE_URL/SUPABASE_ANON_KEY are not set for this project.");
+    console.error("SUPABASE_URL/APP_PUBLISHABLE_KEY are not set for this project.");
     return Response.json({ error: "AI planning isn't configured yet." }, { status: 500 });
   }
 

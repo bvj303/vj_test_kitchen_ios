@@ -17,8 +17,8 @@ function assertEquals(actual: unknown, expected: unknown, message?: string) {
 
 const env = {
   supabaseUrl: "https://example.supabase.co",
-  anonKey: "anon-key",
-  serviceRoleKey: "service-role-key",
+  publishableKey: "publishable-key",
+  secretKey: "secret-key",
 };
 
 Deno.test("handleDeleteAccount rejects a request with no Authorization header", async () => {
@@ -74,5 +74,5 @@ Deno.test("handleDeleteAccount deletes the caller's own user id via the Admin AP
   const adminCall = calls.find((c) => c.url.includes("/auth/v1/admin/users/"));
   assertEquals(adminCall?.url, "https://example.supabase.co/auth/v1/admin/users/user-123");
   assertEquals(adminCall?.init?.method, "DELETE");
-  assertEquals((adminCall?.init?.headers as Record<string, string>)?.Authorization, "Bearer service-role-key");
+  assertEquals((adminCall?.init?.headers as Record<string, string>)?.Authorization, "Bearer secret-key");
 });
