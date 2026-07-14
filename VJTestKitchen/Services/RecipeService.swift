@@ -66,8 +66,8 @@ struct RecipeService: RecipeServicing {
         // the extra `recipe_tags` key that the embed adds to each row.
         let hasTag = tag?.isEmpty == false
         let columns = hasTag
-            ? "id,title,image_path,image_url,prep_time,servings,created_at,recipe_tags!inner(tags!inner(name))"
-            : "id,title,image_path,image_url,prep_time,servings,created_at"
+            ? "id,title,image_path,image_url,prep_time,servings,created_at,atk_rating,recipe_tags!inner(tags!inner(name))"
+            : "id,title,image_path,image_url,prep_time,servings,created_at,atk_rating"
 
         var query = client
             .from("recipes")
@@ -119,7 +119,7 @@ struct RecipeService: RecipeServicing {
         guard !ids.isEmpty else { return [] }
         return try await client
             .from("recipes")
-            .select("id,title,image_path,image_url,prep_time,servings,created_at")
+            .select("id,title,image_path,image_url,prep_time,servings,created_at,atk_rating")
             .in("id", values: ids.map(String.init))
             .order("id")
             .execute()
