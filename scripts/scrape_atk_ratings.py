@@ -217,24 +217,47 @@ def sql_str(value) -> str:
     return "'" + text.replace("'", "''") + "'"
 
 
-def build_apply_sql(entries: list[dict]) -> str:
+def build_apply_sql(entries: list[dict], batch_size: int = 0) -> str:
     """UPDATEs matched by title, same non-destructive convention as
     import_atk_recipes.py's build_backfill_image_url_sql: only touches
-    unowned catalog rows, only when a rating was actually found."""
-    parts = ["BEGIN;"]
+    unowned catalog rows, only when a rating was actually found.
+
+    With `batch_size == 0` this is one big `BEGIN … COMMIT` (all-or-nothing).
+    With `batch_size > 0` the statements are split into per-transaction
+    batches that each commit independently — required over the Supabase
+    session pooler, where a single ~14.6K-statement transaction is too slow
+    to finish before the connection is killed and the whole thing rolls back
+    (see import_atk_recipes.py's build_sql for the same fix at import time).
+    """
+    statements = []
     for entry in entries:
         title = (entry.get("title") or "").strip()
         rating = entry.get("atk_rating")
         if not title or rating is None:
             continue
+        # ATK's own JSON-LD occasionally reports a ratingValue outside the
+        # 0-5 star scale it otherwise uses everywhere (observed: 5.5 and 6.5
+        # on a couple of recipes, each with only a handful of reviews) — a
+        # genuine data quality issue on their end, not a parsing bug here.
+        # Skip rather than write something that'd render as "6.5" next to a
+        # single-star icon.
+        if not (0 <= rating <= 5):
+            continue
         count = entry.get("atk_rating_count")
-        parts.append(
+        statements.append(
             f"UPDATE recipes SET atk_rating = {rating}, atk_rating_count = "
             f"{count if count is not None else 'NULL'} "
             f"WHERE title = {sql_str(title)} AND user_id IS NULL;"
         )
-    parts.append("COMMIT;")
-    return "\n".join(parts) + "\n"
+
+    step = batch_size if batch_size > 0 else len(statements) or 1
+    blocks = []
+    for i in range(0, len(statements), step):
+        chunk = statements[i : i + step]
+        blocks.append("BEGIN;\n" + "\n".join(chunk) + "\nCOMMIT;")
+    if not blocks:
+        blocks.append("BEGIN;\nCOMMIT;")
+    return "\n\n".join(blocks) + "\n"
 
 
 def cmd_apply(args: argparse.Namespace) -> int:
@@ -245,7 +268,7 @@ def cmd_apply(args: argparse.Namespace) -> int:
         entries = json.load(fh)
 
     rated = [e for e in entries if e.get("atk_rating") is not None]
-    sql = build_apply_sql(entries)
+    sql = build_apply_sql(entries, batch_size=args.batch_size)
     print(f"Prepared to apply ratings for {len(rated)}/{len(entries)} recipes.", file=sys.stderr)
 
     if args.dry_run:
@@ -285,6 +308,9 @@ def main() -> int:
     apply_parser = subparsers.add_parser("apply", help="Apply a ratings checkpoint to the recipes table")
     apply_parser.add_argument("--json", type=Path, default=DEFAULT_RATINGS_JSON, help="Path to the ratings checkpoint JSON file")
     apply_parser.add_argument("--db-url", default=DEFAULT_DB_URL, help="Postgres connection string")
+    apply_parser.add_argument("--batch-size", type=int, default=0,
+                               help="Commit every N UPDATEs in their own transaction (0 = one big transaction). "
+                                    "Use for a remote apply over the pooler, where a single huge transaction is too slow to finish.")
     apply_parser.add_argument("--dry-run", action="store_true", help="Print SQL instead of running it")
     apply_parser.set_defaults(func=cmd_apply)
 
