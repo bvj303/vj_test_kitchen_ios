@@ -6,7 +6,7 @@ final class FakeRecipeDetailService: RecipeServicing, @unchecked Sendable {
     var detailToReturn: RecipeDetail!
     var errorToThrow: Error?
 
-    func fetchPage(offset: Int, limit: Int, matching search: String?, tag: String?, minPrepTime: Int?, maxPrepTime: Int?) async throws -> [Recipe] {
+    func fetchPage(offset: Int, limit: Int, matching search: String?, tag: String?, minPrepTime: Int?, maxPrepTime: Int?, minAtkRating: Double?) async throws -> [Recipe] {
         fatalError("not used by RecipeDetailViewModelTests")
     }
 

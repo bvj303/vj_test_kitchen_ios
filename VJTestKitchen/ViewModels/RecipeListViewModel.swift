@@ -27,6 +27,14 @@ final class RecipeListViewModel {
             debouncer.run { [weak self] in await self?.reload() }
         }
     }
+    /// Minimum ATK rating filter — nil means "any". Decomposes to a `gte`
+    /// lower bound when querying (see `MinRatingFilter`).
+    var minRatingFilter: MinRatingFilter? {
+        didSet {
+            guard oldValue != minRatingFilter else { return }
+            debouncer.run { [weak self] in await self?.reload() }
+        }
+    }
     /// When on, the list shows only the user's favorited recipes (resolved by id
     /// then fetched), narrowed by the search text but not paginated.
     var showFavoritesOnly = false {
@@ -61,7 +69,7 @@ final class RecipeListViewModel {
     }
 
     var hasActiveFilters: Bool {
-        selectedTag != nil || prepTimeFilter != nil || showFavoritesOnly
+        selectedTag != nil || prepTimeFilter != nil || minRatingFilter != nil || showFavoritesOnly
     }
 
     /// True when the current empty list is the result of a search/filter (vs an
@@ -124,6 +132,7 @@ final class RecipeListViewModel {
         // debouncer coalesces the changes into a single reload.
         selectedTag = nil
         prepTimeFilter = nil
+        minRatingFilter = nil
         showFavoritesOnly = false
     }
 
@@ -187,7 +196,8 @@ final class RecipeListViewModel {
             let page = try await recipeService.fetchPage(
                 offset: 0, limit: Self.pageSize,
                 matching: normalizedSearch, tag: selectedTag,
-                minPrepTime: prepTimeFilter?.minMinutes, maxPrepTime: prepTimeFilter?.maxMinutes
+                minPrepTime: prepTimeFilter?.minMinutes, maxPrepTime: prepTimeFilter?.maxMinutes,
+                minAtkRating: minRatingFilter?.minRating
             )
             guard generation == loadGeneration else { return }
             items = page
@@ -218,7 +228,8 @@ final class RecipeListViewModel {
             let page = try await recipeService.fetchPage(
                 offset: items.count, limit: Self.pageSize,
                 matching: normalizedSearch, tag: selectedTag,
-                minPrepTime: prepTimeFilter?.minMinutes, maxPrepTime: prepTimeFilter?.maxMinutes
+                minPrepTime: prepTimeFilter?.minMinutes, maxPrepTime: prepTimeFilter?.maxMinutes,
+                minAtkRating: minRatingFilter?.minRating
             )
             // A reload superseded this page while it was in flight — its rows
             // belong to the previous search/filter state, so drop them.
