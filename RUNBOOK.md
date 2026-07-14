@@ -151,7 +151,7 @@ Deploys are currently **manual** (a pipeline for these is the planned CD phase �
 
 ### Backend (Supabase)
 
-> **Pending push**: the `client_logs` observability migration (`20260714010000`) is verified locally but **not yet pushed** to staging or prod. Push it (staging first) before shipping a client build that expects remote error logs — until then `RemoteLogSink` no-ops silently.
+> **`client_logs` (`20260714010000`)** has been pushed to **both prod and staging** (2026-07-14) and verified live. Note: applying it revealed staging was actually **empty** (its earlier "activation" never took effect), so the same push brought staging to full schema parity with prod — all 15 migrations now recorded there.
 
 ```bash
 # Database migrations → prod (gated; confirm before pushing to prod)
