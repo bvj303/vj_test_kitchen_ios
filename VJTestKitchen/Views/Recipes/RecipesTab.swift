@@ -4,6 +4,7 @@ import SwiftUI
 /// other four tabs don't have that shape, so they stay plain NavigationStacks.
 struct RecipesTab: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(AppCommands.self) private var appCommands
     @State private var selectedRecipe: Recipe?
     @State private var path = NavigationPath()
     // Bumped after a delete to re-run the list's load, so the removed recipe
@@ -56,6 +57,14 @@ struct RecipesTab: View {
                         RecipeDetailView(recipeId: recipe.id, onDeleted: handleRecipeDeleted)
                     }
                     .toolbar { accountToolbarItem }
+            }
+            // A search request (Home's search shortcut, ⌘F) should land on the
+            // list's search field — pop back to root first, since the tab
+            // switch alone doesn't clear whatever detail screen was pushed on a
+            // previous visit, and a focus request on a search field buried
+            // under that pushed detail has nothing visible to land on.
+            .onChange(of: appCommands.searchRequests) { _, _ in
+                path = NavigationPath()
             }
         }
     }

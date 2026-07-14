@@ -3,14 +3,15 @@ import Supabase
 
 protocol RecipeServicing: Sendable {
     /// Fetches one page of the recipe list (`id` order), optionally narrowed by
-    /// a title substring match, a tag name, and/or a prep-time range
-    /// (`minPrepTime`/`maxPrepTime`, either bound optional — e.g. only `max` for
-    /// "30 min or less", only `min` for "Long Cooks"). Selects only
-    /// list-relevant columns — `RecipeDetailView` re-fetches full detail via
+    /// a title substring match, a tag name, a prep-time range (`minPrepTime`/
+    /// `maxPrepTime`, either bound optional — e.g. only `max` for "30 min or
+    /// less", only `min` for "Long Cooks"), and/or a minimum ATK rating
+    /// (`minAtkRating`, e.g. 4.5 for "4.5+ Stars"). Selects only list-relevant
+    /// columns — `RecipeDetailView` re-fetches full detail via
     /// `fetchDetail(id:)`, so the list never needs to pull `description`/
     /// `instructions` for every row. All filters are applied server-side so the
     /// list stays paginated and scalable at 15K+ rows.
-    func fetchPage(offset: Int, limit: Int, matching search: String?, tag: String?, minPrepTime: Int?, maxPrepTime: Int?) async throws -> [Recipe]
+    func fetchPage(offset: Int, limit: Int, matching search: String?, tag: String?, minPrepTime: Int?, maxPrepTime: Int?, minAtkRating: Double?) async throws -> [Recipe]
     /// Total number of recipes in the catalog, for the Home tab's stat tile. A
     /// HEAD request with an exact count — no rows transferred. Defaulted in the
     /// protocol extension so existing test fakes don't have to implement it.
@@ -32,13 +33,13 @@ extension RecipeServicing {
     /// the Calendar Quick Planner), so they don't spell out the tag/prep-time
     /// filters the Recipes list uses.
     func fetchPage(offset: Int, limit: Int, matching search: String?) async throws -> [Recipe] {
-        try await fetchPage(offset: offset, limit: limit, matching: search, tag: nil, minPrepTime: nil, maxPrepTime: nil)
+        try await fetchPage(offset: offset, limit: limit, matching: search, tag: nil, minPrepTime: nil, maxPrepTime: nil, minAtkRating: nil)
     }
 
     /// Back-compat convenience for callers that only bound prep time from above
     /// (e.g. the Home tab's weeknight suggestions) — forwards with no lower bound.
     func fetchPage(offset: Int, limit: Int, matching search: String?, tag: String?, maxPrepTime: Int?) async throws -> [Recipe] {
-        try await fetchPage(offset: offset, limit: limit, matching: search, tag: tag, minPrepTime: nil, maxPrepTime: maxPrepTime)
+        try await fetchPage(offset: offset, limit: limit, matching: search, tag: tag, minPrepTime: nil, maxPrepTime: maxPrepTime, minAtkRating: nil)
     }
 
     /// Default so existing conformers (test fakes) needn't implement counting;
@@ -60,7 +61,7 @@ struct RecipeService: RecipeServicing {
         self.client = client
     }
 
-    func fetchPage(offset: Int, limit: Int, matching search: String?, tag: String?, minPrepTime: Int?, maxPrepTime: Int?) async throws -> [Recipe] {
+    func fetchPage(offset: Int, limit: Int, matching search: String?, tag: String?, minPrepTime: Int?, maxPrepTime: Int?, minAtkRating: Double?) async throws -> [Recipe] {
         // A tag filter needs an inner join to `recipe_tags`/`tags`; only pay for
         // the embed when a tag is actually selected. Recipe's Codable ignores
         // the extra `recipe_tags` key that the embed adds to each row.
@@ -86,6 +87,9 @@ struct RecipeService: RecipeServicing {
         }
         if let maxPrepTime {
             query = query.lte("prep_time", value: String(maxPrepTime))
+        }
+        if let minAtkRating {
+            query = query.gte("atk_rating", value: String(minAtkRating))
         }
 
         return try await query

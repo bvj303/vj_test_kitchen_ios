@@ -44,7 +44,7 @@ final class FakeMealPlanRecipeService: RecipeServicing {
     var recipesToReturn: [Recipe] = []
     private(set) var fetchedPages: [(offset: Int, limit: Int, search: String?)] = []
 
-    func fetchPage(offset: Int, limit: Int, matching search: String?, tag: String?, minPrepTime: Int?, maxPrepTime: Int?) async throws -> [Recipe] {
+    func fetchPage(offset: Int, limit: Int, matching search: String?, tag: String?, minPrepTime: Int?, maxPrepTime: Int?, minAtkRating: Double?) async throws -> [Recipe] {
         fetchedPages.append((offset, limit, search))
         let filtered = search.map { term in
             recipesToReturn.filter { $0.title.localizedCaseInsensitiveContains(term) }
