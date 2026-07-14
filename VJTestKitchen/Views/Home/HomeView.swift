@@ -20,6 +20,7 @@ struct HomeView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: isRegular ? 28 : 24) {
+                searchShortcut
                 suggestionHeader
                 suggestedGrid
             }
@@ -78,6 +79,32 @@ struct HomeView: View {
         } message: {
             Text(viewModel.errorMessage ?? "")
         }
+    }
+
+    // MARK: - Search shortcut
+
+    /// A tappable stand-in for the real search field — styled the same as
+    /// `RecipeListView`'s search bar (glass capsule, magnifying glass,
+    /// placeholder text) but non-editable here. Tapping it jumps straight to
+    /// the Recipes tab with its search field focused, reusing the same
+    /// `AppCommands.requestSearch()` plumbing the ⌘F shortcut already drives.
+    private var searchShortcut: some View {
+        Button {
+            appCommands.requestSearch()
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                Text("Search recipes")
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .glassEffect(.regular, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Search Recipes")
     }
 
     // MARK: - Suggestion header

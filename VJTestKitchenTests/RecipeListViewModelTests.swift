@@ -6,10 +6,10 @@ final class FakeRecipeService: RecipeServicing, @unchecked Sendable {
     var recipesToReturn: [Recipe] = []
     var errorToThrow: Error?
     private(set) var deletedIds: [Int64] = []
-    private(set) var fetchedPages: [(offset: Int, limit: Int, search: String?, tag: String?, minPrepTime: Int?, maxPrepTime: Int?)] = []
+    private(set) var fetchedPages: [(offset: Int, limit: Int, search: String?, tag: String?, minPrepTime: Int?, maxPrepTime: Int?, minAtkRating: Double?)] = []
 
-    func fetchPage(offset: Int, limit: Int, matching search: String?, tag: String?, minPrepTime: Int?, maxPrepTime: Int?) async throws -> [Recipe] {
-        fetchedPages.append((offset, limit, search, tag, minPrepTime, maxPrepTime))
+    func fetchPage(offset: Int, limit: Int, matching search: String?, tag: String?, minPrepTime: Int?, maxPrepTime: Int?, minAtkRating: Double?) async throws -> [Recipe] {
+        fetchedPages.append((offset, limit, search, tag, minPrepTime, maxPrepTime, minAtkRating))
         if let errorToThrow { throw errorToThrow }
         var filtered = search.map { term in
             recipesToReturn.filter { $0.title.localizedCaseInsensitiveContains(term) }
@@ -19,6 +19,9 @@ final class FakeRecipeService: RecipeServicing, @unchecked Sendable {
         }
         if let maxPrepTime {
             filtered = filtered.filter { ($0.prepTime ?? .max) <= maxPrepTime }
+        }
+        if let minAtkRating {
+            filtered = filtered.filter { ($0.atkRating ?? -1) >= minAtkRating }
         }
         let start = min(offset, filtered.count)
         let end = min(offset + limit, filtered.count)
@@ -48,8 +51,8 @@ final class FakeRecipeService: RecipeServicing, @unchecked Sendable {
     }
 }
 
-private func makeRecipe(id: Int64, title: String, prepTime: Int? = 20) -> Recipe {
-    Recipe(id: id, userId: nil, title: title, description: nil, instructions: nil, imagePath: nil, prepTime: prepTime, servings: 2, createdAt: Date())
+private func makeRecipe(id: Int64, title: String, prepTime: Int? = 20, atkRating: Double? = nil) -> Recipe {
+    Recipe(id: id, userId: nil, title: title, description: nil, instructions: nil, imagePath: nil, prepTime: prepTime, servings: 2, createdAt: Date(), atkRating: atkRating)
 }
 
 private struct TestError: Error, LocalizedError {
@@ -200,6 +203,24 @@ struct RecipeListViewModelTests {
         #expect(viewModel.items.map(\.title) == ["Overnight Brisket"])
     }
 
+    @Test func minRatingFilterNarrowsResultsAndIsPassedToServer() async {
+        let fake = FakeRecipeService()
+        fake.recipesToReturn = [
+            makeRecipe(id: 1, title: "Perfect Chocolate Chip Cookies", atkRating: 4.57),
+            makeRecipe(id: 2, title: "Untested Recipe", atkRating: nil),
+            makeRecipe(id: 3, title: "Mediocre Meatloaf", atkRating: 3.2)
+        ]
+        let viewModel = RecipeListViewModel(recipeService: fake, tagService: FakeTagService(), snapshotStore: FakeSnapshotStore(), debounceDelay: .zero)
+        await viewModel.load()
+
+        viewModel.minRatingFilter = .four
+        try? await Task.sleep(for: .milliseconds(50))
+
+        #expect(fake.fetchedPages.last?.minAtkRating == 4.0)
+        #expect(viewModel.items.map(\.title) == ["Perfect Chocolate Chip Cookies"])
+        #expect(viewModel.hasActiveFilters)
+    }
+
     @Test func clearFiltersResetsTagAndPrepTimeAndReloads() async {
         let fake = FakeRecipeService()
         fake.recipesToReturn = [makeRecipe(id: 1, title: "Carbonara")]
@@ -207,6 +228,7 @@ struct RecipeListViewModelTests {
         await viewModel.load()
         viewModel.selectedTag = "Italian"
         viewModel.prepTimeFilter = .under30
+        viewModel.minRatingFilter = .four
         try? await Task.sleep(for: .milliseconds(50))
         #expect(viewModel.hasActiveFilters)
 
@@ -216,7 +238,9 @@ struct RecipeListViewModelTests {
         #expect(!viewModel.hasActiveFilters)
         #expect(viewModel.selectedTag == nil)
         #expect(viewModel.prepTimeFilter == nil)
+        #expect(viewModel.minRatingFilter == nil)
         #expect(fake.fetchedPages.last?.tag == nil)
+        #expect(fake.fetchedPages.last?.minAtkRating == nil)
         #expect(fake.fetchedPages.last?.maxPrepTime == nil)
     }
 
@@ -401,7 +425,7 @@ final class GatedRecipeService: RecipeServicing {
     private var gateContinuation: CheckedContinuation<Void, Never>?
     private var suspendedContinuation: CheckedContinuation<Void, Never>?
 
-    func fetchPage(offset: Int, limit: Int, matching search: String?, tag: String?, minPrepTime: Int?, maxPrepTime: Int?) async throws -> [Recipe] {
+    func fetchPage(offset: Int, limit: Int, matching search: String?, tag: String?, minPrepTime: Int?, maxPrepTime: Int?, minAtkRating: Double?) async throws -> [Recipe] {
         fetchCallCount += 1
         if gateNextFetch {
             gateNextFetch = false
@@ -444,7 +468,7 @@ final class GatedRecipeService: RecipeServicing {
 /// *overlap* the first page's tail — simulating offsets shifting under the
 /// paginator (an upstream insert/delete between page fetches).
 final class OverlappingPageRecipeService: RecipeServicing, @unchecked Sendable {
-    func fetchPage(offset: Int, limit: Int, matching search: String?, tag: String?, minPrepTime: Int?, maxPrepTime: Int?) async throws -> [Recipe] {
+    func fetchPage(offset: Int, limit: Int, matching search: String?, tag: String?, minPrepTime: Int?, maxPrepTime: Int?, minAtkRating: Double?) async throws -> [Recipe] {
         let startId = offset == 0 ? 1 : offset - 9  // second page re-serves ids 41…
         return (0..<limit).map { i in
             Recipe(id: Int64(startId + i), userId: nil, title: "Recipe \(startId + i)", description: nil, instructions: nil, imagePath: nil, prepTime: 20, servings: 2, createdAt: Date())
