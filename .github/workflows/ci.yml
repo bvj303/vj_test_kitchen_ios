@@ -55,7 +55,10 @@ jobs:
         # from the newest available iOS runtime + any iPhone device type.
         run: |
           RUNTIME=$(xcrun simctl list runtimes -j | python3 -c "import json,sys; r=[x['identifier'] for x in json.load(sys.stdin)['runtimes'] if x.get('isAvailable') and x.get('platform')=='iOS']; print(r[-1] if r else '')")
-          DEVTYPE=$(xcrun simctl list devicetypes -j | python3 -c "import json,sys; d=[x['identifier'] for x in json.load(sys.stdin)['devicetypes'] if 'iPhone' in x['name']]; print(d[-1] if d else '')")
+          # Pick the HIGHEST-numbered iPhone (e.g. iPhone 17) — the devicetypes list
+          # is not ordered newest-last (it ends on old models like iPhone 6s Plus,
+          # which are incompatible with an iOS 26 runtime).
+          DEVTYPE=$(xcrun simctl list devicetypes -j | python3 -c "import json,sys,re; c=[(int(re.search(r'(\d+)',x['name']).group(1)),x['identifier']) for x in json.load(sys.stdin)['devicetypes'] if 'iPhone' in x['name'] and re.search(r'\d',x['name'])]; c.sort(); print(c[-1][1] if c else '')")
           if [ -z "$RUNTIME" ] || [ -z "$DEVTYPE" ]; then echo 'No iOS runtime / iPhone device type available'; xcrun simctl list runtimes; exit 1; fi
           echo "Runtime=$RUNTIME  DeviceType=$DEVTYPE"
           UDID=$(xcrun simctl create ci-iphone "$DEVTYPE" "$RUNTIME")
