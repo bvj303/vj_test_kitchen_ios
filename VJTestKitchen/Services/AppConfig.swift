@@ -21,4 +21,22 @@ enum AppConfig {
 
     static var supabaseURL: URL { supabaseURL(bundle: .main) }
     static var supabaseAnonKey: String { supabaseAnonKey(bundle: .main) }
+
+    /// Non-fatal presence check for the Supabase config. Unlike the accessors
+    /// above (which `fatalError` when the keys are missing), this just reports
+    /// whether they're present. Lets best-effort infrastructure — notably the
+    /// remote log sink — no-op cleanly in contexts without the app's Info.plist
+    /// (the unhosted unit-test process, whose `Bundle.main` is the test bundle)
+    /// instead of crashing.
+    static func isConfigured(bundle: Bundle = .main) -> Bool {
+        guard let urlString = bundle.object(forInfoDictionaryKey: "SUPABASE_URL") as? String,
+              URL(string: urlString) != nil,
+              let key = bundle.object(forInfoDictionaryKey: "SUPABASE_ANON_KEY") as? String,
+              !key.isEmpty else {
+            return false
+        }
+        return true
+    }
+
+    static var isConfigured: Bool { isConfigured(bundle: .main) }
 }
