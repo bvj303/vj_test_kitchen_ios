@@ -123,11 +123,35 @@ Two Supabase projects: **prod** (ships to TestFlight/App Store) and **staging** 
 
 ---
 
+## Observability
+
+Crash reporting and structured logging live in `VJTestKitchen/Services/Observability/`.
+
+- **Logging**: use `AppLogger.shared` — `.debug/.info/.notice/.warning/.error/.fault(_, category:, metadata:)`. Everything goes to `os.Logger` (subsystem = bundle id, category = the `category:` you pass), so it's retrievable without a debugger:
+  ```bash
+  # Live stream (iOS Simulator or a booted device), filtered to this app:
+  xcrun simctl spawn booted log stream --level debug \
+    --predicate 'subsystem == "com.bvj303.vjtestkitchen"'
+  # macOS: same, without simctl —
+  log stream --level debug --predicate 'subsystem == "com.bvj303.vjtestkitchen"'
+  ```
+- **Remote error logs**: `.error`/`.fault` events are also inserted into the private `client_logs` Supabase table (per-user, RLS-enforced) via `RemoteLogSink`. Query a user's recent errors from the SQL editor / psql:
+  ```sql
+  select created_at, level, category, message, metadata, platform, app_version
+  from public.client_logs order by created_at desc limit 50;
+  ```
+  Best-effort by design: it silently no-ops when signed out or when Supabase isn't configured, and never throws. **Requires the `client_logs` migration to be applied to the target project** (see the push note under Deploy) — until then remote logging is a no-op.
+- **Crashes/hangs**: `CrashReporter` (MetricKit) is started in `VJTestKitchenApp.init`. MetricKit **batches** diagnostics and delivers them on a *later* launch (a crash can arrive up to ~24h afterward), where they're logged at `.fault`/`.error` and persisted like any other error event — so it's after-the-fact diagnostics, not live alerting. To force a delivery while testing on a device: Settings → Developer → (MetricKit) or wait for the next-day cycle; the Simulator does not deliver real crash payloads.
+
+---
+
 ## Deploy
 
 Deploys are currently **manual** (a pipeline for these is the planned CD phase — see `CLAUDE.md`).
 
 ### Backend (Supabase)
+
+> **Pending push**: the `client_logs` observability migration (`20260714010000`) is verified locally but **not yet pushed** to staging or prod. Push it (staging first) before shipping a client build that expects remote error logs — until then `RemoteLogSink` no-ops silently.
 
 ```bash
 # Database migrations → prod (gated; confirm before pushing to prod)
