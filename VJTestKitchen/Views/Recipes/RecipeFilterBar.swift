@@ -31,6 +31,7 @@ struct RecipeFilterBar: View {
         var n = 0
         if viewModel.showFavoritesOnly { n += 1 }
         if viewModel.prepTimeFilter != nil { n += 1 }
+        if viewModel.minRatingFilter != nil { n += 1 }
         if viewModel.selectedTag != nil { n += 1 }
         return n
     }
@@ -47,6 +48,13 @@ struct RecipeFilterBar: View {
                 Text("Any Time").tag(PrepTimeFilter?.none)
                 ForEach(PrepTimeFilter.allCases) { option in
                     Text(option.label).tag(PrepTimeFilter?.some(option))
+                }
+            }
+
+            Picker("Minimum Rating", selection: $viewModel.minRatingFilter) {
+                Text("Any Rating").tag(MinRatingFilter?.none)
+                ForEach(MinRatingFilter.allCases) { option in
+                    Text(option.label).tag(MinRatingFilter?.some(option))
                 }
             }
 
@@ -108,6 +116,11 @@ struct RecipeFilterBar: View {
         if let prep = viewModel.prepTimeFilter {
             removablePill(prep.chipLabel, systemImage: "clock", tint: .brandPrimary) {
                 viewModel.prepTimeFilter = nil
+            }
+        }
+        if let minRating = viewModel.minRatingFilter {
+            removablePill(minRating.chipLabel, systemImage: "star.fill", tint: .brandSaffron) {
+                viewModel.minRatingFilter = nil
             }
         }
         if let tag = viewModel.selectedTag {
