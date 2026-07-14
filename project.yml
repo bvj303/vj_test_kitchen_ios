@@ -6,6 +6,12 @@ options:
     macOS: "26.0"
   developmentLanguage: en
 
+# Both configs currently read the single (prod) Secrets.xcconfig. Once a
+# separate STAGING Supabase project exists, flip Debug to
+# Config/Secrets.staging.xcconfig so dev/simulator builds hit staging while
+# Release keeps shipping prod — see Config/Secrets.staging.xcconfig.example for
+# the exact activation steps. (Kept on prod until the staging file exists so a
+# missing-file error can't break local/CI builds.)
 configFiles:
   Debug: Config/Secrets.xcconfig
   Release: Config/Secrets.xcconfig

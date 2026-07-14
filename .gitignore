@@ -1,9 +1,10 @@
 .DS_Store
 
-# Secrets — never commit real values, only Config/Secrets.xcconfig.example is tracked
+# Secrets — never commit real values, only the *.example templates are tracked
 .env
 .env.*
 Config/Secrets.xcconfig
+Config/Secrets.staging.xcconfig
 
 # Xcode
 #
