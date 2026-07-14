@@ -28,6 +28,12 @@ struct VJTestKitchenApp: App {
             diskCapacity: 256 * 1024 * 1024,    // 256 MB
             diskPath: "vjtk_image_cache"
         )
+
+        // Observability: subscribe to MetricKit so crash/hang diagnostics from a
+        // prior run are logged and persisted on this launch, and record the
+        // launch itself as a breadcrumb.
+        CrashReporter.shared.start()
+        AppLogger.shared.info("App launched", category: "lifecycle")
     }
 
     var body: some Scene {

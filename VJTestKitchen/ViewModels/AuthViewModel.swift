@@ -81,6 +81,7 @@ final class AuthViewModel {
     private let authService: AuthServicing
     private let profileService: ProfileServicing
     private let snapshotStore: LocalSnapshotStoring
+    private let logger: AppLogger
     private let usernameDebouncer: Debouncer
     private let launchFallbackDelay: Duration
     // deinit is always non-isolated (even in a @MainActor class), and
@@ -99,12 +100,14 @@ final class AuthViewModel {
         authService: AuthServicing = AuthService(),
         profileService: ProfileServicing = ProfileService(),
         snapshotStore: LocalSnapshotStoring = FileSnapshotStore.shared,
+        logger: AppLogger = .shared,
         usernameDebounceDelay: Duration = .milliseconds(300),
         launchFallbackDelay: Duration = AuthViewModel.defaultLaunchFallbackDelay
     ) {
         self.authService = authService
         self.profileService = profileService
         self.snapshotStore = snapshotStore
+        self.logger = logger
         self.usernameDebouncer = Debouncer(delay: usernameDebounceDelay)
         self.launchFallbackDelay = launchFallbackDelay
         observationTask = Task { [weak self] in
@@ -172,6 +175,7 @@ final class AuthViewModel {
             // not required, the auth-state stream drives the transition as before.
             awaitingEmailConfirmation = needsConfirmation
         } catch {
+            logger.error("Sign-up failed", category: "auth", error: error)
             errorMessage = ErrorPresenter.message(for: error)
         }
     }
@@ -181,6 +185,11 @@ final class AuthViewModel {
             let available = try await profileService.isUsernameAvailable(username)
             usernameAvailability = available ? .available : .taken
         } catch {
+            // Not surfaced as an alert (it's a background check), so log it —
+            // otherwise a persistently failing availability check is invisible.
+            logger.warning("Username availability check failed", category: "auth", metadata: [
+                "errorType": String(describing: type(of: error)),
+            ])
             usernameAvailability = .unknown
         }
     }
@@ -207,7 +216,16 @@ final class AuthViewModel {
     /// this is background housekeeping, not a user action, so it must never
     /// surface an error or disturb the current auth state.
     func warmUpSession() async {
-        try? await authService.warmUpSession()
+        do {
+            try await authService.warmUpSession()
+        } catch {
+            // Background housekeeping — never surfaced to the user, so a
+            // persistent failure (e.g. the AI Planner's cold-launch token bug
+            // this guards against) would otherwise be completely invisible.
+            logger.warning("Session warm-up failed", category: "auth", metadata: [
+                "errorType": String(describing: type(of: error)),
+            ])
+        }
     }
 
     /// Handles an auth deep link opened from an email (the sign-up confirmation
@@ -220,7 +238,11 @@ final class AuthViewModel {
             try await authService.handleAuthCallback(url: url)
             awaitingEmailConfirmation = false
         } catch {
-            // Intentionally silent — see doc comment.
+            // Intentionally silent to the user (see doc comment), but logged so
+            // a genuinely broken confirmation link isn't invisible to us.
+            logger.notice("Auth callback did not complete a session", category: "auth", metadata: [
+                "errorType": String(describing: type(of: error)),
+            ])
         }
     }
 
@@ -239,6 +261,7 @@ final class AuthViewModel {
         do {
             try await operation()
         } catch {
+            logger.error("Auth operation failed", category: "auth", error: error)
             errorMessage = ErrorPresenter.message(for: error)
         }
     }
