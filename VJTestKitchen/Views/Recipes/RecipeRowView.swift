@@ -31,6 +31,9 @@ struct RecipeRowView: View {
                     if let servings = recipe.servings {
                         Label("\(servings)", systemImage: "person.2")
                     }
+                    if let atkRating = recipe.atkRating {
+                        Label(String(format: "%.1f", atkRating), systemImage: "star.fill")
+                    }
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)

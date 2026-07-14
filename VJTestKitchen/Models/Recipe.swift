@@ -11,6 +11,9 @@ struct Recipe: Codable, Identifiable, Sendable, Hashable {
     var prepTime: Int?
     var servings: Int?
     let createdAt: Date
+    /// America's Test Kitchen's own average rating (0–5) — see `RecipeDetail`
+    /// for the matching `atkRatingCount`, which the list row doesn't need.
+    var atkRating: Double? = nil
 }
 
 /// Payload for creating a recipe — no `id`/`createdAt`, both server-assigned.
