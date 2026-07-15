@@ -194,7 +194,30 @@ supabase functions deploy delete-account
 
 ### Client (TestFlight / App Store)
 
-Distribution signing (Mac App Store / Developer ID / App Store Connect) is not yet automated. For local device builds and the current signing setup, see `CLAUDE.md` and the device-signing notes. Archive the `VJTestKitchen` scheme (Release → prod) and upload via Xcode Organizer / `xcodebuild archive` + `xcrun altool`/`notarytool` when that step is set up.
+The iOS TestFlight upload is scripted — no interactive Xcode Organizer dance. `scripts/deploy-testflight.sh` archives the `VJTestKitchen` scheme (Release), exports a distribution-signed `.ipa`, and uploads it to App Store Connect, authenticating headlessly with an **App Store Connect API key** (so it runs the same from a laptop, CI, or a background job — no Apple ID login / 2FA prompt).
+
+**One-time: create the API key.** App Store Connect → Users and Access → Integrations → App Store Connect API → generate a key with the **App Manager** role → download `AuthKey_XXXX.p8` (downloadable only once) → note the **Key ID** and **Issuer ID**.
+
+**Provide the credentials** (true secrets — never commit; put them in the gitignored repo-root `.env` or export them / set them as CI secrets):
+
+```bash
+ASC_KEY_ID=XXXXXXXXXX
+ASC_ISSUER_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+ASC_KEY_PATH=/absolute/path/to/AuthKey_XXXXXXXXXX.p8
+```
+
+**Run:**
+
+```bash
+scripts/deploy-testflight.sh --check       # validate prerequisites only (no build)
+scripts/deploy-testflight.sh               # bump build number, archive, export, upload
+scripts/deploy-testflight.sh --no-upload   # archive + export .ipa only (no creds needed)
+scripts/deploy-testflight.sh --build-number 42   # explicit build number (e.g. a CI run #)
+```
+
+The script auto-bumps `CFBundleVersion` across all three versioned plists (iOS app, macOS app, **and the embedded widget** — which must match the host app or the upload is rejected) via `scripts/set-version.sh`; TestFlight rejects a re-used build number. **Commit the bumped plists after a successful upload** so the next build starts from a fresh number. Signing is automatic — `-allowProvisioningUpdates` + the API key mint/download the Apple Distribution cert and App Store profile on demand (team `89R449GG5Z`, paid). Export behavior lives in the tracked `Config/ExportOptions.plist`. After upload, the build appears under TestFlight in ~5–15 min (Apple-side processing); add it to a tester group there.
+
+> **Not yet automated:** running this from CI (a `deploy-ios.yml` on a macOS runner needs the `.p8` + `Config/Secrets.xcconfig` values wired up as GitHub secrets), and macOS distribution (Mac App Store / Developer ID / notarization). The script itself already runs headlessly, so the CI job is mostly secret-plumbing on top of it.
 
 ---
 
