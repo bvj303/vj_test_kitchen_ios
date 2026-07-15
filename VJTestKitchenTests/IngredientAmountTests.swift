@@ -116,12 +116,38 @@ struct IngredientAmountTests {
 
     @Test func triplingAcrossFraction() {
         let amt = IngredientAmount(amount: 0.75, unit: "cup", name: "milk")
-        // 0.75 * 3 = 2.25 -> "2¼ cup"
-        #expect(amt.scaled(by: 3).formatted == "2¼ cup")
+        // 0.75 * 3 = 2.25 -> "2¼ cups" (plural, since the value is above one)
+        #expect(amt.scaled(by: 3).formatted == "2¼ cups")
     }
 
     @Test func formattedOmitsUnitWhenEmpty() {
         let amt = IngredientAmount(amount: 3, unit: "", name: "eggs")
         #expect(amt.formatted == "3")
+    }
+
+    // MARK: - Unit pluralization
+
+    @Test func pluralizesUnitsAboveOne() {
+        #expect(IngredientAmount.pluralizedUnit("cup", for: 2) == "cups")
+        #expect(IngredientAmount.pluralizedUnit("clove", for: 3) == "cloves")
+        #expect(IngredientAmount.pluralizedUnit("pinch", for: 2) == "pinches")
+        #expect(IngredientAmount.pluralizedUnit("box", for: 2) == "boxes")
+        #expect(IngredientAmount.pluralizedUnit("leaf", for: 4) == "leaves")
+        #expect(IngredientAmount.pluralizedUnit("cup", for: 1.5) == "cups")
+    }
+
+    @Test func keepsUnitsSingularAtOneOrBelow() {
+        #expect(IngredientAmount.pluralizedUnit("cups", for: 1) == "cup")
+        #expect(IngredientAmount.pluralizedUnit("cloves", for: 0.5) == "clove")
+        #expect(IngredientAmount.pluralizedUnit("leaves", for: 1) == "leaf")
+        // A pure fraction stays singular, matching how recipes read.
+        #expect(IngredientAmount.pluralizedUnit("cup", for: 0.25) == "cup")
+    }
+
+    @Test func abbreviatedAndEmptyUnitsNeverInflect() {
+        #expect(IngredientAmount.pluralizedUnit("g", for: 200) == "g")
+        #expect(IngredientAmount.pluralizedUnit("tbsp", for: 3) == "tbsp")
+        #expect(IngredientAmount.pluralizedUnit("oz", for: 12) == "oz")
+        #expect(IngredientAmount.pluralizedUnit("", for: 5) == "")
     }
 }

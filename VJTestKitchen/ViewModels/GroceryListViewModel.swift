@@ -267,11 +267,15 @@ final class GroceryListViewModel {
     /// `nonisolated` so pure helpers like `GroceryAggregator` can reuse it as the
     /// single source of quantity formatting without hopping to the main actor.
     nonisolated static func formattedQuantity(amount: Double, unit: String) -> String {
+        // A zero / "to taste" amount has no number — show the unit as typed
+        // (don't inflect: "cloves" for a garnish reads fine, "clove" wouldn't).
         guard amount > 0 else { return unit.trimmingCharacters(in: .whitespaces) }
-        let amountText = amount == amount.rounded()
-            ? String(Int(amount))
-            : String(format: "%.2f", amount)
-        return unit.isEmpty ? amountText : "\(amountText) \(unit)"
+        // Round to friendly kitchen fractions ("1⅛ tsp", not "1.12") and inflect
+        // the unit to the value ("1 cup" / "2 cups"), the same formatting the
+        // recipe detail uses for ingredient rows.
+        let amountText = IngredientAmount.format(amount)
+        let unitText = IngredientAmount.pluralizedUnit(unit, for: amount)
+        return unitText.isEmpty ? amountText : "\(amountText) \(unitText)"
     }
 
     nonisolated static func formatItem(name: String, amount: Double, unit: String) -> String {

@@ -454,6 +454,21 @@ struct GroceryListViewModelTests {
         #expect(GroceryListViewModel.formattedQuantity(amount: 1, unit: "") == "1")
         #expect(GroceryListViewModel.formattedQuantity(amount: 0, unit: "") == "")
         #expect(GroceryListViewModel.formattedQuantity(amount: 0, unit: "cloves") == "cloves")
-        #expect(GroceryListViewModel.formattedQuantity(amount: 1.5, unit: "cups") == "1.50 cups")
+        // Friendly kitchen fraction, not a raw decimal, with the unit pluralized.
+        #expect(GroceryListViewModel.formattedQuantity(amount: 1.5, unit: "cups") == "1½ cups")
+    }
+
+    @Test func formattedQuantityRoundsToFriendlyFractionsAndPluralizes() {
+        // 1.12 → nearest common fraction (⅛), and "teaspoon" pluralizes above 1.
+        #expect(GroceryListViewModel.formattedQuantity(amount: 1.12, unit: "teaspoon") == "1⅛ teaspoons")
+        // Exactly one stays singular.
+        #expect(GroceryListViewModel.formattedQuantity(amount: 1, unit: "cloves") == "1 clove")
+        // A whole number above one pluralizes a singular unit.
+        #expect(GroceryListViewModel.formattedQuantity(amount: 3, unit: "clove") == "3 cloves")
+        // A pure fraction under one stays singular ("½ cup", not "½ cups").
+        #expect(GroceryListViewModel.formattedQuantity(amount: 0.5, unit: "cups") == "½ cup")
+        // Abbreviated units never inflect.
+        #expect(GroceryListViewModel.formattedQuantity(amount: 2, unit: "tbsp") == "2 tbsp")
+        #expect(GroceryListViewModel.formattedQuantity(amount: 12, unit: "oz") == "12 oz")
     }
 }
