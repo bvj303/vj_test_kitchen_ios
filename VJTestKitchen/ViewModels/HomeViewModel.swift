@@ -41,6 +41,7 @@ final class HomeViewModel {
     private let weatherPreferenceStore: WeatherPreferenceStoring
     private let widgetPublisher: WidgetPublishing
     private let snapshotStore: LocalSnapshotStoring
+    private let logger: AppLogger
 
     /// When the shelf/forecast last loaded, and the calendar-derived suggestion
     /// they loaded for — together they let `load()` skip a refetch when nothing
@@ -66,7 +67,8 @@ final class HomeViewModel {
         weatherForecaster: WeatherForecasting = OpenMeteoForecastService(),
         weatherPreferenceStore: WeatherPreferenceStoring = UserDefaultsWeatherPreferenceStore(),
         widgetPublisher: WidgetPublishing = WidgetPublisher(),
-        snapshotStore: LocalSnapshotStoring = FileSnapshotStore.shared
+        snapshotStore: LocalSnapshotStoring = FileSnapshotStore.shared,
+        logger: AppLogger = .shared
     ) {
         self.now = now
         self.calendar = calendar
@@ -75,6 +77,7 @@ final class HomeViewModel {
         self.weatherPreferenceStore = weatherPreferenceStore
         self.widgetPublisher = widgetPublisher
         self.snapshotStore = snapshotStore
+        self.logger = logger
         self.suggestion = RecipeSuggester.suggestion(for: now(), calendar: calendar)
     }
 
@@ -121,7 +124,16 @@ final class HomeViewModel {
         }
         // Open-Meteo returns the outlook starting today, so the first entry is
         // today's forecast (see OpenMeteoForecastService / the calendar's usage).
-        todayForecast = try? await weatherForecaster.dailyForecast(for: home.coordinate).first
+        do {
+            todayForecast = try await weatherForecaster.dailyForecast(for: home.coordinate).first
+        } catch {
+            // Weather is a refinement, never surfaced — but log so a persistently
+            // failing forecast (bad location, Open-Meteo down) isn't invisible.
+            todayForecast = nil
+            logger.warning("Home weather forecast fetch failed", category: "home", metadata: [
+                "errorType": String(describing: type(of: error)),
+            ])
+        }
         suggestion = RecipeSuggester.suggestion(forecast: todayForecast, date: now(), calendar: calendar)
     }
 
@@ -143,6 +155,9 @@ final class HomeViewModel {
             // Publish the current suggestion + a few recipes to the Cook's Idea widget.
             widgetPublisher.publishCooksIdea(suggestion: suggestion, recipes: suggestedRecipes)
         } catch {
+            // Surfaced to the user via errorMessage, but also logged raw so the
+            // underlying failure is diagnosable (ErrorPresenter is display-only).
+            logger.error("Home suggested-recipes load failed", category: "home", error: error)
             errorMessage = ErrorPresenter.message(for: error)
         }
     }

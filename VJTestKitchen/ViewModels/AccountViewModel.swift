@@ -14,16 +14,26 @@ final class AccountViewModel {
     private(set) var avatarUrl: String?
 
     private let profileService: ProfileServicing
+    private let logger: AppLogger
 
-    init(profileService: ProfileServicing = ProfileService()) {
+    init(profileService: ProfileServicing = ProfileService(), logger: AppLogger = .shared) {
         self.profileService = profileService
+        self.logger = logger
     }
 
     /// Loads the current user's avatar. Best-effort: a failure just leaves the
     /// button on its symbol fallback rather than surfacing an error in chrome.
     func load() async {
-        guard let profile = try? await profileService.fetchMine() else { return }
-        avatarUrl = profile.avatarUrl
+        do {
+            let profile = try await profileService.fetchMine()
+            avatarUrl = profile.avatarUrl
+        } catch {
+            // Best-effort chrome load, never surfaced to the user — so log it,
+            // or a persistently failing avatar fetch is completely invisible.
+            logger.warning("Account avatar load failed", category: "account", metadata: [
+                "errorType": String(describing: type(of: error)),
+            ])
+        }
     }
 
     /// Called after an avatar upload so every account button updates live,

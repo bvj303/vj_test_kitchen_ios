@@ -50,7 +50,8 @@ struct HomeViewModelTests {
         recipes: FakeHomeRecipeService = FakeHomeRecipeService(),
         forecaster: FakeWeatherForecaster = FakeWeatherForecaster(),
         store: FakeWeatherPreferenceStore = FakeWeatherPreferenceStore(),
-        snapshotStore: FakeSnapshotStore = FakeSnapshotStore()
+        snapshotStore: FakeSnapshotStore = FakeSnapshotStore(),
+        logger: AppLogger = .shared
     ) -> HomeViewModel {
         HomeViewModel(
             now: { [referenceDate] in referenceDate },
@@ -58,7 +59,8 @@ struct HomeViewModelTests {
             recipeService: recipes,
             weatherForecaster: forecaster,
             weatherPreferenceStore: store,
-            snapshotStore: snapshotStore
+            snapshotStore: snapshotStore,
+            logger: logger
         )
     }
 
@@ -173,6 +175,19 @@ struct HomeViewModelTests {
 
         #expect(viewModel.errorMessage == "failed")
         #expect(viewModel.suggestedRecipes.isEmpty)
+    }
+
+    @Test func loadLogsErrorWhenRecipeFetchFails() async {
+        let recipes = FakeHomeRecipeService()
+        recipes.errorToThrow = TestError()
+        let sink = SpyLogSink()
+        let logger = AppLogger(sinks: [sink], context: LogContext(appVersion: "1", platform: "test"))
+        let viewModel = makeViewModel(recipes: recipes, logger: logger)
+
+        await viewModel.load(force: true)
+
+        // Surfaced via errorMessage AND logged raw for diagnosis.
+        #expect(sink.events.contains { $0.level == .error && $0.category == "home" })
     }
 
     // MARK: - Load reuse (freshness) & day rollover
