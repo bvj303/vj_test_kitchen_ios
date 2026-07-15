@@ -54,10 +54,16 @@ struct RecipeDetailView: View {
                 }
             }
             .padding()
+            // Cap the content to a readable column so a long recipe doesn't run
+            // edge-to-edge across a wide iPad/Mac window.
+            .frame(maxWidth: 700)
+            .frame(maxWidth: .infinity)
         }
         .scrollDismissesKeyboard(.interactively)
+        // A large, wrapping navigation title — a long name like "Blackened
+        // Shrimp with Blistered Tomatoes" wraps to two lines instead of being
+        // clipped to "Blackened Shrimp with Bli…" the way an inline title is.
         .navigationTitle(viewModel.detail?.title ?? "Recipe")
-        .inlineNavigationTitle()
         .dismissesKeyboardOnBackgroundTap()
         .keyboardDoneButton()
         .toolbar {
@@ -219,8 +225,8 @@ struct RecipeDetailView: View {
         VStack(alignment: .leading, spacing: 12) {
             heroImage(detail)
 
-            // The recipe title lives in the (inline) navigation bar — no second
-            // large title here, which keeps the header from feeling cramped.
+            // The recipe title lives in the (large, wrapping) navigation bar —
+            // no second title here, which keeps the header from feeling cramped.
             if !detail.tagNames.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {

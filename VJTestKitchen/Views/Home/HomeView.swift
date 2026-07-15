@@ -182,13 +182,15 @@ struct HomeView: View {
             Text(recipe.title)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.primary)
-                .lineLimit(2)
+                // Always reserve two lines so every card is the same height,
+                // whether its title is one line or two.
+                .lineLimit(2, reservesSpace: true)
                 .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
             HStack(spacing: 12) {
-                if let prepLabel = PrepTimeFormat.label(minutes: recipe.prepTime) {
-                    Label(prepLabel, systemImage: "clock")
-                }
+                // Prep time on every card (a dash when unknown) so the metadata
+                // row is consistent card to card rather than appearing on some.
+                Label(PrepTimeFormat.label(minutes: recipe.prepTime) ?? "—", systemImage: "clock")
                 if let atkRating = recipe.atkRating {
                     Label(String(format: "%.1f", atkRating), systemImage: "star.fill")
                 }

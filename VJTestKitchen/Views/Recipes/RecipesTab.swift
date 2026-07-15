@@ -44,7 +44,11 @@ struct RecipesTab: View {
                         RecipeDetailView(recipeId: selectedRecipe.id, onDeleted: handleRecipeDeleted)
                             .id(selectedRecipe.id)
                     } else {
+                        // A titled bar on the placeholder too, so the account
+                        // button reads as part of a coherent toolbar rather than
+                        // an avatar floating alone in the top-right corner.
                         ContentUnavailableView("Select a Recipe", systemImage: "fork.knife")
+                            .navigationTitle("Recipes")
                     }
                 }
                 .toolbar { accountToolbarItem }
