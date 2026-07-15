@@ -231,11 +231,21 @@ struct MealCalendarView: View {
                 }
 
                 if plans.isEmpty {
-                    Text("No meals planned")
-                        .font(.subheadline)
-                        .foregroundStyle(.tertiary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 4)
+                    // A single tappable "Add a meal" per empty day, instead of a
+                    // dead "No meals planned" line: it points the Quick Planner at
+                    // this day so adding takes one fewer step than hunting for the
+                    // right day in the planner's picker.
+                    Button {
+                        viewModel.selectedPlanningDate = date
+                    } label: {
+                        Label("Add a meal", systemImage: "plus.circle")
+                            .font(.subheadline)
+                            .foregroundStyle(Color.brandSage)
+                    }
+                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 4)
+                    .accessibilityHint("Sets the Quick Planner to this day")
                 } else {
                     ForEach(plans) { plan in mealRow(plan) }
                 }
