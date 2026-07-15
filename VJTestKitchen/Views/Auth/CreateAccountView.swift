@@ -15,16 +15,26 @@ struct CreateAccountView: View {
     var body: some View {
         @Bindable var viewModel = viewModel
 
-        ScrollView {
-            if viewModel.awaitingEmailConfirmation {
-                confirmationPrompt
-            } else {
-                signUpForm(viewModel: viewModel)
+        ZStack {
+            AuthBackground()
+
+            GeometryReader { proxy in
+                ScrollView {
+                    Group {
+                        if viewModel.awaitingEmailConfirmation {
+                            confirmationPrompt
+                        } else {
+                            signUpForm(viewModel: viewModel)
+                        }
+                    }
+                    // Center the card vertically in the available space (matches
+                    // AuthView) so iPad/Mac don't leave it stranded at the top.
+                    .frame(maxWidth: .infinity, minHeight: proxy.size.height)
+                }
+                .scrollDismissesKeyboard(.interactively)
             }
         }
-        .scrollDismissesKeyboard(.interactively)
         .navigationTitle("Create Account")
-        .inlineNavigationTitle()
         .dismissesKeyboardOnBackgroundTap()
         .keyboardDoneButton()
     }
@@ -48,20 +58,18 @@ struct CreateAccountView: View {
         .glassEffect(in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .frame(maxWidth: 460)
         .padding(.horizontal)
-        .padding(.top, 40)
     }
 
     private func signUpForm(viewModel: AuthViewModel) -> some View {
         @Bindable var viewModel = viewModel
-        return VStack(spacing: 28) {
-            VStack(spacing: 8) {
-                Text("Create Your Account")
-                    .font(.title2.bold())
-                Text("Just a few details to get cooking.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.top, 40)
+        // No inline "Create Your Account" heading — the large navigation title
+        // already names the screen. Just a friendly one-line subtitle above the
+        // fields.
+        return VStack(spacing: 20) {
+            Text("Just a few details to get cooking.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
 
             VStack(spacing: 14) {
                 HStack(spacing: 12) {
@@ -71,7 +79,8 @@ struct CreateAccountView: View {
                         .focused($focusedField, equals: .firstName)
                         .submitLabel(.next)
                         .onSubmit { focusedField = .lastName }
-                        .textFieldStyle(.roundedBorder)
+                        .authFieldStyle(isFocused: focusedField == .firstName)
+                        .frame(maxWidth: .infinity)
 
                     TextField("Last Name", text: $viewModel.lastName)
                         .textContentType(.familyName)
@@ -79,7 +88,8 @@ struct CreateAccountView: View {
                         .focused($focusedField, equals: .lastName)
                         .submitLabel(.next)
                         .onSubmit { focusedField = .username }
-                        .textFieldStyle(.roundedBorder)
+                        .authFieldStyle(isFocused: focusedField == .lastName)
+                        .frame(maxWidth: .infinity)
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
@@ -90,7 +100,7 @@ struct CreateAccountView: View {
                         .focused($focusedField, equals: .username)
                         .submitLabel(.next)
                         .onSubmit { focusedField = .email }
-                        .textFieldStyle(.roundedBorder)
+                        .authFieldStyle(isFocused: focusedField == .username)
 
                     if let usernameStatusText {
                         Text(usernameStatusText)
@@ -107,7 +117,7 @@ struct CreateAccountView: View {
                     .focused($focusedField, equals: .email)
                     .submitLabel(.next)
                     .onSubmit { focusedField = .password }
-                    .textFieldStyle(.roundedBorder)
+                    .authFieldStyle(isFocused: focusedField == .email)
 
                 VStack(alignment: .leading, spacing: 4) {
                     SecureField("Password", text: $viewModel.password)
@@ -115,7 +125,7 @@ struct CreateAccountView: View {
                         .focused($focusedField, equals: .password)
                         .submitLabel(.go)
                         .onSubmit { Task { await viewModel.signUp() } }
-                        .textFieldStyle(.roundedBorder)
+                        .authFieldStyle(isFocused: focusedField == .password)
 
                     if !viewModel.password.isEmpty && viewModel.password.count < AuthViewModel.minimumPasswordLength {
                         Text("Password must be at least \(AuthViewModel.minimumPasswordLength) characters.")
