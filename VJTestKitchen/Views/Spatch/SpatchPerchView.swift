@@ -57,7 +57,8 @@ struct SpatchPerchView: View {
         // Lift clear of the floating tab bar so the perch sits above it, never
         // over a tab button.
         .padding(.trailing, 16)
-        .padding(.bottom, bottomClearance ?? (horizontalSizeClass == .regular ? 20 : 68))
+        .padding(.bottom, (bottomClearance ?? (horizontalSizeClass == .regular ? 20 : 68)) + viewModel.extraBottomInset)
+        .animation(.easeInOut(duration: 0.25), value: viewModel.extraBottomInset)
         .animation(.spring(response: 0.4, dampingFraction: 0.7), value: isShowing)
         .animation(.spring(response: 0.45, dampingFraction: 0.7), value: viewModel.isExpanded)
         // Only an *open* bubble blocks a stunt (a collapsed perch just hides for

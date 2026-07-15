@@ -33,6 +33,11 @@ final class SpatchPerchViewModel {
     /// Bumped on every `post`, so the view can play a one-shot attention nudge
     /// (a small bounce) without the tip forcing itself open.
     private(set) var attentionNonce: Int = 0
+    /// Extra lift for the perch so it clears a screen's own pinned bottom bar
+    /// (e.g. Recipe Detail's "Start Cooking" action bar) instead of overlapping
+    /// it — the very overlap this anchor exists to prevent. Screens set this
+    /// while visible and reset it to 0 on the way out.
+    var extraBottomInset: CGFloat = 0
 
     private let autoCollapseDelay: Duration?
     private var autoCollapseTask: Task<Void, Never>?
