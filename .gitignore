@@ -6,6 +6,9 @@
 Config/Secrets.xcconfig
 Config/Secrets.staging.xcconfig
 
+# Database dumps (backup/restore drill) — may contain real user data
+backups/
+
 # Xcode
 #
 # gitignore contributors: remember to update Global/Xcode.gitignore, Objective-C.gitignore & Swift.gitignore

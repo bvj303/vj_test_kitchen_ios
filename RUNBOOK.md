@@ -198,6 +198,54 @@ Distribution signing (Mac App Store / Developer ID / App Store Connect) is not y
 
 ---
 
+## Backup & restore
+
+Two layers of safety net for the Postgres data:
+
+1. **Managed (Supabase platform).** On the paid plans, Supabase takes **daily automated backups** (Dashboard → Database → Backups, ~7-day retention; Point-in-Time Recovery is a paid add-on). On the **Free plan there are no automated backups** — the logical dump below *is* the backup, so run it on a cadence you're comfortable losing data back to.
+2. **Logical dump (plan-independent — what we actually rely on).** `supabase db dump` against the IPv4 **session-pooler** URL (same host the CD pipeline uses; the direct `db.<ref>` host is IPv6-only). Passwords come from the gitignored `.env`, never the command line history in plaintext.
+
+> Dumps can contain **user data** — they're written to the gitignored `backups/` directory and must **never** be committed.
+
+### Take a backup (prod)
+
+```bash
+source .env
+PROD_URL="postgresql://postgres.aviyhrmjsqygoyzjprii:$(python3 -c "import urllib.parse,os;print(urllib.parse.quote(os.environ['SUPABASE_DB_PASSWORD'],safe=''))")@aws-1-us-east-2.pooler.supabase.com:5432/postgres"
+mkdir -p backups
+supabase db dump --db-url "$PROD_URL"             -f backups/prod-schema-$(date +%F).sql   # schema (DDL)
+supabase db dump --db-url "$PROD_URL" --data-only -f backups/prod-data-$(date +%F).sql     # data
+```
+
+`supabase db dump` covers the **`public`** schema by default — i.e. app data (recipes, meal_plans, grocery_items, profiles, client_logs…). It does **not** dump the `auth` schema, so **user accounts (`auth.users`) are not included**; the restore below repopulates app data, not identities. (A full-identity clone would need a separate `auth`-schema dump and is out of scope for the app-data drill.)
+
+### Restore drill: prod → staging
+
+The engineering-principles "test a restore *before* you need it" exercise. Prod → **staging** is the target: staging is the throwaway environment (Debug builds point at it), so a restore there is low-stakes *and* doubles as seeding the simulator with realistic data. **This overwrites staging's data — never run it in reverse.**
+
+```bash
+STAGING_URL="postgresql://postgres.gmqjhffdtsrpkwrygimz:$(python3 -c "import urllib.parse,os;print(urllib.parse.quote(os.environ['SUPABASE_STAGING_DB_PASSWORD'],safe=''))")@aws-1-us-west-2.pooler.supabase.com:5432/postgres"
+
+# 1. Staging schema must already match prod (all migrations applied). If prod has
+#    a newer migration, push it to staging first — the CD pipeline does this on
+#    merge, or manually: supabase db push --db-url "$STAGING_URL" --yes
+# 2. Load prod's data into staging's matching schema:
+psql "$STAGING_URL" -f backups/prod-data-<date>.sql
+```
+
+If staging is **not** empty, existing rows will collide on primary keys — reset it first (`supabase db reset` locally, or truncate the public tables on staging) so the drill is repeatable.
+
+### Verify the restore
+
+- **Row counts match prod** for a spot-check table:
+  `psql "$STAGING_URL" -c "select count(*) from recipes;"` vs. the same against `$PROD_URL`.
+- **RLS is still enforced** — a `set role authenticated` + `set_config('request.jwt.claims', …)` query sees only its own rows (see the psql role-simulation in `DECISIONS.md`).
+- **The app reads it** — a Debug build (→ staging) opens and shows the restored catalog/plans.
+
+> **Status:** procedure documented; the live drill has **not been run yet** (deferred to a hands-on session, since it reads prod and overwrites staging). Record the first successful run's output + timings in `DECISIONS.md` when done.
+
+---
+
 ## Common tasks
 
 | Task | Command |
