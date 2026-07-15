@@ -255,6 +255,11 @@ struct MealCalendarView: View {
                 }
 
                 if plans.isEmpty {
+                    // A single tappable "Add a meal" per empty day, instead of a
+                    // dead "No meals planned" line: it points the Quick Planner at
+                    // this day — scrolling it into view and focusing its search on
+                    // compact — so adding takes one fewer step than hunting for the
+                    // right day in the planner's picker.
                     Button {
                         beginPlanning(on: date)
                     } label: {
@@ -266,6 +271,7 @@ struct MealCalendarView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 4)
                     .accessibilityLabel("Add a meal on \(Self.dayPickerLabel(for: date))")
+                    .accessibilityHint("Opens the Quick Planner for this day")
                 } else {
                     ForEach(plans) { plan in mealRow(plan) }
                 }

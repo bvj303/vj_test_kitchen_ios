@@ -6,6 +6,10 @@ struct SettingsView: View {
     @Environment(SettingsViewModel.self) private var settingsViewModel
     @Environment(HomeLocationViewModel.self) private var homeLocationViewModel
     @Environment(SpatchTutorialViewModel.self) private var spatchTutorialViewModel
+    // Closes the enclosing Profile sheet's navigation on iOS — a trailing "Done"
+    // to match ProfileView, so Settings has an obvious dismiss and doesn't rely
+    // on the back chevron alone. (macOS presents Settings as its own window.)
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         @Bindable var settingsViewModel = settingsViewModel
@@ -62,6 +66,13 @@ struct SettingsView: View {
         }
         .navigationTitle("Settings")
         .inlineNavigationTitle()
+        #if os(iOS)
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Done") { dismiss() }
+            }
+        }
+        #endif
         // The init-time read of the current icon can predate launch
         // completing — re-sync whenever Settings appears.
         .task { settingsViewModel.refreshSelectedAppIcon() }

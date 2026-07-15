@@ -98,6 +98,62 @@ struct IngredientAmountTests {
         #expect(amt.name == "recipe pie dough")
     }
 
+    // MARK: - Name tidying (whitespace before punctuation)
+
+    @Test func trimsSpaceBeforeCommaInName() {
+        // The import left a stray space before the comma: "table salt , divided".
+        let amt = IngredientAmount(amount: 1, unit: "teaspoon", name: "table salt , divided")
+        #expect(amt.name == "table salt, divided")
+    }
+
+    @Test func tidyNameHandlesVariousPunctuation() {
+        #expect(IngredientAmount.tidyName("table salt , divided") == "table salt, divided")
+        #expect(IngredientAmount.tidyName("onion , diced ; peeled") == "onion, diced; peeled")
+        // Normal punctuation-then-space is untouched, and internal runs collapse.
+        #expect(IngredientAmount.tidyName("ripe tomatoes, cored") == "ripe tomatoes, cored")
+        #expect(IngredientAmount.tidyName("flour   sifted") == "flour sifted")
+    }
+
+    @Test func tidiesNameOnTheReunitePath() {
+        // Fraction reunited *and* the trailing name cleaned in one pass.
+        let amt = IngredientAmount(amount: 1, unit: "", name: "½ teaspoon table salt , divided")
+        #expect(amt.value == 1.5)
+        #expect(amt.unit == "teaspoon")
+        #expect(amt.name == "table salt, divided")
+        #expect(amt.formatted == "1½ teaspoons")
+    }
+
+    // MARK: - Distinct amounts across a set and across serving scales
+
+    @Test func distinctIngredientsKeepDistinctAmounts() {
+        // A spice blend where several rows legitimately share "1½ tsp" must not
+        // flatten *other* rows to the same value — each reflects its own source
+        // amount (guards against the "every ingredient shows 1½" report).
+        let rows: [(Double, String, String)] = [
+            (2, "teaspoons", "paprika"),
+            (1, "teaspoon", "table salt"),
+            (1, "", "½ teaspoon pepper"),   // reunites to 1.5
+            (0.5, "teaspoon", "dried thyme"),
+            (0.25, "teaspoon", "dried oregano"),
+        ]
+        let amounts = rows.map { IngredientAmount(amount: $0.0, unit: $0.1, name: $0.2) }
+        #expect(amounts.map(\.value) == [2, 1, 1.5, 0.5, 0.25])
+        #expect(amounts.map(\.formatted) == [
+            "2 teaspoons", "1 teaspoon", "1½ teaspoons", "½ teaspoon", "¼ teaspoon",
+        ])
+    }
+
+    @Test func amountsScaleIndependentlyAcrossServings() {
+        let paprika = IngredientAmount(amount: 2, unit: "teaspoons", name: "paprika")
+        let thyme = IngredientAmount(amount: 0.5, unit: "teaspoon", name: "dried thyme")
+        // Doubling the recipe doubles each amount by its own value, not a shared one.
+        #expect(paprika.scaled(by: 2).formatted == "4 teaspoons")
+        #expect(thyme.scaled(by: 2).formatted == "1 teaspoon")
+        // Halving keeps them distinct too.
+        #expect(paprika.scaled(by: 0.5).formatted == "1 teaspoon")
+        #expect(thyme.scaled(by: 0.5).formatted == "¼ teaspoon")
+    }
+
     // MARK: - Scaling
 
     @Test func scalingMultipliesOnlyTheValue() {

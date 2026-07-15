@@ -39,7 +39,7 @@ struct IngredientAmount: Equatable {
 
         self.value = value
         self.unit = unit
-        self.name = name
+        self.name = Self.tidyName(name)
     }
 
     private init(value: Double, unit: String, name: String) {
@@ -102,6 +102,30 @@ struct IngredientAmount: Equatable {
         while trimmed.hasSuffix("0") { trimmed.removeLast() }
         if trimmed.hasSuffix(".") { trimmed.removeLast() }
         return trimmed
+    }
+
+    /// Cleans up an ingredient name for display: collapses runs of whitespace
+    /// and removes any space that crept in *before* punctuation, so an imported
+    /// "table salt , divided" reads as "table salt, divided". Punctuation-then-
+    /// space (the normal case) is left untouched.
+    static func tidyName(_ name: String) -> String {
+        var result = ""
+        result.reserveCapacity(name.count)
+        var pendingSpace = false
+        for character in name {
+            if character == " " || character == "\t" {
+                pendingSpace = true
+                continue
+            }
+            // Drop a buffered space when the next character is punctuation that
+            // should hug the preceding word.
+            if pendingSpace, !",.;:!?".contains(character), !result.isEmpty {
+                result.append(" ")
+            }
+            pendingSpace = false
+            result.append(character)
+        }
+        return result.trimmingCharacters(in: .whitespaces)
     }
 
     // MARK: - Parsing helpers

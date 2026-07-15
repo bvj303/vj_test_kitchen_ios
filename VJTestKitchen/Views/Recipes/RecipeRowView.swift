@@ -25,9 +25,12 @@ struct RecipeRowView: View {
                 }
 
                 HStack(spacing: 12) {
-                    if let prepLabel = PrepTimeFormat.label(minutes: recipe.prepTime) {
-                        Label(prepLabel, systemImage: "clock")
-                    }
+                    // Always show the prep-time field (a dash when unknown) so the
+                    // metadata row starts at the same place on every row — a
+                    // time-less recipe like "Aperol Flip" then lines up with the
+                    // rest instead of leading with its servings. Matches the Home
+                    // suggested cards.
+                    Label(PrepTimeFormat.label(minutes: recipe.prepTime) ?? "—", systemImage: "clock")
                     if let servings = recipe.servings {
                         Label("\(servings)", systemImage: "person.2")
                     }
