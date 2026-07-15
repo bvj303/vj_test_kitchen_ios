@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  ExportOptions for `xcodebuild -exportArchive` when producing a TestFlight /
+  App Store build. Consumed by scripts/deploy-testflight.sh.
+
+  - method: app-store-connect  — the modern name (Xcode 15.3+) for what used to
+    be "app-store". Produces a distribution-signed .ipa.
+  - signingStyle: automatic    — matches the project (CODE_SIGN_STYLE: Automatic).
+    Combined with the script's `-allowProvisioningUpdates` + App Store Connect
+    API-key auth flags, Xcode mints/downloads the Apple Distribution cert and the
+    App Store provisioning profile on demand — no manual cert wrangling, and it
+    works headlessly (CI / a background job) since there's no interactive login.
+  - destination: export        — write the .ipa to disk; the script uploads it as
+    a separate step (via `xcrun altool --upload-app`) so `--no-upload` can stop
+    after producing a local .ipa for inspection.
+  - manageAppVersionAndBuildNumber: false — do NOT let Xcode auto-bump the build
+    number during export. The script owns versioning (see scripts/set-version.sh)
+    so the number is deterministic and the embedded widget stays in lockstep.
+  - uploadSymbols: true        — include dSYMs so TestFlight/crash reports symbolicate.
+-->
+<plist version="1.0">
+<dict>
+	<key>method</key>
+	<string>app-store-connect</string>
+	<key>teamID</key>
+	<string>89R449GG5Z</string>
+	<key>signingStyle</key>
+	<string>automatic</string>
+	<key>destination</key>
+	<string>export</string>
+	<key>manageAppVersionAndBuildNumber</key>
+	<false/>
+	<key>uploadSymbols</key>
+	<true/>
+</dict>
+</plist>
