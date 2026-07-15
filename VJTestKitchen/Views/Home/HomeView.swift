@@ -8,8 +8,8 @@ import SwiftUI
 struct HomeView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(AppCommands.self) private var appCommands
+    @Environment(SpatchPerchViewModel.self) private var spatchPerch
     @State private var viewModel = HomeViewModel()
-    @State private var spatchViewModel = SpatchBuddyViewModel(startsVisible: false)
 
     /// Cap + center the content on very wide screens so a landscape iPad reads
     /// as a centered dashboard rather than a few stretched-out rows.
@@ -29,13 +29,6 @@ struct HomeView: View {
             .padding(isRegular ? 24 : 16)
         }
         .screenBackground()
-        .overlay(alignment: spatchViewModel.corner.alignment) {
-            SpatchBuddyView(
-                viewModel: spatchViewModel,
-                onRequestNewLine: { Self.randomSpatchLine(recipes: viewModel.suggestedRecipes) }
-            )
-            .padding(spatchViewModel.corner.edgeInsets)
-        }
         .navigationTitle("Home")
         .task { await viewModel.load() }
         .refreshable { await viewModel.load(force: true) }
@@ -51,8 +44,8 @@ struct HomeView: View {
             guard !viewModel.suggestedRecipes.isEmpty else { return }
             try? await Task.sleep(for: .seconds(4))
             guard !Task.isCancelled else { return }
-            spatchViewModel.show(
-                message: SpatchContent.recommendationLine(recipeTitle: viewModel.suggestedRecipes.first?.title),
+            spatchPerch.post(
+                SpatchContent.recommendationLine(recipeTitle: viewModel.suggestedRecipes.first?.title),
                 mood: .happy
             )
         }
@@ -65,7 +58,7 @@ struct HomeView: View {
                 try? await Task.sleep(for: .seconds(.random(in: 100...160)))
                 guard !Task.isCancelled, !viewModel.suggestedRecipes.isEmpty else { continue }
                 let (message, mood) = Self.randomSpatchLine(recipes: viewModel.suggestedRecipes)
-                spatchViewModel.show(message: message, mood: mood)
+                spatchPerch.post(message, mood: mood)
             }
         }
         .alert(

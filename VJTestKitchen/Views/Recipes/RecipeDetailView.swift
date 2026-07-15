@@ -11,7 +11,7 @@ struct RecipeDetailView: View {
     /// tile. 1 = original.
     @State private var scale: Double = 1
     @State private var wasDeleted = false
-    @State private var spatchViewModel = SpatchBuddyViewModel(startsVisible: false)
+    @Environment(SpatchPerchViewModel.self) private var spatchPerch
     let recipeId: Int64
 
     /// Called when the recipe is deleted, so a coordinating parent can drop it
@@ -116,15 +116,6 @@ struct RecipeDetailView: View {
                 CookModeView(detail: detail, scale: scale)
             }
         }
-        .overlay(alignment: spatchViewModel.corner.alignment) {
-            SpatchBuddyView(
-                viewModel: spatchViewModel,
-                onRequestNewLine: {
-                    (SpatchContent.recipeCameoLine(prepTime: viewModel.detail?.prepTime, tag: viewModel.detail?.tagNames.first), .happy)
-                }
-            )
-            .padding(spatchViewModel.corner.edgeInsets)
-        }
         .task {
             // Give the community list the signed-in user so it can omit the
             // user's own review (shown in the personal editor above it).
@@ -133,14 +124,15 @@ struct RecipeDetailView: View {
             }
             await viewModel.load()
         }
-        // A dismissible cameo, not on every visit — pops in shortly after the
-        // recipe loads with a line about the recipe itself (or a plain joke).
+        // Offer Spatch a recipe-aware line shortly after load — routed to the
+        // shared perch (he stays put; the user taps to read it), not floated
+        // over the recipe.
         .task(id: viewModel.detail?.id) {
             guard let detail = viewModel.detail else { return }
             try? await Task.sleep(for: .seconds(2.5))
             guard !Task.isCancelled, Double.random(in: 0...1) < 0.6 else { return }
-            spatchViewModel.show(
-                message: SpatchContent.recipeCameoLine(prepTime: detail.prepTime, tag: detail.tagNames.first),
+            spatchPerch.post(
+                SpatchContent.recipeCameoLine(prepTime: detail.prepTime, tag: detail.tagNames.first),
                 mood: .happy
             )
         }

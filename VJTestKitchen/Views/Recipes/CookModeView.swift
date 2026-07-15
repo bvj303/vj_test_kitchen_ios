@@ -17,7 +17,9 @@ struct CookModeView: View {
     /// Holds the display-sleep assertion for the duration of the session
     /// (see `Platform/KeepAwake.swift`).
     @State private var keepAwake = KeepAwake()
-    @State private var spatchViewModel = SpatchBuddyViewModel(startsVisible: false)
+    // Cook Mode is a fullscreen surface above the main app, so the app's shared
+    // perch (hosted in MainTabView) is behind it — this surface gets its own.
+    @State private var spatchPerch = SpatchPerchViewModel()
     /// So the halfway-point cameo only ever fires once per session.
     @State private var didShowHalfwayCameo = false
 
@@ -74,22 +76,16 @@ struct CookModeView: View {
         // Keep the screen awake while cooking; restore on exit.
         .onAppear { keepAwake.enable() }
         .onDisappear { keepAwake.disable() }
-        .overlay(alignment: spatchViewModel.corner.alignment) {
-            SpatchBuddyView(
-                viewModel: spatchViewModel,
-                onRequestNewLine: {
-                    (SpatchContent.cookModeEncouragement(progress: stepProgress ?? 0), .happy)
-                }
-            )
-            .padding(spatchViewModel.corner.edgeInsets)
+        .overlay {
+            SpatchPerchView(viewModel: spatchPerch, bottomClearance: 16)
         }
         .onChange(of: checkedSteps) { _, _ in
             guard let stepProgress else { return }
             if stepProgress >= 1 {
-                spatchViewModel.show(message: SpatchContent.randomCompletionLine(), mood: .laughing)
+                spatchPerch.post(SpatchContent.randomCompletionLine(), mood: .laughing)
             } else if stepProgress >= 0.5 && !didShowHalfwayCameo {
                 didShowHalfwayCameo = true
-                spatchViewModel.show(message: SpatchContent.cookModeEncouragement(progress: stepProgress), mood: .happy)
+                spatchPerch.post(SpatchContent.cookModeEncouragement(progress: stepProgress), mood: .happy)
             }
         }
     }

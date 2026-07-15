@@ -27,6 +27,7 @@ struct MainTabView: View {
     @Environment(SettingsViewModel.self) private var settingsViewModel
     @Environment(SpatchTutorialViewModel.self) private var spatchTutorialViewModel
     @Environment(SpatchStuntCoordinator.self) private var spatchStuntCoordinator
+    @Environment(SpatchPerchViewModel.self) private var spatchPerchViewModel
     @State private var selection: AppTab = .home
     @State private var showLocationPrompt = false
 
@@ -63,6 +64,12 @@ struct MainTabView: View {
             // above the tabs (below the walkthrough, though the coordinator
             // never runs the two at once). See SpatchStuntCoordinator.
             SpatchStuntStageView()
+
+            // Spatch's single fixed perch — one anchor every screen posts its
+            // commentary to, so a tip can never float over card titles the way
+            // the old random-corner cameo did. Hosted once here (hidden during
+            // the tour and stunts). See SpatchPerchView.
+            SpatchPerchView(viewModel: spatchPerchViewModel)
 
             // Spatch's walkthrough overlays the real tabs (rather than
             // covering them in a sheet) and drives `selection` itself as it
@@ -147,4 +154,5 @@ struct MainTabView: View {
         .environment(AppCommands())
         .environment(SpatchTutorialViewModel())
         .environment(SpatchStuntCoordinator())
+        .environment(SpatchPerchViewModel())
 }

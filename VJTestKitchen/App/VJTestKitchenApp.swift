@@ -17,6 +17,10 @@ struct VJTestKitchenApp: App {
     // (MainTabView) and every cameo (which must yield the stage to a stunt and
     // vice versa) coordinate through one instance.
     @State private var spatchStuntCoordinator = SpatchStuntCoordinator()
+    // Spatch's single fixed perch — shared so every screen posts its commentary
+    // to the one anchor MainTabView hosts, instead of each screen floating its
+    // own cameo (the old overlap-bug source).
+    @State private var spatchPerchViewModel = SpatchPerchViewModel()
 
     init() {
         // Give `URLSession.shared` (and therefore every `RemoteImage`) a roomy
@@ -46,6 +50,7 @@ struct VJTestKitchenApp: App {
                 .environment(appCommands)
                 .environment(spatchTutorialViewModel)
                 .environment(spatchStuntCoordinator)
+                .environment(spatchPerchViewModel)
                 .preferredColorScheme(settingsViewModel.appearanceMode.colorScheme)
                 // Two kinds of vjtestkitchen:// deep links land here:
                 //  • Widget taps (host = a tab, e.g. vjtestkitchen://calendar) →

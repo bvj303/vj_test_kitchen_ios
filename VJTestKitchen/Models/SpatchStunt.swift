@@ -3,7 +3,7 @@ import Foundation
 /// One of Spatch's surprise stunt animations — a decorative, non-interactive
 /// flyby that plays across the whole screen every so often while the app is in
 /// use (scheduled by `SpatchStuntCoordinator`, drawn by `SpatchStuntStageView`).
-/// Distinct from his cameo pop-ins (`SpatchBuddyViewModel`): a stunt has no
+/// Distinct from his perch commentary (`SpatchPerchViewModel`): a stunt has no
 /// speech bubble and can't be tapped — he's just passing through.
 enum SpatchStunt: CaseIterable, Sendable {
     /// Tumbles across the lower part of the screen in springy somersaults.
@@ -55,7 +55,7 @@ enum SpatchStunt: CaseIterable, Sendable {
     }
 
     /// A random stunt guaranteed to differ from `last`, so back-to-back
-    /// performances never repeat (same shape as `SpatchCorner.random(excluding:)`).
+    /// performances never repeat.
     static func random(excluding last: SpatchStunt?) -> SpatchStunt {
         allCases.filter { $0 != last }.randomElement() ?? .somersault
     }
