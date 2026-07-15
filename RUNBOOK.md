@@ -149,6 +149,8 @@ Crash reporting and structured logging live in `VJTestKitchen/Services/Observabi
 
 `.github/workflows/deploy.yml` deploys the **backend** (Edge Functions + DB migrations) from the pipeline, not a laptop. Both actions are idempotent, so re-runs are safe.
 
+> **Live since 2026-07-15.** The three secrets are set and the **staging** path is verified — the first merge to `main` deployed the Edge Functions + ran `db push` against staging, green end-to-end. The **prod** path awaits the one-time `production` environment setup (below) plus a first `v*` tag.
+
 | Target | Trigger | What deploys |
 |---|---|---|
 | **staging** (`gmqjhffdtsrpkwrygimz`) | **automatic** on every push/merge to `main` | `functions deploy ai-chat` + `delete-account`, then `db push` |
