@@ -213,6 +213,9 @@ final class RecipeListViewModel {
             }
         } catch {
             guard generation == loadGeneration else { return }
+            // A debounce-cancelled reload (the user typed another key mid-fetch)
+            // is expected flow control, not a failure — never alert or log it.
+            guard !ErrorPresenter.isCancellation(error) else { return }
             logger.error("Recipe list load failed", category: "recipes", error: error)
             errorMessage = ErrorPresenter.message(for: error)
         }
@@ -246,6 +249,7 @@ final class RecipeListViewModel {
             prefetchImages(for: page)
         } catch {
             guard generation == loadGeneration else { return }
+            guard !ErrorPresenter.isCancellation(error) else { return }
             logger.error("Recipe list next-page load failed", category: "recipes", error: error)
             errorMessage = ErrorPresenter.message(for: error)
         }

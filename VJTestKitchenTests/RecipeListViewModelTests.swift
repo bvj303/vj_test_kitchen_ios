@@ -84,6 +84,46 @@ struct RecipeListViewModelTests {
         #expect(viewModel.items.isEmpty)
     }
 
+    @Test func cancelledFetchDoesNotSurfaceAnErrorMessage() async {
+        // When a keystroke arrives mid-fetch, the debouncer cancels the in-flight
+        // reload; the underlying request throws a cancellation error. That's
+        // intentional flow control, not a failure — it must never flash the
+        // "Couldn't Load Recipes" alert.
+        let fake = FakeRecipeService()
+        fake.errorToThrow = CancellationError()
+        let viewModel = RecipeListViewModel(recipeService: fake, tagService: FakeTagService(), snapshotStore: FakeSnapshotStore())
+
+        await viewModel.load()
+
+        #expect(viewModel.errorMessage == nil)
+    }
+
+    @Test func cancelledURLRequestDoesNotSurfaceAnErrorMessage() async {
+        // URLSession surfaces a cancelled request as URLError(.cancelled) rather
+        // than Swift's CancellationError — that shape must be swallowed too.
+        let fake = FakeRecipeService()
+        fake.errorToThrow = URLError(.cancelled)
+        let viewModel = RecipeListViewModel(recipeService: fake, tagService: FakeTagService(), snapshotStore: FakeSnapshotStore())
+
+        await viewModel.load()
+
+        #expect(viewModel.errorMessage == nil)
+    }
+
+    @Test func cancelledFetchIsNotLoggedAsAnError() async {
+        // A cancellation is expected churn, not a diagnosable fault — it should
+        // not pollute the error log either.
+        let fake = FakeRecipeService()
+        fake.errorToThrow = CancellationError()
+        let sink = SpyLogSink()
+        let logger = AppLogger(sinks: [sink], context: LogContext(appVersion: "1", platform: "test"))
+        let viewModel = RecipeListViewModel(recipeService: fake, tagService: FakeTagService(), snapshotStore: FakeSnapshotStore(), logger: logger)
+
+        await viewModel.load()
+
+        #expect(!sink.events.contains { $0.level == .error })
+    }
+
     @Test func loadLogsErrorWhenFetchFails() async {
         let fake = FakeRecipeService()
         fake.errorToThrow = TestError()

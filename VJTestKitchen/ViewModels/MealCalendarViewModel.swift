@@ -253,6 +253,9 @@ final class MealCalendarViewModel {
                 matching: recipeSearchText
             )
         } catch {
+            // Debounced Quick Planner search: a keystroke mid-fetch cancels the
+            // in-flight task — expected, not a failure to surface.
+            guard !ErrorPresenter.isCancellation(error) else { return }
             errorMessage = ErrorPresenter.message(for: error)
         }
     }
