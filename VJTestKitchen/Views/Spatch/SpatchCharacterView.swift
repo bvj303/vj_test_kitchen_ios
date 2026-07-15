@@ -23,9 +23,9 @@ struct SpatchCharacterView: View {
     var mood: SpatchMood = .idle
     /// Flips him horizontally — the arm/spoon (drawn on the trailing side by
     /// default) and the whole silhouette mirror together, so he reads as
-    /// facing the other way. Callers pop him in "facing inward": mirrored at a
-    /// trailing-corner cameo, unmirrored at a leading one (see
-    /// `SpatchCorner.isTrailing` / `SpatchBuddyView`).
+    /// facing the other way. Callers pop him in "facing inward": the perch sits
+    /// bottom-trailing and mirrors him so he faces the content (see
+    /// `SpatchPerchView`).
     var isMirrored = false
 
     @State private var isBlinking = false

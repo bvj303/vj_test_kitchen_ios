@@ -11,7 +11,7 @@ struct RecipeDetailView: View {
     /// tile. 1 = original.
     @State private var scale: Double = 1
     @State private var wasDeleted = false
-    @State private var spatchViewModel = SpatchBuddyViewModel(startsVisible: false)
+    @Environment(SpatchPerchViewModel.self) private var spatchPerch
     let recipeId: Int64
 
     /// Called when the recipe is deleted, so a coordinating parent can drop it
@@ -39,9 +39,6 @@ struct RecipeDetailView: View {
                 if let detail = viewModel.detail {
                     header(detail)
                     statsRow(detail)
-                    if hasCookableContent(detail) {
-                        cookButton(detail)
-                    }
                     if !detail.ingredients.isEmpty {
                         ingredientsSection(detail)
                     }
@@ -60,10 +57,25 @@ struct RecipeDetailView: View {
             .frame(maxWidth: .infinity)
         }
         .scrollDismissesKeyboard(.interactively)
-        // A large, wrapping navigation title — a long name like "Blackened
-        // Shrimp with Blistered Tomatoes" wraps to two lines instead of being
-        // clipped to "Blackened Shrimp with Bli…" the way an inline title is.
+        // "Start Cooking" is pinned to the bottom so it stays reachable while
+        // scrolling through ingredients and steps, instead of scrolling away
+        // mid-page. `.safeAreaInset` keeps it above the home indicator and tab
+        // bar automatically.
+        .safeAreaInset(edge: .bottom) {
+            if let detail = viewModel.detail, hasCookableContent(detail) {
+                cookBar(detail)
+            }
+        }
+        // The full title now leads the content (below the image), so the nav bar
+        // carries only a compact inline title rather than a second large one.
         .navigationTitle(viewModel.detail?.title ?? "Recipe")
+        .inlineNavigationTitle()
+        // Lift Spatch's perch above the pinned cook bar while it's shown so he
+        // never sits over the "Start Cooking" button.
+        .onChange(of: cookBarShown, initial: true) { _, shows in
+            spatchPerch.extraBottomInset = shows ? 76 : 0
+        }
+        .onDisappear { spatchPerch.extraBottomInset = 0 }
         .dismissesKeyboardOnBackgroundTap()
         .keyboardDoneButton()
         .toolbar {
@@ -72,9 +84,6 @@ struct RecipeDetailView: View {
             // Edit is. Shown once the recipe has loaded, since the sheet needs
             // its title.
             if viewModel.detail != nil {
-                ToolbarItem(placement: .platformPrimaryAction) {
-                    scaleMenu
-                }
                 ToolbarItem(placement: .platformPrimaryAction) {
                     Button {
                         showingAddToCalendar = true
@@ -116,15 +125,6 @@ struct RecipeDetailView: View {
                 CookModeView(detail: detail, scale: scale)
             }
         }
-        .overlay(alignment: spatchViewModel.corner.alignment) {
-            SpatchBuddyView(
-                viewModel: spatchViewModel,
-                onRequestNewLine: {
-                    (SpatchContent.recipeCameoLine(prepTime: viewModel.detail?.prepTime, tag: viewModel.detail?.tagNames.first), .happy)
-                }
-            )
-            .padding(spatchViewModel.corner.edgeInsets)
-        }
         .task {
             // Give the community list the signed-in user so it can omit the
             // user's own review (shown in the personal editor above it).
@@ -133,14 +133,15 @@ struct RecipeDetailView: View {
             }
             await viewModel.load()
         }
-        // A dismissible cameo, not on every visit — pops in shortly after the
-        // recipe loads with a line about the recipe itself (or a plain joke).
+        // Offer Spatch a recipe-aware line shortly after load — routed to the
+        // shared perch (he stays put; the user taps to read it), not floated
+        // over the recipe.
         .task(id: viewModel.detail?.id) {
             guard let detail = viewModel.detail else { return }
             try? await Task.sleep(for: .seconds(2.5))
             guard !Task.isCancelled, Double.random(in: 0...1) < 0.6 else { return }
-            spatchViewModel.show(
-                message: SpatchContent.recipeCameoLine(prepTime: detail.prepTime, tag: detail.tagNames.first),
+            spatchPerch.post(
+                SpatchContent.recipeCameoLine(prepTime: detail.prepTime, tag: detail.tagNames.first),
                 mood: .happy
             )
         }
@@ -162,27 +163,50 @@ struct RecipeDetailView: View {
         "\(IngredientAmount.format(scale))×"
     }
 
-    /// Top-right menu to halve/double/triple the recipe. Scaling multiplies
-    /// ingredient quantities and the servings tile live.
-    private var scaleMenu: some View {
-        Menu {
-            Picker("Scale Recipe", selection: $scale) {
-                Text("Half (½×)").tag(0.5)
-                Text("Original (1×)").tag(1.0)
-                Text("Double (2×)").tag(2.0)
-                Text("Triple (3×)").tag(3.0)
+    /// The Servings stat rendered as an interactive stepper — the "stat becomes a
+    /// control". Stepping nudges the whole-servings count (via
+    /// `RecipeServingsScaler`), which drives `scale`, which recomputes every
+    /// ingredient amount through the same `IngredientAmount` formatter the
+    /// grocery list uses. Replaces the old toolbar ½/2/3× menu.
+    private func servingsStepper(base: Int) -> some View {
+        VStack(spacing: 6) {
+            Image(systemName: "person.2").foregroundStyle(Color.brandPrimary)
+            HStack(spacing: 12) {
+                Button {
+                    withAnimation(.snappy) {
+                        scale = RecipeServingsScaler.steppedScale(base: base, scale: scale, delta: -1)
+                    }
+                } label: {
+                    Image(systemName: "minus.circle.fill").font(.title3)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(RecipeServingsScaler.canDecrease(base: base, scale: scale) ? Color.brandPrimary : Color.secondary)
+                .disabled(!RecipeServingsScaler.canDecrease(base: base, scale: scale))
+                .accessibilityLabel("Fewer servings")
+
+                Text("\(RecipeServingsScaler.displayedServings(base: base, scale: scale))")
+                    .font(.headline)
+                    .frame(minWidth: 22)
+                    .contentTransition(.numericText())
+
+                Button {
+                    withAnimation(.snappy) {
+                        scale = RecipeServingsScaler.steppedScale(base: base, scale: scale, delta: 1)
+                    }
+                } label: {
+                    Image(systemName: "plus.circle.fill").font(.title3)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.brandPrimary)
+                .accessibilityLabel("More servings")
             }
-        } label: {
-            if scale == 1 {
-                Label("Scale Recipe", systemImage: "slider.horizontal.3")
-            } else {
-                // Show the active multiplier so it's clear the recipe is scaled.
-                Text(scaleLabel)
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(Color.brandPrimary)
-            }
+            Text(scale == 1 ? "Servings" : "Servings (\(scaleLabel))")
+                .font(.caption2).foregroundStyle(.secondary)
         }
-        .accessibilityLabel("Scale Recipe")
+        .frame(maxWidth: .infinity)
+        .padding()
+        .surface(.card)
+        .accessibilityElement(children: .contain)
     }
 
     @ViewBuilder
@@ -225,8 +249,13 @@ struct RecipeDetailView: View {
         VStack(alignment: .leading, spacing: 12) {
             heroImage(detail)
 
-            // The recipe title lives in the (large, wrapping) navigation bar —
-            // no second title here, which keeps the header from feeling cramped.
+            // The full recipe title leads the content directly under the image —
+            // wrapping freely, never truncated, however long the name is.
+            Text(detail.title)
+                .font(.largeTitle.bold())
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
             if !detail.tagNames.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
@@ -249,6 +278,14 @@ struct RecipeDetailView: View {
         }
     }
 
+    /// Whether the pinned cook bar is currently shown (drives the perch lift).
+    private var cookBarShown: Bool {
+        viewModel.detail.map(hasCookableContent) ?? false
+    }
+
+    /// The core "how to cook it" metadata — prep time and (interactive) servings,
+    /// inline directly under the title. The ATK rating moved down to the Ratings
+    /// & Reviews card, where a rating belongs.
     @ViewBuilder
     private func statsRow(_ detail: RecipeDetail) -> some View {
         HStack(spacing: 16) {
@@ -256,28 +293,24 @@ struct RecipeDetailView: View {
                 statTile(icon: "clock", value: prepLabel, label: "Prep Time")
             }
             if let servings = detail.servings {
-                statTile(
-                    icon: "person.2",
-                    value: IngredientAmount.format(Double(servings) * scale),
-                    label: scale == 1 ? "Servings" : "Servings (\(scaleLabel))"
-                )
-            }
-            if let atkRating = detail.atkRating {
-                statTile(
-                    icon: "star.fill",
-                    value: String(format: "%.1f", atkRating),
-                    label: atkRatingLabel(detail.atkRatingCount),
-                    tint: Color.brandSaffron
-                )
+                servingsStepper(base: servings)
             }
         }
     }
 
-    /// "ATK Rating" alone when the review count is unknown, otherwise folds the
-    /// count in ("ATK Rating (23)") so the tile stays a single compact label.
-    private func atkRatingLabel(_ count: Int?) -> String {
-        guard let count, count > 0 else { return "ATK Rating" }
-        return "ATK Rating (\(count))"
+    /// America's Test Kitchen's average rating, shown in the Ratings & Reviews
+    /// card above the household's own ratings.
+    private func atkRatingRow(rating: Double, count: Int?) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "star.fill").font(.subheadline).foregroundStyle(Color.brandSaffron)
+            Text("America's Test Kitchen").font(.subheadline.weight(.semibold))
+            Spacer(minLength: 8)
+            Text(String(format: "%.1f", rating)).font(.subheadline.weight(.bold))
+            if let count, count > 0 {
+                Text("· \(count) \(count == 1 ? "review" : "reviews")")
+                    .font(.subheadline).foregroundStyle(.secondary)
+            }
+        }
     }
 
     private func statTile(icon: String, value: String, label: String, tint: Color = .brandPrimary) -> some View {
@@ -289,7 +322,7 @@ struct RecipeDetailView: View {
         }
         .frame(maxWidth: .infinity)
         .padding()
-        .glassEffect(in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .surface(.card)
     }
 
     @ViewBuilder
@@ -414,6 +447,12 @@ struct RecipeDetailView: View {
                 favoriteButton
             }
 
+            // America's Test Kitchen's own rating — a rating, so it lives with
+            // the ratings rather than up in the cook-metadata row.
+            if let atkRating = viewModel.detail?.atkRating {
+                atkRatingRow(rating: atkRating, count: viewModel.detail?.atkRatingCount)
+            }
+
             // Your own review.
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 4) {
@@ -471,7 +510,7 @@ struct RecipeDetailView: View {
             }
         }
         .padding()
-        .glassEffect(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .surface(.card, radius: Surface.Radius.large)
     }
 
     /// Heart toggle beside the ratings — the "favorites" affordance.
@@ -524,7 +563,10 @@ struct RecipeDetailView: View {
         !detail.ingredients.isEmpty || (detail.instructions?.isEmpty == false)
     }
 
-    private func cookButton(_ detail: RecipeDetail) -> some View {
+    /// The pinned bottom action bar: a full-width "Start Cooking" over a
+    /// translucent bar so scrolling content stays legible beneath it. Capped to
+    /// the same readable column as the content on wide screens.
+    private func cookBar(_ detail: RecipeDetail) -> some View {
         Button {
             showingCookMode = true
         } label: {
@@ -534,5 +576,11 @@ struct RecipeDetailView: View {
         }
         .buttonStyle(.glassProminent)
         .tint(Color.brandPrimary)
+        .frame(maxWidth: 700)
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal)
+        .padding(.top, 10)
+        .padding(.bottom, 6)
+        .background(.bar)
     }
 }

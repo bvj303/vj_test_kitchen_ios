@@ -54,6 +54,7 @@ struct RecipeListView: View {
                 .onAppear { Task { await viewModel.loadMoreIfNeeded(currentItem: recipe) } }
             }
             .listStyle(.plain)
+            .scrollContentBackground(.hidden)
             .overlay {
                 if viewModel.isLoading && viewModel.items.isEmpty {
                     ProgressView()
@@ -64,6 +65,7 @@ struct RecipeListView: View {
             .refreshable { await viewModel.load() }
             .scrollDismissesKeyboard(.interactively)
         }
+        .screenBackground()
         .dismissesKeyboardOnBackgroundTap()
         .keyboardDoneButton()
         .toolbar {
@@ -178,17 +180,34 @@ struct RecipeListView: View {
                 description: Text("Tap the heart on a recipe (or swipe a row) to add it here.")
             )
         } else if viewModel.isFilteringOrSearching {
-            ContentUnavailableView(
-                "No Matching Recipes",
-                systemImage: "line.3.horizontal.decrease.circle",
-                description: Text("Try a different search or clear your filters.")
-            )
+            ContentUnavailableView {
+                Label("No Matching Recipes", systemImage: "line.3.horizontal.decrease.circle")
+            } description: {
+                Text("Nothing matched that. Try a different search, or clear what you've got set.")
+            } actions: {
+                Button {
+                    viewModel.searchText = ""
+                    viewModel.clearFilters()
+                } label: {
+                    Text("Clear Search & Filters")
+                }
+                .buttonStyle(.glassProminent)
+                .tint(Color.brandPrimary)
+            }
         } else {
-            ContentUnavailableView(
-                "No Recipes Yet",
-                systemImage: "fork.knife",
-                description: Text("Recipes you add will show up here.")
-            )
+            ContentUnavailableView {
+                Label("No Recipes Yet", systemImage: "fork.knife")
+            } description: {
+                Text("Add your first recipe and it'll show up here.")
+            } actions: {
+                Button {
+                    showingAddRecipe = true
+                } label: {
+                    Label("Add a Recipe", systemImage: "plus")
+                }
+                .buttonStyle(.glassProminent)
+                .tint(Color.brandPrimary)
+            }
         }
     }
 }

@@ -31,6 +31,12 @@ struct MealCalendarView: View {
     // week agenda, not a search form.
     @Environment(SpatchTutorialViewModel.self) private var tutorialViewModel: SpatchTutorialViewModel?
 
+    /// Focuses the Quick Planner's recipe search when an empty day's "Add a meal"
+    /// button is tapped, and a scroll trigger so the compact layout brings the
+    /// planner (which sits above the agenda) into view first.
+    @FocusState private var plannerSearchFocused: Bool
+    @State private var pendingPlannerScroll = false
+
     /// Caps the agenda column's width so a landscape iPad reads as a centered
     /// schedule column rather than rows spanning the whole display.
     private static let agendaMaxWidth: CGFloat = 640
@@ -58,6 +64,7 @@ struct MealCalendarView: View {
                 compactLayout
             }
         }
+        .screenBackground()
         .navigationTitle("Calendar")
         .task { await viewModel.load() }
         .refreshable { await viewModel.load() }
@@ -92,22 +99,42 @@ struct MealCalendarView: View {
 
     /// iPhone: Quick Planner then the agenda list, one scroll.
     private var compactLayout: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                weekHeader
-                // The tour's "Meal Calendar" step can't scroll (the content is
-                // disabled under the dim), and on iPhone the planner form sits
-                // above the fold — without this swap the step showed a search
-                // form instead of the calendar it's introducing.
-                if tutorialViewModel?.isPresented != true {
-                    quickPlanner
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(spacing: 20) {
+                    weekHeader
+                    // The tour's "Meal Calendar" step can't scroll (the content is
+                    // disabled under the dim), and on iPhone the planner form sits
+                    // above the fold — without this swap the step showed a search
+                    // form instead of the calendar it's introducing.
+                    if tutorialViewModel?.isPresented != true {
+                        quickPlanner
+                            .id(Self.plannerAnchor)
+                    }
+                    agendaList
+                    weatherAttributionFooter
                 }
-                agendaList
-                weatherAttributionFooter
+                .padding()
             }
-            .padding()
+            .scrollDismissesKeyboard(.interactively)
+            // An empty day's "Add a meal" tap scrolls the planner (above the
+            // agenda) into view before focusing its search field.
+            .onChange(of: pendingPlannerScroll) { _, pending in
+                guard pending else { return }
+                withAnimation { proxy.scrollTo(Self.plannerAnchor, anchor: .top) }
+                pendingPlannerScroll = false
+            }
         }
-        .scrollDismissesKeyboard(.interactively)
+    }
+
+    private static let plannerAnchor = "quickPlanner"
+
+    /// Start planning a meal on `date`: preselect it in the Quick Planner, bring
+    /// the planner into view (compact), and focus its recipe search.
+    private func beginPlanning(on date: String) {
+        viewModel.selectedPlanningDate = date
+        pendingPlannerScroll = true
+        plannerSearchFocused = true
     }
 
     /// iPad (portrait and landscape): a fixed planner sidebar beside a
@@ -196,13 +223,10 @@ struct MealCalendarView: View {
                 }
             }
         }
-        .glassEffect(
-            .regular.tint(Color.brandPrimary.opacity(0.05)),
-            in: RoundedRectangle(cornerRadius: 20, style: .continuous)
-        )
+        .surface(.card, radius: Surface.Radius.large)
         // Clip per-row backgrounds (today's highlight) to the card's rounded
         // corners so they can't poke past the top/bottom edges.
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: Surface.Radius.large, style: .continuous))
     }
 
     @ViewBuilder
@@ -233,19 +257,21 @@ struct MealCalendarView: View {
                 if plans.isEmpty {
                     // A single tappable "Add a meal" per empty day, instead of a
                     // dead "No meals planned" line: it points the Quick Planner at
-                    // this day so adding takes one fewer step than hunting for the
+                    // this day — scrolling it into view and focusing its search on
+                    // compact — so adding takes one fewer step than hunting for the
                     // right day in the planner's picker.
                     Button {
-                        viewModel.selectedPlanningDate = date
+                        beginPlanning(on: date)
                     } label: {
                         Label("Add a meal", systemImage: "plus.circle")
-                            .font(.subheadline)
+                            .font(.subheadline.weight(.medium))
                             .foregroundStyle(Color.brandSage)
                     }
                     .buttonStyle(.plain)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 4)
-                    .accessibilityHint("Sets the Quick Planner to this day")
+                    .accessibilityLabel("Add a meal on \(Self.dayPickerLabel(for: date))")
+                    .accessibilityHint("Opens the Quick Planner for this day")
                 } else {
                     ForEach(plans) { plan in mealRow(plan) }
                 }
@@ -348,7 +374,7 @@ struct MealCalendarView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             Color.brandSaffron.opacity(0.14),
-            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+            in: RoundedRectangle(cornerRadius: Surface.Radius.small, style: .continuous)
         )
     }
 
@@ -421,6 +447,7 @@ struct MealCalendarView: View {
 
             TextField("Search a recipe...", text: $viewModel.recipeSearchText)
                 .textFieldStyle(.roundedBorder)
+                .focused($plannerSearchFocused)
 
             if !viewModel.matchingRecipes.isEmpty {
                 VStack(alignment: .leading, spacing: 0) {
@@ -446,10 +473,7 @@ struct MealCalendarView: View {
             }
         }
         .padding()
-        .glassEffect(
-            .regular.tint(Color.brandPrimary.opacity(0.08)),
-            in: RoundedRectangle(cornerRadius: 20, style: .continuous)
-        )
+        .surface(.card, radius: Surface.Radius.large)
     }
 
     // MARK: - Formatting helpers

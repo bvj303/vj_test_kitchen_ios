@@ -8,8 +8,8 @@ import SwiftUI
 struct HomeView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(AppCommands.self) private var appCommands
+    @Environment(SpatchPerchViewModel.self) private var spatchPerch
     @State private var viewModel = HomeViewModel()
-    @State private var spatchViewModel = SpatchBuddyViewModel(startsVisible: false)
 
     /// Cap + center the content on very wide screens so a landscape iPad reads
     /// as a centered dashboard rather than a few stretched-out rows.
@@ -28,14 +28,7 @@ struct HomeView: View {
             .frame(maxWidth: .infinity)
             .padding(isRegular ? 24 : 16)
         }
-        .background(Color.platformGroupedBackground)
-        .overlay(alignment: spatchViewModel.corner.alignment) {
-            SpatchBuddyView(
-                viewModel: spatchViewModel,
-                onRequestNewLine: { Self.randomSpatchLine(recipes: viewModel.suggestedRecipes) }
-            )
-            .padding(spatchViewModel.corner.edgeInsets)
-        }
+        .screenBackground()
         .navigationTitle("Home")
         .task { await viewModel.load() }
         .refreshable { await viewModel.load(force: true) }
@@ -51,8 +44,8 @@ struct HomeView: View {
             guard !viewModel.suggestedRecipes.isEmpty else { return }
             try? await Task.sleep(for: .seconds(4))
             guard !Task.isCancelled else { return }
-            spatchViewModel.show(
-                message: SpatchContent.recommendationLine(recipeTitle: viewModel.suggestedRecipes.first?.title),
+            spatchPerch.post(
+                SpatchContent.recommendationLine(recipeTitle: viewModel.suggestedRecipes.first?.title),
                 mood: .happy
             )
         }
@@ -65,7 +58,7 @@ struct HomeView: View {
                 try? await Task.sleep(for: .seconds(.random(in: 100...160)))
                 guard !Task.isCancelled, !viewModel.suggestedRecipes.isEmpty else { continue }
                 let (message, mood) = Self.randomSpatchLine(recipes: viewModel.suggestedRecipes)
-                spatchViewModel.show(message: message, mood: mood)
+                spatchPerch.post(message, mood: mood)
             }
         }
         .alert(
@@ -127,9 +120,9 @@ struct HomeView: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(isRegular ? 24 : 16)
+        .padding(isRegular ? Surface.Space.xLarge : Surface.Space.medium)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassEffect(.regular.tint(Color.brandPrimary.opacity(0.18)), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .surface(.elevated, radius: Surface.Radius.large)
     }
 
     /// A small live-weather overline shown above the suggestion title when a
@@ -217,7 +210,7 @@ struct HomeView: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, minHeight: 120)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .surface(.card)
     }
 
     /// Spatch's Home pop-in line. A recipe recommendation is only one option
