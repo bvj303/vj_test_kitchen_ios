@@ -25,15 +25,18 @@ final class HomeLocationViewModel {
     private let store: WeatherPreferenceStoring
     private let locationProvider: LocationProviding
     private let geocoder: GeocodingProviding
+    private let logger: AppLogger
 
     init(
         store: WeatherPreferenceStoring = UserDefaultsWeatherPreferenceStore(),
         locationProvider: LocationProviding = CoreLocationService(),
-        geocoder: GeocodingProviding = CLGeocoderService()
+        geocoder: GeocodingProviding = CLGeocoderService(),
+        logger: AppLogger = .shared
     ) {
         self.store = store
         self.locationProvider = locationProvider
         self.geocoder = geocoder
+        self.logger = logger
         self.homeLocation = store.loadHomeLocation()
     }
 
@@ -71,6 +74,7 @@ final class HomeLocationViewModel {
             let zip = await geocoder.postalCode(for: coordinate)
             save(HomeLocation(postalCode: zip, coordinate: coordinate))
         } catch {
+            logger.error("Current-location capture failed", category: "location", error: error)
             errorMessage = ErrorPresenter.message(for: error)
         }
     }
@@ -88,6 +92,11 @@ final class HomeLocationViewModel {
             save(HomeLocation(postalCode: zip, coordinate: coordinate))
             zipInput = ""
         } catch {
+            // Often just an unresolvable ZIP (user input) rather than a system
+            // fault, so warning — but still logged so a broken geocoder shows up.
+            logger.warning("ZIP geocode failed", category: "location", metadata: [
+                "errorType": String(describing: type(of: error)),
+            ])
             errorMessage = "Couldn't find that ZIP code. Check it and try again."
         }
     }

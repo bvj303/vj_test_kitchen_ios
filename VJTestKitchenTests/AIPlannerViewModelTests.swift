@@ -47,6 +47,21 @@ struct AIPlannerViewModelTests {
         #expect(viewModel.errorMessage == nil)
     }
 
+    @Test func sendLogsErrorWhenRequestFails() async {
+        struct SendError: Error {}
+        let ai = FakeAIService()
+        ai.errorToThrow = SendError()
+        let sink = SpyLogSink()
+        let logger = AppLogger(sinks: [sink], context: LogContext(appVersion: "1", platform: "test"))
+        let viewModel = AIPlannerViewModel(aiService: ai, logger: logger)
+        viewModel.inputText = "What should I cook?"
+
+        await viewModel.send()
+
+        // A failing Edge Function is surfaced via errorMessage AND logged raw.
+        #expect(sink.events.contains { $0.level == .error && $0.category == "ai" })
+    }
+
     @Test func sendPassesFullConversationHistorySoFollowUpsHaveContext() async {
         let ai = FakeAIService()
         ai.responseToReturn = "Try the Kale Salad."

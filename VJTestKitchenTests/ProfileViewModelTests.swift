@@ -38,6 +38,18 @@ struct ProfileViewModelTests {
         #expect(viewModel.errorMessage == "failed to load")
     }
 
+    @Test func loadLogsErrorOnFailure() async {
+        let fakeProfile = FakeProfileService()
+        fakeProfile.errorToThrow = TestError()
+        let sink = SpyLogSink()
+        let logger = AppLogger(sinks: [sink], context: LogContext(appVersion: "1", platform: "test"))
+        let viewModel = ProfileViewModel(profileService: fakeProfile, usernameDebounceDelay: .zero, logger: logger)
+
+        await viewModel.load()
+
+        #expect(sink.events.contains { $0.level == .error && $0.category == "profile" })
+    }
+
     @Test func loadPopulatesAvatarUrlFromFetchedProfile() async {
         let profile = Profile(id: UUID(), displayName: "Ada Lovelace", firstName: "Ada", lastName: "Lovelace", username: "ada_l", avatarUrl: "https://cdn.example.com/a.jpg", createdAt: Date())
         let (viewModel, _) = makeViewModel(profile: profile)

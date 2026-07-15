@@ -33,15 +33,18 @@ final class RecipeFormViewModel {
 
     private let recipeService: RecipeServicing
     private let saveService: RecipeSaving
+    private let logger: AppLogger
 
     init(
         mode: Mode,
         recipeService: RecipeServicing = RecipeService(),
-        saveService: RecipeSaving = RecipeSaveService()
+        saveService: RecipeSaving = RecipeSaveService(),
+        logger: AppLogger = .shared
     ) {
         self.mode = mode
         self.recipeService = recipeService
         self.saveService = saveService
+        self.logger = logger
     }
 
     var isEditing: Bool {
@@ -99,6 +102,7 @@ final class RecipeFormViewModel {
                 }
             tagsText = detail.tagNames.joined(separator: ", ")
         } catch {
+            logger.error("Recipe edit-form load failed", category: "recipes", error: error)
             errorMessage = ErrorPresenter.message(for: error)
         }
     }
@@ -146,6 +150,7 @@ final class RecipeFormViewModel {
             try await saveService.save(recipeId: recipeId, draft: draft, ingredients: ingredients, tagNames: tagNames)
             didSave = true
         } catch {
+            logger.error("Recipe save failed", category: "recipes", error: error)
             errorMessage = ErrorPresenter.message(for: error)
         }
     }
@@ -159,6 +164,7 @@ final class RecipeFormViewModel {
             try await recipeService.delete(id: recipeId)
             return true
         } catch {
+            logger.error("Recipe delete failed", category: "recipes", error: error)
             errorMessage = ErrorPresenter.message(for: error)
             return false
         }
