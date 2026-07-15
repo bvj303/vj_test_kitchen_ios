@@ -32,7 +32,7 @@ final class SpatchBuddyViewModel {
         self.isVisible = startsVisible
         self.message = initialMessage
         self.mood = initialMood
-        let corner = SpatchCorner.random()
+        let corner = SpatchCorner.randomCameo()
         self.corner = corner
         self.tilt = Self.randomTilt(for: corner)
         self.autoHideDelay = autoHideDelay
@@ -45,7 +45,7 @@ final class SpatchBuddyViewModel {
     func show(message: String, mood: SpatchMood = .happy) {
         self.message = message
         self.mood = mood
-        corner = .random(excluding: corner)
+        corner = .randomCameo(excluding: corner)
         tilt = Self.randomTilt(for: corner)
         isVisible = true
         scheduleAutoHide()
@@ -56,7 +56,7 @@ final class SpatchBuddyViewModel {
     func cycle(to message: String, mood: SpatchMood = .happy) {
         self.message = message
         self.mood = mood
-        corner = .random(excluding: corner)
+        corner = .randomCameo(excluding: corner)
         tilt = Self.randomTilt(for: corner)
         scheduleAutoHide()
     }

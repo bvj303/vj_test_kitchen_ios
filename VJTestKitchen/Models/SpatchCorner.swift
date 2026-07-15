@@ -64,4 +64,18 @@ enum SpatchCorner: CaseIterable, Sendable {
     static func random(excluding current: SpatchCorner? = nil) -> SpatchCorner {
         allCases.filter { $0 != current }.randomElement() ?? .bottomTrailing
     }
+
+    /// The positions a floating cameo is allowed to use: the two bottom corners
+    /// only. Top/mid positions overlap primary, actionable content — recipe
+    /// titles and the Prep Time/Servings cards near the top, ingredient "+"
+    /// buttons down the middle — so cameos stay pinned to the bottom margin,
+    /// clear of anything the user needs to read or tap. (The full six-way set is
+    /// still used by non-cameo callers/tests.)
+    static let cameoPositions: [SpatchCorner] = [.bottomLeading, .bottomTrailing]
+
+    /// A random bottom cameo position different from `current`.
+    static func randomCameo(excluding current: SpatchCorner? = nil) -> SpatchCorner {
+        let choices = cameoPositions.filter { $0 != current }
+        return choices.randomElement() ?? cameoPositions.randomElement() ?? .bottomTrailing
+    }
 }
