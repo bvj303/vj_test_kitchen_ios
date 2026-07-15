@@ -84,6 +84,19 @@ struct RecipeListViewModelTests {
         #expect(viewModel.items.isEmpty)
     }
 
+    @Test func loadLogsErrorWhenFetchFails() async {
+        let fake = FakeRecipeService()
+        fake.errorToThrow = TestError()
+        let sink = SpyLogSink()
+        let logger = AppLogger(sinks: [sink], context: LogContext(appVersion: "1", platform: "test"))
+        let viewModel = RecipeListViewModel(recipeService: fake, tagService: FakeTagService(), snapshotStore: FakeSnapshotStore(), logger: logger)
+
+        await viewModel.load()
+
+        // Surfaced via errorMessage AND logged raw for diagnosis.
+        #expect(sink.events.contains { $0.level == .error && $0.category == "recipes" })
+    }
+
     @Test func searchTextReloadsFromServerAfterDebounce() async {
         let fake = FakeRecipeService()
         fake.recipesToReturn = [makeRecipe(id: 1, title: "Carbonara"), makeRecipe(id: 2, title: "Beef Tacos")]

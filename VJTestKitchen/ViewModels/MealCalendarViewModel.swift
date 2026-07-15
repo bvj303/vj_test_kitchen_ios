@@ -58,6 +58,7 @@ final class MealCalendarViewModel {
     private let widgetPublisher: WidgetPublishing
     private let snapshotStore: LocalSnapshotStoring
     private let debouncer: Debouncer
+    private let logger: AppLogger
 
     /// Matches `.prefix(5)` in `MealCalendarView`'s Quick Planner search results.
     private static let matchingRecipesLimit = 5
@@ -71,7 +72,8 @@ final class MealCalendarViewModel {
         weatherPreferenceStore: WeatherPreferenceStoring = UserDefaultsWeatherPreferenceStore(),
         widgetPublisher: WidgetPublishing = WidgetPublisher(),
         snapshotStore: LocalSnapshotStoring = FileSnapshotStore.shared,
-        debounceDelay: Duration = .milliseconds(300)
+        debounceDelay: Duration = .milliseconds(300),
+        logger: AppLogger = .shared
     ) {
         self.mealPlanService = mealPlanService
         self.recipeService = recipeService
@@ -79,6 +81,7 @@ final class MealCalendarViewModel {
         self.weatherPreferenceStore = weatherPreferenceStore
         self.widgetPublisher = widgetPublisher
         self.snapshotStore = snapshotStore
+        self.logger = logger
         self.debouncer = Debouncer(delay: debounceDelay)
         self.now = now
         let calendar = Self.makeCalendar(timeZone: timeZone)
@@ -202,6 +205,9 @@ final class MealCalendarViewModel {
                 snapshotStore.save(plans, key: .mealPlansWindow)
             }
         } catch {
+            // Surfaced via errorMessage, but also logged raw — this load fires on
+            // appear/paging/foreground, so a persistent failure needs a trail.
+            logger.error("Meal plans load failed", category: "calendar", error: error)
             errorMessage = ErrorPresenter.message(for: error)
         }
     }
@@ -226,7 +232,12 @@ final class MealCalendarViewModel {
             let forecasts = try await weatherForecaster.dailyForecast(for: home.coordinate)
             forecastByDate = Dictionary(forecasts.map { ($0.date, $0) }, uniquingKeysWith: { first, _ in first })
         } catch {
+            // Weather is a nice-to-have, never surfaced — but log so a persistently
+            // failing forecast isn't invisible.
             forecastByDate = [:]
+            logger.warning("Calendar weather forecast fetch failed", category: "calendar", metadata: [
+                "errorType": String(describing: type(of: error)),
+            ])
         }
     }
 

@@ -48,17 +48,20 @@ final class GroceryListViewModel {
     private let reminderService: ReminderExporting
     private let widgetPublisher: WidgetPublishing
     private let snapshotStore: LocalSnapshotStoring
+    private let logger: AppLogger
 
     init(
         service: GroceryItemServicing = GroceryItemService(),
         reminderService: ReminderExporting = ReminderService(),
         widgetPublisher: WidgetPublishing = WidgetPublisher(),
-        snapshotStore: LocalSnapshotStoring = FileSnapshotStore.shared
+        snapshotStore: LocalSnapshotStoring = FileSnapshotStore.shared,
+        logger: AppLogger = .shared
     ) {
         self.service = service
         self.reminderService = reminderService
         self.widgetPublisher = widgetPublisher
         self.snapshotStore = snapshotStore
+        self.logger = logger
     }
 
     var isEmpty: Bool { items.isEmpty }
@@ -134,6 +137,9 @@ final class GroceryListViewModel {
         do {
             items = try await service.fetchAll()
         } catch {
+            // Surfaced via errorMessage, but also logged raw — this load fires on
+            // appear/refresh/foreground, so a persistent failure needs a trail.
+            logger.error("Grocery list load failed", category: "grocery", error: error)
             errorMessage = ErrorPresenter.message(for: error)
         }
     }

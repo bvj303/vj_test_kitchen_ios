@@ -86,7 +86,8 @@ private func makeViewModel(
     mealPlanService: FakeMealPlanService = FakeMealPlanService(),
     recipeService: FakeMealPlanRecipeService = FakeMealPlanRecipeService(),
     snapshotStore: FakeSnapshotStore = FakeSnapshotStore(),
-    debounceDelay: Duration = .milliseconds(300)
+    debounceDelay: Duration = .milliseconds(300),
+    logger: AppLogger = .shared
 ) -> MealCalendarViewModel {
     MealCalendarViewModel(
         now: { now },
@@ -94,7 +95,8 @@ private func makeViewModel(
         mealPlanService: mealPlanService,
         recipeService: recipeService,
         snapshotStore: snapshotStore,
-        debounceDelay: debounceDelay
+        debounceDelay: debounceDelay,
+        logger: logger
     )
 }
 
@@ -280,6 +282,19 @@ struct MealCalendarViewModelTests {
         await viewModel.load()
 
         #expect(viewModel.errorMessage == "failed")
+    }
+
+    @Test func loadLogsErrorWhenPlansFetchFails() async {
+        let plans = FakeMealPlanService()
+        plans.errorToThrow = TestError()
+        let sink = SpyLogSink()
+        let logger = AppLogger(sinks: [sink], context: LogContext(appVersion: "1", platform: "test"))
+        let viewModel = makeViewModel(mealPlanService: plans, logger: logger)
+
+        await viewModel.load()
+
+        // Surfaced via errorMessage AND logged raw for diagnosis.
+        #expect(sink.events.contains { $0.level == .error && $0.category == "calendar" })
     }
 
     @Test func loadPaintsCachedPlansBeforeTheFetchResolves() async {

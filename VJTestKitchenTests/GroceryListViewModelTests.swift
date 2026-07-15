@@ -120,6 +120,19 @@ struct GroceryListViewModelTests {
         #expect(viewModel.errorMessage == "failed")
     }
 
+    @Test func loadLogsErrorWhenFetchFails() async {
+        let service = FakeGroceryItemService()
+        service.fetchError = TestError()
+        let sink = SpyLogSink()
+        let logger = AppLogger(sinks: [sink], context: LogContext(appVersion: "1", platform: "test"))
+        let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService(), snapshotStore: FakeSnapshotStore(), logger: logger)
+
+        await viewModel.load()
+
+        // Surfaced via errorMessage AND logged raw for diagnosis.
+        #expect(sink.events.contains { $0.level == .error && $0.category == "grocery" })
+    }
+
     @Test func addManualItemAutoCategorizesFromName() async {
         let service = FakeGroceryItemService()
         let viewModel = GroceryListViewModel(service: service, reminderService: FakeReminderService(), snapshotStore: FakeSnapshotStore())

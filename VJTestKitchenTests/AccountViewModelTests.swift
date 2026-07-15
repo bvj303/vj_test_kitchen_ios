@@ -28,6 +28,20 @@ struct AccountViewModelTests {
         #expect(viewModel.avatarUrl == nil)
     }
 
+    @Test func loadLogsWarningWhenFetchFails() async {
+        let fake = FakeProfileService()
+        fake.errorToThrow = LoadError()
+        let sink = SpyLogSink()
+        let logger = AppLogger(sinks: [sink], context: LogContext(appVersion: "1", platform: "test"))
+        let viewModel = AccountViewModel(profileService: fake, logger: logger)
+
+        await viewModel.load()
+
+        // The failure is silent to the user but must be logged, or a persistently
+        // failing avatar fetch is invisible.
+        #expect(sink.events.contains { $0.level == .warning && $0.category == "account" })
+    }
+
     @Test func setAvatarUrlUpdatesValueForLiveRefresh() {
         let viewModel = AccountViewModel(profileService: FakeProfileService())
 

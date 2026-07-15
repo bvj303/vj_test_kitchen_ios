@@ -90,6 +90,7 @@ final class RecipeListViewModel {
     private let imagePrefetcher: ImagePrefetching
     private let snapshotStore: LocalSnapshotStoring
     private let debouncer: Debouncer
+    private let logger: AppLogger
 
     /// Bumped by every `reload()`. A page fetch that started under an older
     /// generation is discarded when it lands — without this, a page requested
@@ -103,7 +104,8 @@ final class RecipeListViewModel {
         favoritesService: FavoritesServicing = FavoritesService(),
         imagePrefetcher: ImagePrefetching = ImagePrefetcher.shared,
         snapshotStore: LocalSnapshotStoring = FileSnapshotStore.shared,
-        debounceDelay: Duration = .milliseconds(300)
+        debounceDelay: Duration = .milliseconds(300),
+        logger: AppLogger = .shared
     ) {
         self.recipeService = recipeService
         self.tagService = tagService
@@ -111,6 +113,7 @@ final class RecipeListViewModel {
         self.imagePrefetcher = imagePrefetcher
         self.snapshotStore = snapshotStore
         self.debouncer = Debouncer(delay: debounceDelay)
+        self.logger = logger
     }
 
     func load() async {
@@ -210,6 +213,7 @@ final class RecipeListViewModel {
             }
         } catch {
             guard generation == loadGeneration else { return }
+            logger.error("Recipe list load failed", category: "recipes", error: error)
             errorMessage = ErrorPresenter.message(for: error)
         }
     }
@@ -242,6 +246,7 @@ final class RecipeListViewModel {
             prefetchImages(for: page)
         } catch {
             guard generation == loadGeneration else { return }
+            logger.error("Recipe list next-page load failed", category: "recipes", error: error)
             errorMessage = ErrorPresenter.message(for: error)
         }
     }
