@@ -116,11 +116,19 @@ struct GroceryListView: View {
             if viewModel.isLoading {
                 ProgressView()
             } else {
-                ContentUnavailableView(
-                    "Your List Is Empty",
-                    systemImage: "cart",
-                    description: Text("Tap + to add an item, or open a recipe and add its ingredients.")
-                )
+                ContentUnavailableView {
+                    Label("Your List Is Empty", systemImage: "cart")
+                } description: {
+                    Text("Add items by hand, or open a recipe and tap \u{201C}Add All\u{201D} to pull its ingredients straight in.")
+                } actions: {
+                    Button {
+                        showingAddItem = true
+                    } label: {
+                        Label("Add an Item", systemImage: "plus")
+                    }
+                    .buttonStyle(.glassProminent)
+                    .tint(Color.brandPrimary)
+                }
             }
         } else {
             VStack(spacing: 0) {
