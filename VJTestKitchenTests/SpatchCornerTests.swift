@@ -48,4 +48,18 @@ struct SpatchCornerTests {
         let edges = Set(SpatchCorner.allCases.map(\.slideEdge))
         #expect(edges.count == 4)
     }
+
+    @Test func cameoPositionsAreBottomOnlySoTheyClearTopContent() {
+        // Cameos must never sit over titles or the top stat cards — they're
+        // pinned to the bottom margin.
+        #expect(SpatchCorner.cameoPositions == [.bottomLeading, .bottomTrailing])
+        for _ in 0..<40 {
+            #expect(SpatchCorner.cameoPositions.contains(SpatchCorner.randomCameo()))
+        }
+    }
+
+    @Test func randomCameoExcludingCurrentRelocatesToTheOtherBottomCorner() {
+        #expect(SpatchCorner.randomCameo(excluding: .bottomLeading) == .bottomTrailing)
+        #expect(SpatchCorner.randomCameo(excluding: .bottomTrailing) == .bottomLeading)
+    }
 }

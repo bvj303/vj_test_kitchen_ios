@@ -13,85 +13,89 @@ struct AuthView: View {
 
         NavigationStack {
             ZStack {
-                LinearGradient(
-                    colors: [Color.accentColor.opacity(0.18), Color.platformBackground],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .ignoresSafeArea()
+                AuthBackground()
 
-                ScrollView {
-                    VStack(spacing: 28) {
-                        VStack(spacing: 8) {
-                            Image(systemName: "fork.knife.circle.fill")
-                                .font(.system(size: 56))
-                                .symbolRenderingMode(.hierarchical)
-                                .foregroundStyle(Color.accentColor)
+                // Center the card vertically so a roomy screen (iPad, Mac)
+                // doesn't leave the sign-in floating against the top with the
+                // bottom two-thirds empty. The Spacers collapse to nothing on a
+                // compact iPhone where the content already fills the height.
+                GeometryReader { proxy in
+                    ScrollView {
+                        VStack(spacing: 28) {
+                            Spacer(minLength: 0)
 
-                            Text("VJ Test Kitchen")
-                                .font(.largeTitle.bold())
+                            VStack(spacing: 8) {
+                                Image(systemName: "fork.knife.circle.fill")
+                                    .font(.system(size: 56))
+                                    .symbolRenderingMode(.hierarchical)
+                                    .foregroundStyle(Color.accentColor)
 
-                            Text("Sign in to your kitchen")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding(.top, 60)
+                                Text("VJ Test Kitchen")
+                                    .font(.largeTitle.bold())
 
-                        VStack(spacing: 14) {
-                            TextField("Email", text: $viewModel.email)
-                                .textContentType(.emailAddress)
-                                .platformKeyboardType(.emailAddress)
-                                .platformAutocapitalization(.never)
-                                .autocorrectionDisabled()
-                                .focused($focusedField, equals: .email)
-                                .submitLabel(.next)
-                                .onSubmit { focusedField = .password }
-                                .textFieldStyle(.roundedBorder)
-
-                            SecureField("Password", text: $viewModel.password)
-                                .textContentType(.password)
-                                .focused($focusedField, equals: .password)
-                                .submitLabel(.go)
-                                .onSubmit { Task { await viewModel.signIn() } }
-                                .textFieldStyle(.roundedBorder)
-
-                            if !viewModel.password.isEmpty && viewModel.password.count < AuthViewModel.minimumPasswordLength {
-                                Text("Password must be at least \(AuthViewModel.minimumPasswordLength) characters.")
+                                Text("Sign in to your kitchen")
+                                    .font(.subheadline)
                                     .foregroundStyle(.secondary)
-                                    .font(.footnote)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
                             }
 
-                            if let errorMessage = viewModel.errorMessage {
-                                Text(errorMessage)
-                                    .foregroundStyle(.red)
-                                    .font(.footnote)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
+                            VStack(spacing: 14) {
+                                TextField("Email", text: $viewModel.email)
+                                    .textContentType(.emailAddress)
+                                    .platformKeyboardType(.emailAddress)
+                                    .platformAutocapitalization(.never)
+                                    .autocorrectionDisabled()
+                                    .focused($focusedField, equals: .email)
+                                    .submitLabel(.next)
+                                    .onSubmit { focusedField = .password }
+                                    .authFieldStyle(isFocused: focusedField == .email)
 
-                            Button {
-                                Task { await viewModel.signIn() }
-                            } label: {
-                                Text("Sign In")
-                                    .frame(maxWidth: .infinity)
-                            }
-                            .buttonStyle(.glassProminent)
-                            .disabled(viewModel.isSubmitting || viewModel.email.isEmpty || viewModel.password.isEmpty)
-                            .padding(.top, 4)
+                                SecureField("Password", text: $viewModel.password)
+                                    .textContentType(.password)
+                                    .focused($focusedField, equals: .password)
+                                    .submitLabel(.go)
+                                    .onSubmit { Task { await viewModel.signIn() } }
+                                    .authFieldStyle(isFocused: focusedField == .password)
 
-                            NavigationLink("Create Account") {
-                                CreateAccountView()
+                                if !viewModel.password.isEmpty && viewModel.password.count < AuthViewModel.minimumPasswordLength {
+                                    Text("Password must be at least \(AuthViewModel.minimumPasswordLength) characters.")
+                                        .foregroundStyle(.secondary)
+                                        .font(.footnote)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+
+                                if let errorMessage = viewModel.errorMessage {
+                                    Text(errorMessage)
+                                        .foregroundStyle(.red)
+                                        .font(.footnote)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+
+                                Button {
+                                    Task { await viewModel.signIn() }
+                                } label: {
+                                    Text("Sign In")
+                                        .frame(maxWidth: .infinity)
+                                }
+                                .buttonStyle(.glassProminent)
+                                .disabled(viewModel.isSubmitting || viewModel.email.isEmpty || viewModel.password.isEmpty)
+                                .padding(.top, 4)
+
+                                NavigationLink("Create Account") {
+                                    CreateAccountView()
+                                }
+                                .disabled(viewModel.isSubmitting)
                             }
-                            .disabled(viewModel.isSubmitting)
+                            .padding(24)
+                            .glassEffect(in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                            .frame(maxWidth: 420)
+
+                            Spacer(minLength: 0)
                         }
-                        .padding(24)
-                        .glassEffect(in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-                        .frame(maxWidth: 420)
+                        .padding(.horizontal)
+                        .frame(maxWidth: .infinity, minHeight: proxy.size.height)
                     }
-                    .padding(.horizontal)
-                    .frame(maxWidth: .infinity)
+                    .scrollDismissesKeyboard(.interactively)
                 }
-                .scrollDismissesKeyboard(.interactively)
             }
         }
         .dismissesKeyboardOnBackgroundTap()

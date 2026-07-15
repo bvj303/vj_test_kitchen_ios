@@ -55,10 +55,12 @@ struct IngredientAmount: Equatable {
     }
 
     /// The quantity + unit as a display string, e.g. "1½ teaspoons". The unit is
-    /// omitted when empty ("3").
+    /// omitted when empty ("3") and inflected to match the value ("1 cup" vs
+    /// "2 cups").
     var formatted: String {
         let quantity = Self.format(value)
-        return unit.isEmpty ? quantity : "\(quantity) \(unit)"
+        let unitText = Self.pluralizedUnit(unit, for: value)
+        return unitText.isEmpty ? quantity : "\(quantity) \(unitText)"
     }
 
     // MARK: - Formatting
@@ -154,5 +156,64 @@ struct IngredientAmount: Equatable {
             return (unit, name)
         }
         return ("", text)
+    }
+
+    // MARK: - Unit pluralization
+
+    /// Abbreviated units that read the same whether one or many — never
+    /// inflected ("200 g", not "200 gs"; "1 tbsp", not "1 tbsps").
+    private static let nonInflectingUnits: Set<String> = [
+        "g", "kg", "mg", "ml", "l", "cl", "dl", "oz", "lb", "lbs", "fl oz",
+        "tsp", "tbsp", "tbs", "c", "qt", "pt", "gal", "in", "cm", "mm", "pkg", "ct",
+    ]
+
+    /// A few units whose plural/singular isn't the naive +s / −s rule.
+    private static let irregularUnitSingulars: [String: String] = [
+        "leaves": "leaf", "loaves": "loaf", "halves": "half",
+    ]
+    private static let irregularUnitPlurals: [String: String] = [
+        "leaf": "leaves", "loaf": "loaves", "half": "halves",
+    ]
+
+    /// Renders `unit` in its singular or plural form to match `value` — so a
+    /// summed or scaled quantity reads naturally ("1 clove" vs "3 cloves"). Pure
+    /// fractions below one stay singular, the way recipes are written ("½ cup",
+    /// not "½ cups"). Abbreviations never inflect, and an empty unit passes
+    /// through unchanged.
+    static func pluralizedUnit(_ unit: String, for value: Double) -> String {
+        let trimmed = unit.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return "" }
+        let lower = trimmed.lowercased()
+        if nonInflectingUnits.contains(lower) { return trimmed }
+
+        let singular = singularUnit(lower)
+        // Plural only above one; exactly one and fractions under one stay
+        // singular ("1 cup", "½ cup", but "1½ cups", "2 cups").
+        return value > 1.0001 ? pluralUnit(singular) : singular
+    }
+
+    /// Naive singularization of a (lowercased) unit word — enough to normalize
+    /// "cups"→"cup", "cloves"→"clove", "pinches"→"pinch" before re-inflecting.
+    private static func singularUnit(_ unit: String) -> String {
+        if let irregular = irregularUnitSingulars[unit] { return irregular }
+        if unit.hasSuffix("ies"), unit.count > 3 { return String(unit.dropLast(3)) + "y" }
+        for suffix in ["oes", "ches", "shes", "xes", "ses", "zes"] where unit.hasSuffix(suffix) {
+            return String(unit.dropLast(2))
+        }
+        if unit.hasSuffix("s"), !unit.hasSuffix("ss"), unit.count > 1 { return String(unit.dropLast()) }
+        return unit
+    }
+
+    /// Naive pluralization of a singular (lowercased) unit word.
+    private static func pluralUnit(_ unit: String) -> String {
+        if let irregular = irregularUnitPlurals[unit] { return irregular }
+        if unit.hasSuffix("y"), unit.count > 1, let secondLast = unit.dropLast().last,
+           !"aeiou".contains(secondLast) {
+            return String(unit.dropLast()) + "ies"
+        }
+        for suffix in ["s", "sh", "ch", "x", "z"] where unit.hasSuffix(suffix) {
+            return unit + "es"
+        }
+        return unit + "s"
     }
 }

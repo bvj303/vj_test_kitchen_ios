@@ -1,10 +1,27 @@
 import SwiftUI
 
 struct GroceryListView: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(AppCommands.self) private var appCommands
     @State private var viewModel = GroceryListViewModel()
     @State private var showingClearConfirmation = false
     @State private var showingAddItem = false
+
+    /// Cap the checklist to a readable column so rows don't stretch edge-to-edge
+    /// on a 1024pt+ iPad/Mac window (which leaves a cavernous gap between an
+    /// item's name and its quantity).
+    private static let contentMaxWidth: CGFloat = 680
+
+    /// The floating "+" FAB is a one-handed reach affordance that only makes
+    /// sense on a compact iPhone. On iPad (regular width) and macOS the add
+    /// action lives in the toolbar instead.
+    private var usesToolbarAdd: Bool {
+        #if os(macOS)
+        return true
+        #else
+        return horizontalSizeClass == .regular
+        #endif
+    }
 
     var body: some View {
         content
@@ -30,22 +47,25 @@ struct GroceryListView: View {
                         .accessibilityLabel("List Options")
                     }
                 }
-                #if os(macOS)
-                // macOS has no thumb-reach argument for a floating FAB, and the
-                // bottom-trailing overlay anchors to the centered empty-state
-                // view — landing the "+" in the middle of the window. Use a
-                // standard toolbar button instead, matching the Recipes list.
-                ToolbarItem(placement: .platformPrimaryAction) {
-                    Button {
-                        showingAddItem = true
-                    } label: {
-                        Label("Add Item", systemImage: "plus")
+                // A floating FAB only makes sense on a compact iPhone (one-handed
+                // reach). On iPad (regular width) and macOS — where the FAB would
+                // also anchor to the centered empty-state view, landing the "+"
+                // mid-window — use a standard toolbar button, matching the
+                // Recipes list.
+                if usesToolbarAdd {
+                    ToolbarItem(placement: .platformPrimaryAction) {
+                        Button {
+                            showingAddItem = true
+                        } label: {
+                            Label("Add Item", systemImage: "plus")
+                        }
                     }
                 }
-                #endif
             }
             #if os(iOS)
-            .overlay(alignment: .bottomTrailing) { addButton }
+            .overlay(alignment: .bottomTrailing) {
+                if !usesToolbarAdd { addButton }
+            }
             #endif
             .task { await viewModel.load() }
             .refreshable { await viewModel.load() }
@@ -110,6 +130,9 @@ struct GroceryListView: View {
                     }
                 }
                 .pickerStyle(.segmented)
+                // Keep the segmented control a natural width rather than letting
+                // it stretch the full window.
+                .frame(maxWidth: 420)
                 .padding(.horizontal)
                 .padding(.vertical, 8)
 
@@ -127,6 +150,9 @@ struct GroceryListView: View {
                 }
                 .platformInsetGroupedListStyle()
             }
+            // Center the whole checklist in a readable column on wide screens.
+            .frame(maxWidth: Self.contentMaxWidth)
+            .frame(maxWidth: .infinity)
         }
     }
 
