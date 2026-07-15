@@ -36,17 +36,20 @@ final class AddToCalendarViewModel {
     var errorMessage: String?
 
     private let mealPlanService: MealPlanServicing
+    private let logger: AppLogger
 
     init(
         recipeId: Int64,
         recipeTitle: String,
         referenceDate: Date = Date(),
         timeZone: TimeZone = .current,
-        mealPlanService: MealPlanServicing = MealPlanService()
+        mealPlanService: MealPlanServicing = MealPlanService(),
+        logger: AppLogger = .shared
     ) {
         self.recipeId = recipeId
         self.recipeTitle = recipeTitle
         self.mealPlanService = mealPlanService
+        self.logger = logger
         let days = Self.upcomingDays(from: referenceDate, count: Self.dayRange, timeZone: timeZone)
         self.days = days
         self.selectedDate = days[0].date
@@ -60,6 +63,7 @@ final class AddToCalendarViewModel {
             )
             didAdd = true
         } catch {
+            logger.error("Add-to-calendar failed", category: "calendar", error: error)
             errorMessage = ErrorPresenter.message(for: error)
         }
     }

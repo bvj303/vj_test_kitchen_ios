@@ -113,6 +113,19 @@ struct RecipeFormViewModelTests {
         #expect(viewModel.didSave == false)
     }
 
+    @Test func saveLogsErrorOnFailure() async {
+        let save = FakeRecipeSaveService()
+        save.errorToThrow = TestError()
+        let sink = SpyLogSink()
+        let logger = AppLogger(sinks: [sink], context: LogContext(appVersion: "1", platform: "test"))
+        let viewModel = RecipeFormViewModel(mode: .create, saveService: save, logger: logger)
+        viewModel.title = "Tacos"
+
+        await viewModel.save()
+
+        #expect(sink.events.contains { $0.level == .error && $0.category == "recipes" })
+    }
+
     @Test func editModeLoadsExistingRecipeIntoFields() async {
         let recipes = FakeRecipeFormRecipeService()
         recipes.detailToReturn = RecipeDetail(

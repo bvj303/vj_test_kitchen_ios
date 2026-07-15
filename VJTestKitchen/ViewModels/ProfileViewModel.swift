@@ -59,10 +59,12 @@ final class ProfileViewModel {
 
     private let profileService: ProfileServicing
     private let usernameDebouncer: Debouncer
+    private let logger: AppLogger
 
-    init(profileService: ProfileServicing = ProfileService(), usernameDebounceDelay: Duration = .milliseconds(300)) {
+    init(profileService: ProfileServicing = ProfileService(), usernameDebounceDelay: Duration = .milliseconds(300), logger: AppLogger = .shared) {
         self.profileService = profileService
         self.usernameDebouncer = Debouncer(delay: usernameDebounceDelay)
+        self.logger = logger
     }
 
     func load() async {
@@ -76,6 +78,7 @@ final class ProfileViewModel {
             originalUsername = profile.username ?? ""
             username = originalUsername
         } catch {
+            logger.error("Profile load failed", category: "profile", error: error)
             errorMessage = ErrorPresenter.message(for: error)
         }
     }
@@ -92,6 +95,7 @@ final class ProfileViewModel {
             originalUsername = username
             didSave = true
         } catch {
+            logger.error("Profile save failed", category: "profile", error: error)
             errorMessage = ErrorPresenter.message(for: error)
         }
     }
@@ -107,6 +111,7 @@ final class ProfileViewModel {
         do {
             avatarUrl = try await profileService.uploadAvatar(imageData)
         } catch {
+            logger.error("Avatar upload failed", category: "profile", error: error)
             errorMessage = ErrorPresenter.message(for: error)
         }
     }
@@ -116,6 +121,11 @@ final class ProfileViewModel {
             let available = try await profileService.isUsernameAvailable(username)
             usernameAvailability = available ? .available : .taken
         } catch {
+            // Background check, not surfaced as an alert — log so a persistently
+            // failing availability check isn't invisible (see AuthViewModel).
+            logger.warning("Profile username availability check failed", category: "profile", metadata: [
+                "errorType": String(describing: type(of: error)),
+            ])
             usernameAvailability = .unknown
         }
     }

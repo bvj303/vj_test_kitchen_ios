@@ -10,9 +10,10 @@ struct HomeLocationViewModelTests {
     private func makeViewModel(
         store: FakeWeatherPreferenceStore = FakeWeatherPreferenceStore(),
         location: FakeLocationProvider = FakeLocationProvider(),
-        geocoder: FakeGeocoder = FakeGeocoder()
+        geocoder: FakeGeocoder = FakeGeocoder(),
+        logger: AppLogger = .shared
     ) -> HomeLocationViewModel {
-        HomeLocationViewModel(store: store, locationProvider: location, geocoder: geocoder)
+        HomeLocationViewModel(store: store, locationProvider: location, geocoder: geocoder, logger: logger)
     }
 
     @Test func loadsExistingHomeLocationFromStore() {
@@ -110,6 +111,19 @@ struct HomeLocationViewModelTests {
 
         #expect(viewModel.errorMessage != nil)
         #expect(viewModel.homeLocation?.postalCode == "02139")   // unchanged
+    }
+
+    @Test func setFromZipInputLogsWarningOnFailure() async {
+        let geocoder = FakeGeocoder()
+        geocoder.forwardError = GeocodingError.notFound
+        let sink = SpyLogSink()
+        let logger = AppLogger(sinks: [sink], context: LogContext(appVersion: "1", platform: "test"))
+        let viewModel = makeViewModel(geocoder: geocoder, logger: logger)
+        viewModel.zipInput = "00000"
+
+        await viewModel.setFromZipInput()
+
+        #expect(sink.events.contains { $0.level == .warning && $0.category == "location" })
     }
 
     @Test func setFromZipInputIgnoresBlankInput() async {

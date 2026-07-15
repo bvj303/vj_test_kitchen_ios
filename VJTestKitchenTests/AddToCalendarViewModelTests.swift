@@ -90,6 +90,27 @@ struct AddToCalendarViewModelTests {
         #expect(viewModel.errorMessage == nil)
     }
 
+    @Test func addLogsErrorOnFailure() async {
+        struct AddError: Error {}
+        let service = FakeMealPlanService()
+        service.errorToThrow = AddError()
+        let sink = SpyLogSink()
+        let logger = AppLogger(sinks: [sink], context: LogContext(appVersion: "1", platform: "test"))
+        let viewModel = AddToCalendarViewModel(
+            recipeId: 7,
+            recipeTitle: "Pasta",
+            referenceDate: Self.referenceDate(),
+            timeZone: TimeZone(identifier: "UTC")!,
+            mealPlanService: service,
+            logger: logger
+        )
+        viewModel.selectedDate = "2026-07-08"
+
+        await viewModel.add()
+
+        #expect(sink.events.contains { $0.level == .error && $0.category == "calendar" })
+    }
+
     @Test func addSurfacesErrorAndDoesNotMarkAdded() async {
         let service = FakeMealPlanService()
         service.errorToThrow = TestFailure()

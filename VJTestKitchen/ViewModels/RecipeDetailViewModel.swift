@@ -65,19 +65,22 @@ final class RecipeDetailViewModel {
     private let ratingService: RecipeRatingServicing
     private let groceryItemService: GroceryItemServicing
     private let favoritesService: FavoritesServicing
+    private let logger: AppLogger
 
     init(
         recipeId: Int64,
         recipeService: RecipeServicing = RecipeService(),
         ratingService: RecipeRatingServicing = RecipeRatingService(),
         groceryItemService: GroceryItemServicing = GroceryItemService(),
-        favoritesService: FavoritesServicing = FavoritesService()
+        favoritesService: FavoritesServicing = FavoritesService(),
+        logger: AppLogger = .shared
     ) {
         self.recipeId = recipeId
         self.recipeService = recipeService
         self.ratingService = ratingService
         self.groceryItemService = groceryItemService
         self.favoritesService = favoritesService
+        self.logger = logger
     }
 
     func load() async {
@@ -94,6 +97,7 @@ final class RecipeDetailViewModel {
             self.notes = myRating?.notes ?? ""
             self.reviews = reviews
         } catch {
+            logger.error("Recipe detail load failed", category: "recipes", error: error)
             errorMessage = ErrorPresenter.message(for: error)
         }
         // Favorites load independently — a favorites failure shouldn't blank the

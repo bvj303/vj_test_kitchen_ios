@@ -129,6 +129,23 @@ struct RecipeDetailViewModelTests {
         #expect(viewModel.errorMessage == "failed")
     }
 
+    @Test func loadLogsErrorOnFailure() async {
+        let recipes = FakeRecipeDetailService()
+        recipes.errorToThrow = TestError()
+        let sink = SpyLogSink()
+        let logger = AppLogger(sinks: [sink], context: LogContext(appVersion: "1", platform: "test"))
+        let viewModel = RecipeDetailViewModel(
+            recipeId: 1, recipeService: recipes,
+            ratingService: FakeRecipeRatingService(),
+            favoritesService: FakeFavoritesService(),
+            logger: logger
+        )
+
+        await viewModel.load()
+
+        #expect(sink.events.contains { $0.level == .error && $0.category == "recipes" })
+    }
+
     @Test func saveRatingCallsServiceWithCurrentFields() async {
         let recipes = FakeRecipeDetailService()
         recipes.detailToReturn = makeDetail()

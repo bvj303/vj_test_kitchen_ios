@@ -24,9 +24,11 @@ final class AIPlannerViewModel {
     var errorMessage: String?
 
     private let aiService: AIServicing
+    private let logger: AppLogger
 
-    init(aiService: AIServicing = AIService()) {
+    init(aiService: AIServicing = AIService(), logger: AppLogger = .shared) {
         self.aiService = aiService
+        self.logger = logger
     }
 
     func send() async {
@@ -50,6 +52,9 @@ final class AIPlannerViewModel {
                 recipes: Self.recipesReferenced(in: response.text, from: response.recipes)
             ))
         } catch {
+            // Surfaced via errorMessage, but logged raw — a failing Edge Function
+            // (non-200, timeout, bad payload) is otherwise invisible to us.
+            logger.error("AI planner request failed", category: "ai", error: error)
             errorMessage = ErrorPresenter.message(for: error)
         }
     }
