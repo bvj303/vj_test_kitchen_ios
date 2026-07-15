@@ -73,9 +73,6 @@ struct RecipeDetailView: View {
             // its title.
             if viewModel.detail != nil {
                 ToolbarItem(placement: .platformPrimaryAction) {
-                    scaleMenu
-                }
-                ToolbarItem(placement: .platformPrimaryAction) {
                     Button {
                         showingAddToCalendar = true
                     } label: {
@@ -154,27 +151,50 @@ struct RecipeDetailView: View {
         "\(IngredientAmount.format(scale))×"
     }
 
-    /// Top-right menu to halve/double/triple the recipe. Scaling multiplies
-    /// ingredient quantities and the servings tile live.
-    private var scaleMenu: some View {
-        Menu {
-            Picker("Scale Recipe", selection: $scale) {
-                Text("Half (½×)").tag(0.5)
-                Text("Original (1×)").tag(1.0)
-                Text("Double (2×)").tag(2.0)
-                Text("Triple (3×)").tag(3.0)
+    /// The Servings stat rendered as an interactive stepper — the "stat becomes a
+    /// control". Stepping nudges the whole-servings count (via
+    /// `RecipeServingsScaler`), which drives `scale`, which recomputes every
+    /// ingredient amount through the same `IngredientAmount` formatter the
+    /// grocery list uses. Replaces the old toolbar ½/2/3× menu.
+    private func servingsStepper(base: Int) -> some View {
+        VStack(spacing: 6) {
+            Image(systemName: "person.2").foregroundStyle(Color.brandPrimary)
+            HStack(spacing: 12) {
+                Button {
+                    withAnimation(.snappy) {
+                        scale = RecipeServingsScaler.steppedScale(base: base, scale: scale, delta: -1)
+                    }
+                } label: {
+                    Image(systemName: "minus.circle.fill").font(.title3)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(RecipeServingsScaler.canDecrease(base: base, scale: scale) ? Color.brandPrimary : Color.secondary)
+                .disabled(!RecipeServingsScaler.canDecrease(base: base, scale: scale))
+                .accessibilityLabel("Fewer servings")
+
+                Text("\(RecipeServingsScaler.displayedServings(base: base, scale: scale))")
+                    .font(.headline)
+                    .frame(minWidth: 22)
+                    .contentTransition(.numericText())
+
+                Button {
+                    withAnimation(.snappy) {
+                        scale = RecipeServingsScaler.steppedScale(base: base, scale: scale, delta: 1)
+                    }
+                } label: {
+                    Image(systemName: "plus.circle.fill").font(.title3)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.brandPrimary)
+                .accessibilityLabel("More servings")
             }
-        } label: {
-            if scale == 1 {
-                Label("Scale Recipe", systemImage: "slider.horizontal.3")
-            } else {
-                // Show the active multiplier so it's clear the recipe is scaled.
-                Text(scaleLabel)
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(Color.brandPrimary)
-            }
+            Text(scale == 1 ? "Servings" : "Servings (\(scaleLabel))")
+                .font(.caption2).foregroundStyle(.secondary)
         }
-        .accessibilityLabel("Scale Recipe")
+        .frame(maxWidth: .infinity)
+        .padding()
+        .surface(.card)
+        .accessibilityElement(children: .contain)
     }
 
     @ViewBuilder
@@ -248,11 +268,7 @@ struct RecipeDetailView: View {
                 statTile(icon: "clock", value: prepLabel, label: "Prep Time")
             }
             if let servings = detail.servings {
-                statTile(
-                    icon: "person.2",
-                    value: IngredientAmount.format(Double(servings) * scale),
-                    label: scale == 1 ? "Servings" : "Servings (\(scaleLabel))"
-                )
+                servingsStepper(base: servings)
             }
             if let atkRating = detail.atkRating {
                 statTile(
@@ -281,7 +297,7 @@ struct RecipeDetailView: View {
         }
         .frame(maxWidth: .infinity)
         .padding()
-        .glassEffect(in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .surface(.card)
     }
 
     @ViewBuilder
@@ -463,7 +479,7 @@ struct RecipeDetailView: View {
             }
         }
         .padding()
-        .glassEffect(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .surface(.card, radius: Surface.Radius.large)
     }
 
     /// Heart toggle beside the ratings — the "favorites" affordance.
