@@ -58,6 +58,7 @@ struct MealCalendarView: View {
                 compactLayout
             }
         }
+        .screenBackground()
         .navigationTitle("Calendar")
         .task { await viewModel.load() }
         .refreshable { await viewModel.load() }
@@ -196,13 +197,10 @@ struct MealCalendarView: View {
                 }
             }
         }
-        .glassEffect(
-            .regular.tint(Color.brandPrimary.opacity(0.05)),
-            in: RoundedRectangle(cornerRadius: 20, style: .continuous)
-        )
+        .surface(.card, radius: Surface.Radius.large)
         // Clip per-row backgrounds (today's highlight) to the card's rounded
         // corners so they can't poke past the top/bottom edges.
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: Surface.Radius.large, style: .continuous))
     }
 
     @ViewBuilder
@@ -338,7 +336,7 @@ struct MealCalendarView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             Color.brandSaffron.opacity(0.14),
-            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+            in: RoundedRectangle(cornerRadius: Surface.Radius.small, style: .continuous)
         )
     }
 
@@ -436,10 +434,7 @@ struct MealCalendarView: View {
             }
         }
         .padding()
-        .glassEffect(
-            .regular.tint(Color.brandPrimary.opacity(0.08)),
-            in: RoundedRectangle(cornerRadius: 20, style: .continuous)
-        )
+        .surface(.card, radius: Surface.Radius.large)
     }
 
     // MARK: - Formatting helpers

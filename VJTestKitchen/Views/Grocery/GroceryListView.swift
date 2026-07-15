@@ -86,7 +86,7 @@ struct GroceryListView: View {
                 if viewModel.isExporting {
                     ProgressView("Exporting…")
                         .padding()
-                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .surface(.card)
                 }
             }
             .alert(

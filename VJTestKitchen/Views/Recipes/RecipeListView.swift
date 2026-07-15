@@ -54,6 +54,7 @@ struct RecipeListView: View {
                 .onAppear { Task { await viewModel.loadMoreIfNeeded(currentItem: recipe) } }
             }
             .listStyle(.plain)
+            .scrollContentBackground(.hidden)
             .overlay {
                 if viewModel.isLoading && viewModel.items.isEmpty {
                     ProgressView()
@@ -64,6 +65,7 @@ struct RecipeListView: View {
             .refreshable { await viewModel.load() }
             .scrollDismissesKeyboard(.interactively)
         }
+        .screenBackground()
         .dismissesKeyboardOnBackgroundTap()
         .keyboardDoneButton()
         .toolbar {

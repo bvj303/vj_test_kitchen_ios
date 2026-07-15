@@ -28,7 +28,7 @@ struct HomeView: View {
             .frame(maxWidth: .infinity)
             .padding(isRegular ? 24 : 16)
         }
-        .background(Color.platformGroupedBackground)
+        .screenBackground()
         .overlay(alignment: spatchViewModel.corner.alignment) {
             SpatchBuddyView(
                 viewModel: spatchViewModel,
@@ -127,9 +127,9 @@ struct HomeView: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(isRegular ? 24 : 16)
+        .padding(isRegular ? Surface.Space.xLarge : Surface.Space.medium)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassEffect(.regular.tint(Color.brandPrimary.opacity(0.18)), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .surface(.elevated, radius: Surface.Radius.large)
     }
 
     /// A small live-weather overline shown above the suggestion title when a
@@ -217,7 +217,7 @@ struct HomeView: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, minHeight: 120)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .surface(.card)
     }
 
     /// Spatch's Home pop-in line. A recipe recommendation is only one option
