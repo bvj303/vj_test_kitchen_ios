@@ -9,6 +9,18 @@ import Supabase
 /// on. Anything not specially handled falls back to the error's own
 /// `localizedDescription`.
 enum ErrorPresenter {
+    /// True when `error` is an intentional cancellation rather than a real
+    /// failure — the debounced search/filter reload cancels its in-flight task
+    /// on every keystroke, and the resulting throw (Swift's `CancellationError`
+    /// or URLSession's `URLError(.cancelled)`) must be swallowed, not shown.
+    /// Surfacing it flashed a spurious "Couldn't Load Recipes" alert while
+    /// typing, which the next keystroke's reload then silently dismissed.
+    static func isCancellation(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        if let urlError = error as? URLError, urlError.code == .cancelled { return true }
+        return false
+    }
+
     static func message(for error: Error) -> String {
         if let urlError = error as? URLError {
             switch urlError.code {
