@@ -55,8 +55,10 @@ struct AppleIntelligenceAIService: AIServicing {
         )
 
         // 3. Answer, grounded in those recipes (no tools — the list is in the
-        //    prompt, and the model is told to recommend only from it).
-        let session = LanguageModelSession(instructions: Self.instructions)
+        //    prompt, and the model is told to recommend only from it). Escalates
+        //    to Apple's Private Cloud Compute model on iOS/macOS 27 when it's
+        //    available; on-device otherwise (see makeAnswerSession).
+        let session = Self.makeAnswerSession()
         let response = try await session.respond(
             to: Self.groundedPrompt(history: history, recipes: recipes)
         )
@@ -87,6 +89,26 @@ struct AppleIntelligenceAIService: AIServicing {
             results = try await recipeService.fetchPage(offset: 0, limit: Self.groundingLimit, matching: nil)
         }
         return results
+    }
+
+    // MARK: - Model selection (on-device vs Private Cloud Compute)
+
+    /// Builds the session for the *answer* turn. On iOS/macOS **27** it escalates
+    /// to Apple's **Private Cloud Compute** model when available — a larger model
+    /// that's still free (no cloud API cost under ~2M downloads), keyless, and
+    /// private (prompts aren't stored); see `docs/IOS27.md`. On iOS/macOS 26, or
+    /// when PCC reports unavailable (device not eligible / system not ready), it
+    /// falls back to the on-device model — so the family's iOS-26 install keeps
+    /// working unchanged. The cheap query-extraction call deliberately stays
+    /// on-device (`extractSearchParams`) to conserve the daily PCC quota.
+    private static func makeAnswerSession() -> LanguageModelSession {
+        if #available(iOS 27.0, macOS 27.0, *) {
+            let pcc = PrivateCloudComputeLanguageModel()
+            if case .available = pcc.availability {
+                return LanguageModelSession(model: pcc, instructions: instructions)
+            }
+        }
+        return LanguageModelSession(instructions: instructions)
     }
 
     // MARK: - Query extraction (on-device)
