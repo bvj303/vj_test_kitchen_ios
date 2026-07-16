@@ -1,4 +1,4 @@
-// Kitchen Concierge — AI menu-planning chat, backed by Gemini.
+// Kitchen Concierge — AI menu-planning chat, backed by Groq (llama-3.3-70b).
 //
 // Deliberately zero external imports (no npm:/jsr: specifiers) — Deno.serve,
 // Deno.env, and fetch are runtime built-ins; ./search.ts is a local relative
@@ -11,7 +11,31 @@
 // so RLS applies exactly as it does everywhere else in the app (recipes are
 // shared-readable by any authenticated user — see DECISIONS.md). No
 // service_role/admin access is used here.
-import { GeminiRequestError, normalizeChatTurns, runGeminiWithTools, type ToolLoopResult } from "./search.ts";
+import { GroqRequestError, normalizeChatTurns, runGroqWithTools, type ToolLoopResult } from "./search.ts";
+
+// Query embeddings for semantic search are produced by the separate `embed-text`
+// function, NOT here: loading the gte-small model in this worker overran the Edge
+// Function compute limit and crashed it (WORKER_RESOURCE_LIMIT → 502). ai-chat
+// stays light and calls embed-text over HTTP (gated by the shared secret). On any
+// failure it returns [] so searchRecipes falls back to keyword search.
+function makeEmbedder(supabaseUrl: string, anonKey: string, embedSecret: string | undefined) {
+  return async (text: string): Promise<number[]> => {
+    if (!embedSecret) return [];
+    try {
+      const res = await fetch(`${supabaseUrl}/functions/v1/embed-text`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", apikey: anonKey, "x-backfill-secret": embedSecret },
+        body: JSON.stringify({ text }),
+      });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data?.embedding) ? data.embedding : [];
+    } catch (err) {
+      console.error("query embed failed:", err);
+      return [];
+    }
+  };
+}
 
 Deno.serve(async (req: Request) => {
   const authHeader = req.headers.get("Authorization");
@@ -28,17 +52,17 @@ Deno.serve(async (req: Request) => {
 
   // Accepts the full-history `{ messages }` shape or the legacy `{ prompt }`
   // shape, and enforces per-message / whole-conversation size caps (the
-  // denial-of-wallet guard against the Gemini quota now that history is sent).
+  // denial-of-wallet guard against the free-tier quota now that history is sent).
   const messages = normalizeChatTurns(body);
   if (!Array.isArray(messages)) {
     return Response.json({ error: messages.error }, { status: messages.status });
   }
 
-  const apiKey = Deno.env.get("GEMINI_API_KEY");
+  const apiKey = Deno.env.get("GROQ_API_KEY");
   if (!apiKey) {
-    console.error("GEMINI_API_KEY is not set for this project.");
+    console.error("GROQ_API_KEY is not set for this project.");
     return Response.json(
-      { error: "AI planning isn't configured yet — missing GEMINI_API_KEY." },
+      { error: "AI planning isn't configured yet — missing GROQ_API_KEY." },
       { status: 500 },
     );
   }
@@ -56,17 +80,18 @@ Deno.serve(async (req: Request) => {
 
   let result: ToolLoopResult;
   try {
-    result = await runGeminiWithTools({ apiKey, messages, authHeader, supabaseUrl, anonKey });
+    const embed = makeEmbedder(supabaseUrl, anonKey, Deno.env.get("EMBED_BACKFILL_SECRET"));
+    result = await runGroqWithTools({ apiKey, messages, authHeader, supabaseUrl, anonKey, embed });
   } catch (err) {
-    if (err instanceof GeminiRequestError) {
+    if (err instanceof GroqRequestError) {
       const status = err.status === 429 ? 429 : 502;
       return Response.json(
-        { error: status === 429 ? "Gemini rate limit reached — try again shortly." : "Failed to reach Gemini." },
+        { error: status === 429 ? "The assistant is busy right now — try again shortly." : "Failed to reach the assistant." },
         { status },
       );
     }
-    console.error("Network error calling Gemini:", err);
-    return Response.json({ error: "Failed to reach Gemini." }, { status: 502 });
+    console.error("Network error calling Groq:", err);
+    return Response.json({ error: "Failed to reach the assistant." }, { status: 502 });
   }
 
   if (result.roundCapHit) {
@@ -75,22 +100,14 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  // A blocked prompt yields no candidate / a SAFETY finish reason with no text.
-  // Return it as a normal assistant reply (the client decodes `response`, not
-  // `error`, on 2xx) so the concierge simply declines in-chat.
   if (typeof result.text !== "string" || result.text.length === 0) {
-    if (result.blocked) {
-      return Response.json({
-        response: "I can't help with that particular request — try rephrasing your meal or recipe question.",
-      });
-    }
-    console.error("Unexpected Gemini response shape: no text and no function call.");
-    return Response.json({ error: "Gemini returned an empty response." }, { status: 502 });
+    console.error("Unexpected Groq response shape: no text and no tool call.");
+    return Response.json({ error: "The assistant returned an empty response." }, { status: 502 });
   }
 
-  // MAX_TOKENS means the reply was cut off mid-sentence — flag it rather than
-  // returning a silently truncated plan as if it were complete.
-  const response = result.finishReason === "MAX_TOKENS"
+  // OpenAI/Groq report a truncated reply with finish_reason "length" — flag it
+  // rather than returning a silently cut-off plan as if it were complete.
+  const response = result.finishReason === "length"
     ? `${result.text}\n\n_(Response was cut short — ask me to continue for the rest.)_`
     : result.text;
 

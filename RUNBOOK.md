@@ -100,11 +100,20 @@ Two Supabase projects: **prod** (ships to TestFlight/App Store) and **staging** 
    ```bash
    supabase functions deploy ai-chat        --project-ref <STAGING_REF>
    supabase functions deploy delete-account  --project-ref <STAGING_REF>
+   supabase functions deploy embed-recipes   --project-ref <STAGING_REF>
+   supabase functions deploy embed-text      --project-ref <STAGING_REF>
    ```
+   (`embed-recipes`/`embed-text` are `verify_jwt=false` in `supabase/config.toml`
+   — gated by `EMBED_BACKFILL_SECRET`, not a user JWT; `functions deploy` reads
+   that per-function setting from config.toml automatically.)
 4. **Set function secrets** (`service_role` is auto-injected — don't set it):
    ```bash
-   supabase secrets set GEMINI_API_KEY=<KEY> --project-ref <STAGING_REF>
+   supabase secrets set GROQ_API_KEY=<KEY>          --project-ref <STAGING_REF>
+   supabase secrets set EMBED_BACKFILL_SECRET=<KEY> --project-ref <STAGING_REF>
    ```
+   (`GROQ_API_KEY` is the Kitchen Concierge's Groq free-tier key; `EMBED_BACKFILL_SECRET`
+   gates `embed-recipes`/`embed-text` and is what `ai-chat` passes when embedding a
+   query. The old `GEMINI_API_KEY` is retired — unset it if still present.)
 5. **Mirror auth settings** in the staging dashboard. Tip: staging can keep email autoconfirm **on** for fast test signups while prod requires confirmation.
 6. **Fill in the client file:**
    ```bash
@@ -184,11 +193,16 @@ supabase db push
 # Edge Functions → prod
 supabase functions deploy ai-chat
 supabase functions deploy delete-account
+supabase functions deploy embed-recipes
+supabase functions deploy embed-text
 ```
 
-- **Server secrets** (`GEMINI_API_KEY`, and `service_role` bypasses RLS) live **only** as Supabase secrets — never in the client, `.env`, or git:
+- **Server secrets** (`GROQ_API_KEY`, `EMBED_BACKFILL_SECRET`, and the auto-injected `service_role` which bypasses RLS) live **only** as Supabase secrets — never in the client, `.env`, or git:
   ```bash
-  supabase secrets set GEMINI_API_KEY=<KEY> --project-ref <REF>
+  supabase secrets set GROQ_API_KEY=<KEY>          --project-ref <REF>
+  supabase secrets set EMBED_BACKFILL_SECRET=<KEY> --project-ref <REF>
+  # The old GEMINI_API_KEY is retired — unset it if still present:
+  #   supabase secrets unset GEMINI_API_KEY --project-ref <REF>
   ```
 - **Ship order gotcha**: the client sends `messages` to `ai-chat` and uses the atomic `save_recipe` RPC — deploy the function and `db push` the migration **before/with** any client release, or those paths 4xx against the deployed backend.
 
