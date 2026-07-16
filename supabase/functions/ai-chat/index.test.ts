@@ -11,6 +11,7 @@ import {
   buildSearchRecipesUrl,
   clampLimit,
   escapeIlike,
+  matchRecipes,
   normalizeChatTurns,
   parseContentRangeTotal,
   parseToolArgs,
@@ -130,6 +131,58 @@ Deno.test("searchRecipes samples from the pool: same rows, varied order, capped 
   assertEquals(results.length, 5);
   const poolIds = new Set(pool.map((r) => r.id));
   assert(results.every((r) => poolIds.has(r.id)), "every result should come from the pool");
+});
+
+Deno.test("matchRecipes posts the query embedding to the RPC and flattens tags", async () => {
+  let sentBody: any;
+  let calledUrl = "";
+  const fetchImpl = (async (url: string | URL, init?: RequestInit) => {
+    calledUrl = String(url);
+    sentBody = JSON.parse(String(init?.body));
+    return new Response(JSON.stringify([
+      { id: 7, title: "Coq au Vin", prep_time: 90, servings: 4, tags: ["Dinner", "French"], similarity: 0.82 },
+    ]), { status: 200 });
+  }) as typeof fetch;
+
+  const results = await matchRecipes("Bearer t", "https://x.supabase.co", "anon", [0.1, 0.2, 0.3], { query: "french stew", tag: "Dinner", limit: 10 }, fetchImpl);
+
+  assert(calledUrl.includes("/rest/v1/rpc/match_recipes"), `expected rpc url, got ${calledUrl}`);
+  assertEquals(sentBody.query_embedding, [0.1, 0.2, 0.3]);
+  assertEquals(sentBody.match_count, 10);
+  assertEquals(sentBody.filter_tag, "Dinner");
+  assertEquals(results, [{ id: 7, title: "Coq au Vin", tags: ["Dinner", "French"], prep_time: 90, servings: 4 }]);
+});
+
+Deno.test("searchRecipes uses semantic match when an embedder + query are provided", async () => {
+  let calledRpc = false;
+  const embed = async (_t: string) => [0.5, 0.5, 0.5];
+  const fetchImpl = (async (url: string | URL) => {
+    if (String(url).includes("rpc/match_recipes")) {
+      calledRpc = true;
+      return new Response(JSON.stringify([
+        { id: 3, title: "Beef Bourguignon", prep_time: 120, servings: 6, tags: ["Dinner"], similarity: 0.9 },
+      ]), { status: 200 });
+    }
+    return new Response(JSON.stringify([]), { status: 200 });
+  }) as typeof fetch;
+
+  const results = await searchRecipes("Bearer t", "https://x.supabase.co", "anon", { query: "cozy winter dinner", limit: 5 }, fetchImpl, () => 0.5, embed);
+  assert(calledRpc, "should have used the semantic match_recipes RPC");
+  assertEquals(results.map((r) => r.id), [3]);
+});
+
+Deno.test("searchRecipes falls back to keyword search when semantic returns nothing", async () => {
+  const embed = async (_t: string) => [0.1, 0.2, 0.3];
+  let keywordCalls = 0;
+  const fetchImpl = (async (url: string | URL) => {
+    if (String(url).includes("rpc/match_recipes")) return new Response(JSON.stringify([]), { status: 200 });
+    keywordCalls += 1;
+    return new Response(JSON.stringify([{ id: 9, title: "Keyword Hit", prep_time: 10, servings: 2, recipe_tags: [] }]), { status: 200, headers: { "content-range": "0-0/1" } });
+  }) as typeof fetch;
+
+  const results = await searchRecipes("Bearer t", "https://x.supabase.co", "anon", { query: "zzz", limit: 5 }, fetchImpl, () => 0.5, embed);
+  assert(keywordCalls >= 1, "should have fallen back to the keyword PostgREST query");
+  assertEquals(results.map((r) => r.id), [9]);
 });
 
 Deno.test("parseContentRangeTotal extracts the total, or null when unknown", () => {

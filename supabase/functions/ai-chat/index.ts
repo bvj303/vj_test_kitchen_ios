@@ -13,6 +13,18 @@
 // service_role/admin access is used here.
 import { GroqRequestError, normalizeChatTurns, runGroqWithTools, type ToolLoopResult } from "./search.ts";
 
+// `Supabase.ai` is an Edge Runtime built-in (declare it so `deno check` passes).
+// The gte-small model runs natively in the function — no external embedding API,
+// $0 — and powers semantic recipe search (see search.ts / match_recipes RPC).
+declare const Supabase: { ai: { Session: new (model: string) => { run(input: string, opts?: { mean_pool?: boolean; normalize?: boolean }): Promise<number[]> } } };
+
+let embedSession: { run(input: string, opts?: { mean_pool?: boolean; normalize?: boolean }): Promise<number[]> } | undefined;
+async function embed(text: string): Promise<number[]> {
+  embedSession ??= new Supabase.ai.Session("gte-small");
+  const out = await embedSession.run(text, { mean_pool: true, normalize: true });
+  return Array.isArray(out) ? out : [];
+}
+
 Deno.serve(async (req: Request) => {
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) {
@@ -56,7 +68,7 @@ Deno.serve(async (req: Request) => {
 
   let result: ToolLoopResult;
   try {
-    result = await runGroqWithTools({ apiKey, messages, authHeader, supabaseUrl, anonKey });
+    result = await runGroqWithTools({ apiKey, messages, authHeader, supabaseUrl, anonKey, embed });
   } catch (err) {
     if (err instanceof GroqRequestError) {
       const status = err.status === 429 ? 429 : 502;

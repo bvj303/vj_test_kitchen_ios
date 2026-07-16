@@ -152,6 +152,46 @@ function mapRecipeRows(rows: any[]): RecipeCatalogEntry[] {
   }));
 }
 
+/// The embedding seam: text → a 384-dim gte-small vector. Injected (from
+/// index.ts, which owns the Edge Runtime `Supabase.ai` global) so search.ts
+/// stays unit-testable with a fake embedder.
+export type Embedder = (text: string) => Promise<number[]>;
+
+/// Semantic search: rank the WHOLE catalog by meaning via the `match_recipes`
+/// pgvector RPC (SECURITY INVOKER → RLS-scoped by the forwarded auth header).
+/// Returns [] on any failure so the caller can fall back to keyword search.
+export async function matchRecipes(
+  authHeader: string,
+  supabaseUrl: string,
+  anonKey: string,
+  queryEmbedding: number[],
+  args: SearchRecipesArgs,
+  fetchImpl: typeof fetch = fetch,
+): Promise<RecipeCatalogEntry[]> {
+  const res = await fetchImpl(`${supabaseUrl}/rest/v1/rpc/match_recipes`, {
+    method: "POST",
+    headers: { apikey: anonKey, Authorization: authHeader, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query_embedding: queryEmbedding,
+      match_count: clampLimit(args.limit),
+      filter_tag: args.tag?.trim() ? args.tag.trim() : null,
+    }),
+  });
+  if (!res.ok) {
+    console.error("match_recipes rpc failed:", res.status, await res.text());
+    return [];
+  }
+  const rows = await res.json();
+  // The RPC returns tags as a flat text[] (not the nested recipe_tags embed).
+  return (Array.isArray(rows) ? rows : []).map((r: any) => ({
+    id: r.id,
+    title: r.title,
+    tags: Array.isArray(r.tags) ? r.tags : [],
+    prep_time: r.prep_time,
+    servings: r.servings,
+  }));
+}
+
 export async function searchRecipes(
   authHeader: string,
   supabaseUrl: string,
@@ -159,7 +199,25 @@ export async function searchRecipes(
   args: SearchRecipesArgs,
   fetchImpl: typeof fetch = fetch,
   random: () => number = Math.random,
+  embed?: Embedder,
 ): Promise<RecipeCatalogEntry[]> {
+  // Semantic-first: when there's a query and an embedder, rank the whole catalog
+  // by meaning (match_recipes RPC). This is the "consider all my recipes" path.
+  const query = args.query?.trim();
+  if (query && embed) {
+    try {
+      const vector = await embed(query);
+      if (Array.isArray(vector) && vector.length > 0) {
+        const matches = await matchRecipes(authHeader, supabaseUrl, anonKey, vector, args, fetchImpl);
+        if (matches.length > 0) return matches;
+      }
+    } catch (err) {
+      console.error("semantic search failed; falling back to keyword:", err);
+    }
+  }
+
+  // Keyword / whole-catalog random sampling — used for open-ended asks (no
+  // query) or if semantic search is unavailable / returns nothing.
   // First page + an exact count, so we know how big the matching set is.
   const firstRes = await fetchImpl(buildSearchRecipesUrl(supabaseUrl, args, 0), {
     headers: { apikey: anonKey, Authorization: authHeader, Prefer: "count=exact" },
@@ -263,9 +321,11 @@ export function normalizeChatTurns(body: unknown): ChatTurn[] | NormalizeError {
 export function buildSystemInstruction(): string {
   return `You are "Kitchen Concierge," a friendly, concise meal-planning assistant inside the VJ Test Kitchen app.
 
-You have access to a "${SEARCH_RECIPES_TOOL_NAME}" tool that searches the user's recipe collection by title or tag. Call it whenever you need specific recipes to recommend or reference — don't guess at what's in their collection. When recommending a dish, prefer recipes returned by the tool and refer to them by their exact title. If a search comes back empty or nothing fits, say so plainly and suggest a general idea instead of inventing a fake recipe.
+You have access to a "${SEARCH_RECIPES_TOOL_NAME}" tool that searches the user's ENTIRE recipe collection by MEANING (semantic search), not just exact words — so a query like "cozy winter dinner" or "something light and fresh" finds relevant recipes even if those words aren't in the title. Call it whenever you need specific recipes; don't guess at what's in their collection. When recommending a dish, prefer recipes returned by the tool and refer to them by their exact title. If a search comes back empty or nothing fits, say so plainly and suggest a general idea instead of inventing a fake recipe.
 
-Keep responses conversational and concise. Use simple markdown — short paragraphs, bullet lists for multi-day plans.
+COMPREHENSIVE MENUS: When the user asks for a menu, a multi-course meal, or a week of meals, run SEVERAL ${SEARCH_RECIPES_TOOL_NAME} searches — one per course or slot (e.g. "appetizer", "hearty main", "fresh side", "dessert", or per day/meal) — and assemble a complete, cohesive menu from the results. Don't settle for a single search or a handful of dishes when they've asked for something comprehensive.
+
+Keep responses well-organized and readable. Use simple markdown — short paragraphs, and clear headers/bullet lists for menus and multi-day plans.
 
 VARIETY: You can see the earlier turns of this conversation. When the user asks again or wants "another"/"different"/"something else," recommend recipes you have NOT already suggested earlier in this chat — don't repeat the same handful. Run a fresh ${SEARCH_RECIPES_TOOL_NAME} search rather than reusing previous results.
 
@@ -329,6 +389,9 @@ export async function runGroqWithTools(params: {
   supabaseUrl: string;
   anonKey: string;
   fetchImpl?: typeof fetch;
+  /// Embeds the tool's query for semantic search (see searchRecipes). When
+  /// absent, search_recipes falls back to keyword/catalog sampling.
+  embed?: Embedder;
 }): Promise<ToolLoopResult> {
   const fetchImpl = params.fetchImpl ?? fetch;
   const turns: ChatTurn[] = params.messages ??
@@ -388,7 +451,7 @@ export async function runGroqWithTools(params: {
     chatMessages.push({ role: "assistant", content: message.content ?? null, tool_calls: toolCalls });
     for (const call of toolCalls) {
       const args = parseToolArgs(call.function?.arguments);
-      const results = await searchRecipes(params.authHeader, params.supabaseUrl, params.anonKey, args, fetchImpl);
+      const results = await searchRecipes(params.authHeader, params.supabaseUrl, params.anonKey, args, fetchImpl, Math.random, params.embed);
       for (const r of results) {
         if (!referenced.has(r.id)) referenced.set(r.id, r.title);
       }
