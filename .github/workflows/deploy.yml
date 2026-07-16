@@ -2,8 +2,14 @@ name: Deploy
 
 # Continuous Deployment — the "deploys come from the pipeline, not a laptop" half
 # of CI/CD (CI is the merge gate in ci.yml). Two targets, each idempotent:
-#   - Edge Functions  (ai-chat, delete-account) -> `supabase functions deploy`
+#   - Edge Functions  (ai-chat, delete-account, embed-recipes, embed-text)
+#                     -> `supabase functions deploy`
 #   - DB migrations   -> `supabase db push` (only applies un-applied migrations)
+#
+# NOTE on verify_jwt: embed-recipes and embed-text set verify_jwt = false in
+# supabase/config.toml (they're gated by the shared EMBED_BACKFILL_SECRET, not a
+# user JWT). `functions deploy` reads that per-function setting from config.toml,
+# so no CLI flag is needed here — the deploy respects it automatically.
 #
 # Staging is automatic on every merge to main. Production is deliberate: it only
 # fires on a release tag (v*), and is wrapped in the `production` GitHub
@@ -76,6 +82,8 @@ jobs:
         run: |
           supabase functions deploy ai-chat        --project-ref "$STAGING_PROJECT_REF" --use-api
           supabase functions deploy delete-account --project-ref "$STAGING_PROJECT_REF" --use-api
+          supabase functions deploy embed-recipes  --project-ref "$STAGING_PROJECT_REF" --use-api
+          supabase functions deploy embed-text     --project-ref "$STAGING_PROJECT_REF" --use-api
 
       - name: Push database migrations
         # Idempotent: applies only migrations not yet in the remote history table.
@@ -111,6 +119,8 @@ jobs:
         run: |
           supabase functions deploy ai-chat        --project-ref "$PROD_PROJECT_REF" --use-api
           supabase functions deploy delete-account --project-ref "$PROD_PROJECT_REF" --use-api
+          supabase functions deploy embed-recipes  --project-ref "$PROD_PROJECT_REF" --use-api
+          supabase functions deploy embed-text     --project-ref "$PROD_PROJECT_REF" --use-api
 
       - name: Push database migrations
         run: supabase db push --db-url "${{ secrets.PROD_DB_URL }}" --yes
