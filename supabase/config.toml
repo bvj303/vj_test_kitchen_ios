@@ -457,3 +457,12 @@ enabled = true
 # the function do its own secret check. DB writes use the service key.
 verify_jwt = false
 entrypoint = "./functions/embed-recipes/index.ts"
+
+[functions.embed-text]
+enabled = true
+# verify_jwt FALSE, same as embed-recipes: internal endpoint (ai-chat calls it to
+# embed a query) gated by the shared EMBED_BACKFILL_SECRET, not a user JWT. Kept
+# separate from ai-chat so the heavy gte-small model never loads in ai-chat's
+# worker (which crashed it — WORKER_RESOURCE_LIMIT → 502).
+verify_jwt = false
+entrypoint = "./functions/embed-text/index.ts"

@@ -13,16 +13,28 @@
 // service_role/admin access is used here.
 import { GroqRequestError, normalizeChatTurns, runGroqWithTools, type ToolLoopResult } from "./search.ts";
 
-// `Supabase.ai` is an Edge Runtime built-in (declare it so `deno check` passes).
-// The gte-small model runs natively in the function — no external embedding API,
-// $0 — and powers semantic recipe search (see search.ts / match_recipes RPC).
-declare const Supabase: { ai: { Session: new (model: string) => { run(input: string, opts?: { mean_pool?: boolean; normalize?: boolean }): Promise<number[]> } } };
-
-let embedSession: { run(input: string, opts?: { mean_pool?: boolean; normalize?: boolean }): Promise<number[]> } | undefined;
-async function embed(text: string): Promise<number[]> {
-  embedSession ??= new Supabase.ai.Session("gte-small");
-  const out = await embedSession.run(text, { mean_pool: true, normalize: true });
-  return Array.isArray(out) ? out : [];
+// Query embeddings for semantic search are produced by the separate `embed-text`
+// function, NOT here: loading the gte-small model in this worker overran the Edge
+// Function compute limit and crashed it (WORKER_RESOURCE_LIMIT → 502). ai-chat
+// stays light and calls embed-text over HTTP (gated by the shared secret). On any
+// failure it returns [] so searchRecipes falls back to keyword search.
+function makeEmbedder(supabaseUrl: string, anonKey: string, embedSecret: string | undefined) {
+  return async (text: string): Promise<number[]> => {
+    if (!embedSecret) return [];
+    try {
+      const res = await fetch(`${supabaseUrl}/functions/v1/embed-text`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", apikey: anonKey, "x-backfill-secret": embedSecret },
+        body: JSON.stringify({ text }),
+      });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data?.embedding) ? data.embedding : [];
+    } catch (err) {
+      console.error("query embed failed:", err);
+      return [];
+    }
+  };
 }
 
 Deno.serve(async (req: Request) => {
@@ -68,6 +80,7 @@ Deno.serve(async (req: Request) => {
 
   let result: ToolLoopResult;
   try {
+    const embed = makeEmbedder(supabaseUrl, anonKey, Deno.env.get("EMBED_BACKFILL_SECRET"));
     result = await runGroqWithTools({ apiKey, messages, authHeader, supabaseUrl, anonKey, embed });
   } catch (err) {
     if (err instanceof GroqRequestError) {
