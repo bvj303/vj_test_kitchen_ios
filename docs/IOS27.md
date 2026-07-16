@@ -90,14 +90,22 @@ in the Foundation Models framework") — they need the **full** iOS 27 SDK to
 compile (the slim Xcode 27 install has no platform SDKs) and `#available(iOS 27,
 *)` gating so iOS-26 devices (the family) fall back to the on-device model.
 
-- [ ] **`PrivateCloudComputeLanguageModel`** — API works and the code was proven
-      (built + tested under Xcode 27), but it's **blocked on the entitlement**:
-      needs `com.apple.developer.private-cloud-compute` + App Store Small Business
-      Program enrollment. Touching the type without it **traps** (crashed beta
-      build 8). Selectable via `LanguageModelSession(model: some LanguageModel,
-      instructions:)`; free (<2M downloads), keyless, prompts not stored. Re-add
-      once entitled; then optionally layer on `reasoningLevel` + surface
-      `quotaUsage`.
+- [ ] **`PrivateCloudComputeLanguageModel`** — API usage was correct (matches
+      Apple's sample; built + tested under Xcode 27), but **blocked on a managed
+      entitlement**. Per Apple's doc ("Adding server-side intelligence with
+      Private Cloud Compute"): the key is `com.apple.developer.private-cloud-compute`,
+      and it's a **managed entitlement you must REQUEST ACCESS to at
+      https://developer.apple.com/private-cloud-compute/** — Apple approves it; it
+      is **NOT** auto-granted by App Store Small Business Program enrollment (the
+      <2M-downloads/Small-Business bit is only the free *cost* tier). Touching the
+      type without the entitlement kills the app (crashed beta build 8).
+      **When re-landing, also add what our first cut missed** (both in Apple's
+      doc): (a) network-failure fallback — wrap `respond` in try/catch and retry
+      on `SystemLanguageModel()` if PCC fails (PCC needs network); (b) quota
+      awareness via `model.quotaUsage` (`.isLimitReached`, `resetDate`,
+      `limitIncreaseSuggestion.show()`); optional `ContextOptions(reasoningLevel:)`.
+      Selectable via `LanguageModelSession(model: some LanguageModel, instructions:)`;
+      free (<2M downloads), keyless, prompts not stored.
 - [~] **Unified `LanguageModel` protocol** — the generic
       `LanguageModelSession(model: some LanguageModel, …)` init is confirmed and
       was used for the (reverted) PCC path; re-lands with PCC.
