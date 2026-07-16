@@ -73,18 +73,36 @@ Intelligence feature below already builds and is tested at deployment target
 - [ ] **Bump deployment targets to `27.0`** in `project.yml` (all six targets)
       and re-run `xcodegen generate`. One-line-per-target change; the drift
       guards handle the rest.
-- [ ] **Free Private Cloud Compute** — enroll in the App Store Small Business
-      Program (<2M downloads → free PCC). Lets the concierge escalate to a
-      larger cloud model for hard asks at no API cost. iOS 27 only.
-- [ ] **Unified any-model `LanguageModel` protocol** — iOS 27 lets Apple's model
-      and cloud models sit behind one protocol, so a hybrid "on-device when
-      eligible, PCC/cloud otherwise" becomes first-class. Revisit the
-      full-replace decision then if desired (DECISIONS.md, 2026-07-13/15).
-- [ ] **Multimodal prompts** — pass the recipe *photo/PDF page itself* to
-      Foundation Models (instead of OCR-then-text). Should improve extraction on
-      messy layouts.
+These are **confirmed** in the iOS 27 SDK (Apple WWDC26 session 241, "What's new
+in the Foundation Models framework") — they need the **full** iOS 27 SDK to
+compile (the slim Xcode 27 install has no platform SDKs) and `#available(iOS 27,
+*)` gating so iOS-26 devices (the family) fall back to the on-device model.
+
+- [ ] **`PrivateCloudComputeLanguageModel`** — Apple's *larger* model on Private
+      Cloud Compute, selectable via `LanguageModelSession(model:)`. **No cloud
+      API cost** to developers with <2M first-time downloads (this app easily
+      qualifies), **no API key / auth**, prompts are **not stored** (stays in
+      Apple's privacy envelope). 32K-token context, `reasoningLevel` context
+      option. This is the clean answer to "use a bigger model" — strictly better
+      than a third-party hybrid for this app's all-Apple/no-external-SDK ethos.
+- [ ] **Unified `LanguageModel` protocol** — `SystemLanguageModel` (on-device)
+      and `PrivateCloudComputeLanguageModel` both conform; swapping is one arg to
+      `LanguageModelSession(model:)`, "everything downstream stays the same." So
+      `AppleIntelligenceAIService` escalates to PCC on 27, on-device on 26, with
+      no other changes. (Third-party Anthropic/Google Swift packages also
+      conform, if a non-Apple cloud is ever wanted.)
+- [ ] **Multimodal prompts** — attach the recipe *photo/PDF page itself*
+      (`Attachment(UIImage/CGImage/…)`) instead of OCR-then-text. Should improve
+      extraction on messy layouts.
+- [ ] **Bump deployment target to 27.0** is NOT required for the above — keep the
+      floor at 26.0 (family) and gate the 27 APIs with `#available`.
 - [ ] **Evaluations framework** — quantify concierge answer quality as prompts
       change.
+
+**Correction (2026-07-15):** an earlier verbal claim in this session that Apple's
+cloud models aren't available to third-party apps was true for iOS **26** only —
+iOS **27** opens PCC to developers as above. The "free PCC under ~2M downloads"
+note was correct.
 
 ## Privacy / review notes
 
