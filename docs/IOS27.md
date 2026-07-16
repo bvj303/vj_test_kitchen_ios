@@ -26,11 +26,16 @@ that with `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer`.
 
 ## Done on this branch
 
-- **Kitchen Concierge — on-device Apple Intelligence.** `AppleIntelligenceAIService`
-  replaced the Gemini Edge Function. It grounds every reply in the user's real
-  recipes (retrieval + structured-extraction, *not* model tool-calling — the
-  small on-device model wasn't reliable at deciding to search, which read as
-  "generic answers"). Builds + 552 tests pass.
+- **Kitchen Concierge — now Groq cloud (free), was on-device.** As of 2026-07-16
+  the shipping chatbot is the **Groq free tier** (`llama-3.3-70b-versatile`) via
+  the restored `ai-chat` Edge Function (cloud-only) — a big quality jump over the
+  ~3B on-device model, still $0 (1,000 req/day), key server-side, RLS-scoped
+  search, and Groq doesn't train on your data. See DECISIONS.md (2026-07-16).
+  The on-device `AppleIntelligenceAIService` (grounded retrieval) is retained for
+  its availability helper (used by the scan/smarts below) but no longer wired as
+  the concierge. *This supersedes the earlier on-device/PCC concierge direction
+  for the chatbot specifically* — PCC stays a future option if its entitlement is
+  ever granted. Requires `GROQ_API_KEY` as a prod Edge Function secret.
 - **Private Cloud Compute escalation — implemented then REVERTED (build 8 crashed).**
   `makeAnswerSession()` briefly used `PrivateCloudComputeLanguageModel` on iOS 27.
   It shipped as beta build 8 and **hard-crashed** on the device: PCC is

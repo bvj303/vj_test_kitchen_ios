@@ -31,7 +31,7 @@ final class AIPlannerViewModel {
     private let aiService: AIServicing
     private let logger: AppLogger
 
-    init(aiService: AIServicing = AppleIntelligenceAIService(), logger: AppLogger = .shared) {
+    init(aiService: AIServicing = AIService(), logger: AppLogger = .shared) {
         self.aiService = aiService
         self.logger = logger
     }

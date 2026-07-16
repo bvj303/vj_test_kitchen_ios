@@ -20,12 +20,10 @@ struct PlanMealIntent: AppIntent {
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
         do {
-            let response = try await AppleIntelligenceAIService().sendMessage(query)
+            // Cloud concierge (Groq via the ai-chat Edge Function), same in-process
+            // Supabase session as the in-app chat.
+            let response = try await AIService().sendMessage(query)
             return .result(dialog: IntentDialog(stringLiteral: response.text))
-        } catch let error as AppleIntelligenceUnavailableError {
-            // Device isn't Apple-Intelligence-eligible (or it's turned off) —
-            // surface the same friendly reason the in-app Planner shows.
-            return .result(dialog: IntentDialog(stringLiteral: error.message))
         } catch {
             return .result(dialog: IntentDialog(
                 stringLiteral: "Sorry, I couldn't reach Kitchen Concierge. Open VJ Test Kitchen and make sure you're signed in, then try again."

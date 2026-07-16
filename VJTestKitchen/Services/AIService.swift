@@ -1,4 +1,5 @@
 import Foundation
+import Supabase
 
 /// A recipe the assistant surfaced (from its `searchRecipes` tool). The Planner
 /// renders tappable cards for the ones actually named in the reply.
@@ -49,5 +50,53 @@ extension AIServicing {
     /// the Siri intent), which just wraps the prompt as one user turn.
     func sendMessage(_ prompt: String) async throws -> AIChatResponse {
         try await sendMessage([.user(prompt)])
+    }
+}
+
+/// The cloud Kitchen Concierge: invokes the `ai-chat` Supabase Edge Function
+/// (Groq-backed, `llama-3.3-70b-versatile`). The provider's API key lives only
+/// as a server-side Edge Function secret; recipe search inside the function runs
+/// under the caller's own forwarded session token, so it stays RLS-scoped.
+struct AIService: AIServicing {
+    private struct RequestBody: Encodable {
+        let messages: [AIChatTurn]
+    }
+
+    private struct ResponseBody: Decodable {
+        let response: String
+        // Optional so an older deployed function (no `recipes` field) still
+        // decodes — the actionable-cards feature just stays dormant until the
+        // updated function is deployed.
+        let recipes: [AIRecipeRef]?
+    }
+
+    private let client: SupabaseClient
+
+    init(client: SupabaseClient = SupabaseManager.client) {
+        self.client = client
+    }
+
+    func sendMessage(_ history: [AIChatTurn]) async throws -> AIChatResponse {
+        // Attach a freshly-resolved access token explicitly, rather than relying
+        // on the token the Functions client cached from the last auth event.
+        // Unlike PostgREST (which pulls a fresh token per request), the Functions
+        // client only updates its token via `functions.setAuth` on auth events,
+        // so at cold launch it can still hold a stale/expired token from the
+        // initial stored session — which made this function's server-side recipe
+        // search (RLS-gated to `authenticated`) run as anon and return zero rows,
+        // i.e. the Planner insisting the user has no recipes until the Recipes tab
+        // forced a refresh. Reading `session` auto-refreshes if needed, and the
+        // custom Authorization header overrides the client default (see
+        // FunctionInvokeOptions header merging). Belt-and-suspenders with the
+        // launch-time AuthViewModel.warmUpSession.
+        let accessToken = try await client.auth.session.accessToken
+        let result: ResponseBody = try await client.functions.invoke(
+            "ai-chat",
+            options: FunctionInvokeOptions(
+                headers: ["Authorization": "Bearer \(accessToken)"],
+                body: RequestBody(messages: history)
+            )
+        )
+        return AIChatResponse(text: result.response, recipes: result.recipes ?? [])
     }
 }
