@@ -8,6 +8,27 @@ private func makeRecipe(_ id: Int64, _ title: String, prep: Int? = nil, servings
            imagePath: nil, prepTime: prep, servings: servings, createdAt: Date())
 }
 
+/// Records the filters of each `fetchPage` and returns canned pages in order, so
+/// the retrieval ladder can be exercised without a network or the model. An
+/// actor (Sendable) rather than an @unchecked class — the mac test host has
+/// crashed on the latter (see memory: @MainActor test fakes).
+private actor StubRecipeService: RecipeServicing {
+    private var responses: [[Recipe]]
+    private(set) var callFilters: [(query: String?, tag: String?, maxPrepTime: Int?)] = []
+
+    init(responses: [[Recipe]]) { self.responses = responses }
+
+    func fetchPage(offset: Int, limit: Int, matching search: String?, tag: String?, minPrepTime: Int?, maxPrepTime: Int?, minAtkRating: Double?) async throws -> [Recipe] {
+        callFilters.append((search, tag, maxPrepTime))
+        return responses.isEmpty ? [] : responses.removeFirst()
+    }
+
+    func fetchDetail(id: Int64) async throws -> RecipeDetail { fatalError("not used") }
+    func create(_ draft: RecipeDraft) async throws -> Recipe { fatalError("not used") }
+    func update(id: Int64, with draft: RecipeDraft) async throws { fatalError("not used") }
+    func delete(id: Int64) async throws { fatalError("not used") }
+}
+
 struct AppleIntelligenceAIServiceTests {
 
     // MARK: - promptText(from:)
@@ -27,15 +48,96 @@ struct AppleIntelligenceAIServiceTests {
             .assistant("How about Spaghetti Carbonara?"),
             .user("Something else"),
         ])
-        // Prior turns are labeled context; the latest user turn is the ask.
         #expect(prompt.contains("User: Suggest a pasta"))
         #expect(prompt.contains("Assistant: How about Spaghetti Carbonara?"))
         #expect(prompt.contains("The user now says: Something else"))
     }
 
-    @Test func promptTextSkipsBlankTurns() {
-        let prompt = AppleIntelligenceAIService.promptText(from: [.user("   "), .user("Real question")])
-        #expect(prompt == "Real question")
+    // MARK: - latestUserText
+
+    @Test func latestUserTextPicksLastUserTurn() {
+        let text = AppleIntelligenceAIService.latestUserText(from: [
+            .user("first"),
+            .assistant("reply"),
+            .user("  second  "),
+        ])
+        #expect(text == "second")
+    }
+
+    @Test func latestUserTextEmptyWhenNoUserTurn() {
+        #expect(AppleIntelligenceAIService.latestUserText(from: [.assistant("hi")]).isEmpty)
+    }
+
+    // MARK: - normalize
+
+    @Test func normalizeTreatsEmptyAndZeroAsUnspecified() {
+        let params = AppleIntelligenceAIService.normalize(
+            AppleIntelligenceAIService.RecipeQuery(query: "  ", tag: "", maxPrepTime: 0)
+        )
+        #expect(params == AppleIntelligenceAIService.SearchParams(query: nil, tag: nil, maxPrepTime: nil))
+    }
+
+    @Test func normalizeKeepsRealValues() {
+        let params = AppleIntelligenceAIService.normalize(
+            AppleIntelligenceAIService.RecipeQuery(query: "chicken", tag: "Dinner", maxPrepTime: 30)
+        )
+        #expect(params == AppleIntelligenceAIService.SearchParams(query: "chicken", tag: "Dinner", maxPrepTime: 30))
+    }
+
+    // MARK: - retrieve (the grounding ladder)
+
+    @Test func retrieveReturnsSpecificMatchWithoutWidening() async throws {
+        let stub = StubRecipeService(responses: [[makeRecipe(1, "Chicken Soup")]])
+        let service = AppleIntelligenceAIService(recipeService: stub)
+        let recipes = try await service.retrieve(query: "chicken", tag: "Dinner", maxPrepTime: 30)
+        #expect(recipes.map(\.id) == [1])
+        let calls = await stub.callFilters
+        #expect(calls.count == 1) // no widening needed
+        #expect(calls[0].tag == "Dinner")
+    }
+
+    @Test func retrieveDropsFiltersWhenSpecificSearchIsEmpty() async throws {
+        // First (filtered) call empty, second (filters dropped) returns a match.
+        let stub = StubRecipeService(responses: [[], [makeRecipe(2, "Quick Pasta")]])
+        let service = AppleIntelligenceAIService(recipeService: stub)
+        let recipes = try await service.retrieve(query: "pasta", tag: "Italian", maxPrepTime: 15)
+        #expect(recipes.map(\.id) == [2])
+        let calls = await stub.callFilters
+        #expect(calls.count == 2)
+        #expect(calls[0].tag == "Italian")   // first tried with filters
+        #expect(calls[1].tag == nil)          // then dropped them
+        #expect(calls[1].query == "pasta")    // but kept the query
+    }
+
+    @Test func retrieveFallsBackToGeneralPageWhenNothingMatches() async throws {
+        // Every filtered attempt empty; the general page (matching nil) returns.
+        let stub = StubRecipeService(responses: [[], [makeRecipe(3, "Anything")]])
+        let service = AppleIntelligenceAIService(recipeService: stub)
+        let recipes = try await service.retrieve(query: "zzzznomatch", tag: nil, maxPrepTime: nil)
+        #expect(recipes.map(\.id) == [3])
+        let calls = await stub.callFilters
+        #expect(calls.count == 2)
+        #expect(calls.last?.query == nil) // general page has no title filter
+    }
+
+    // MARK: - groundedPrompt
+
+    @Test func groundedPromptListsRealRecipesAndTheAsk() {
+        let prompt = AppleIntelligenceAIService.groundedPrompt(
+            history: [.user("what can I make with chicken?")],
+            recipes: [makeRecipe(1, "Roast Chicken", prep: 60, servings: 4)]
+        )
+        #expect(prompt.contains("\"Roast Chicken\""))
+        #expect(prompt.contains("prep 60 min"))
+        #expect(prompt.contains("what can I make with chicken?"))
+    }
+
+    @Test func groundedPromptStatesWhenCollectionEmpty() {
+        let prompt = AppleIntelligenceAIService.groundedPrompt(
+            history: [.user("dinner ideas")],
+            recipes: []
+        )
+        #expect(prompt.localizedCaseInsensitiveContains("no recipes"))
     }
 
     // MARK: - unavailableReason(for:)
@@ -59,41 +161,21 @@ struct AppleIntelligenceAIServiceTests {
         #expect(reason != nil)
     }
 
-    // MARK: - SearchRecipesTool.formatResults
+    // MARK: - formatResults
 
     @Test func formatResultsStatesWhenNothingMatched() {
-        let text = SearchRecipesTool.formatResults([], query: "unicorn stew")
+        let text = AppleIntelligenceAIService.formatResults([], query: "unicorn stew")
         #expect(text.contains("unicorn stew"))
         #expect(text.localizedCaseInsensitiveContains("no recipes"))
     }
 
     @Test func formatResultsListsTitlesWithStats() {
-        let text = SearchRecipesTool.formatResults(
+        let text = AppleIntelligenceAIService.formatResults(
             [makeRecipe(1, "Spaghetti Carbonara", prep: 20, servings: 4)],
             query: "carbonara"
         )
         #expect(text.contains("\"Spaghetti Carbonara\""))
         #expect(text.contains("prep 20 min"))
         #expect(text.contains("serves 4"))
-    }
-
-    @Test func formatResultsOmitsMissingStats() {
-        let text = SearchRecipesTool.formatResults([makeRecipe(1, "Mystery Dish")], query: "x")
-        #expect(text.contains("\"Mystery Dish\""))
-        #expect(!text.contains("prep"))
-        #expect(!text.contains("serves"))
-    }
-
-    // MARK: - RecipeReferenceSink
-
-    @Test func sinkDedupesByIdAndDrains() async {
-        let sink = RecipeReferenceSink()
-        await sink.add([AIRecipeRef(id: 1, title: "A"), AIRecipeRef(id: 2, title: "B")])
-        await sink.add([AIRecipeRef(id: 2, title: "B"), AIRecipeRef(id: 3, title: "C")])
-        let drained = await sink.drain()
-        #expect(drained.map(\.id) == [1, 2, 3])
-        // Draining clears, so a second drain is empty.
-        let again = await sink.drain()
-        #expect(again.isEmpty)
     }
 }
