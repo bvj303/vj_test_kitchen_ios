@@ -12,6 +12,7 @@ import {
   clampLimit,
   escapeIlike,
   normalizeChatTurns,
+  parseContentRangeTotal,
   parseToolArgs,
   runGroqWithTools,
   searchRecipes,
@@ -31,12 +32,12 @@ function assert(condition: boolean, message: string) {
   if (!condition) throw new Error(message);
 }
 
-Deno.test("clampLimit defaults to 20 when omitted", () => {
-  assertEquals(clampLimit(undefined), 20);
+Deno.test("clampLimit defaults to SEARCH_RECIPES_DEFAULT_LIMIT when omitted", () => {
+  assertEquals(clampLimit(undefined), 35);
 });
 
-Deno.test("clampLimit caps at 25 even when a larger value is requested", () => {
-  assertEquals(clampLimit(1000), 25);
+Deno.test("clampLimit caps at SEARCH_RECIPES_MAX_LIMIT even when a larger value is requested", () => {
+  assertEquals(clampLimit(1000), 60);
 });
 
 Deno.test("clampLimit floors at 1 for zero/negative values", () => {
@@ -129,6 +130,55 @@ Deno.test("searchRecipes samples from the pool: same rows, varied order, capped 
   assertEquals(results.length, 5);
   const poolIds = new Set(pool.map((r) => r.id));
   assert(results.every((r) => poolIds.has(r.id)), "every result should come from the pool");
+});
+
+Deno.test("parseContentRangeTotal extracts the total, or null when unknown", () => {
+  assertEquals(parseContentRangeTotal("0-149/12345"), 12345);
+  assertEquals(parseContentRangeTotal("0-149/*"), null);
+  assertEquals(parseContentRangeTotal(null), null);
+});
+
+Deno.test("buildSearchRecipesUrl includes a non-zero offset for random-window sampling", () => {
+  const url = buildSearchRecipesUrl("https://example.supabase.co", { query: "x" }, 300);
+  assert(url.includes("offset=300"), `expected offset, got ${url}`);
+  // Offset 0 is omitted (the common first-page case).
+  assert(!buildSearchRecipesUrl("https://example.supabase.co", { query: "x" }).includes("offset="), "offset should be omitted when 0");
+});
+
+Deno.test("searchRecipes samples a random window across the whole set when it exceeds the pool", async () => {
+  let call = 0;
+  let windowUrl = "";
+  const firstPage = Array.from({ length: 150 }, (_, i) => ({ id: i + 1, title: `First ${i}`, prep_time: 10, servings: 2, recipe_tags: [] }));
+  const windowPage = Array.from({ length: 150 }, (_, i) => ({ id: 1000 + i, title: `Window ${i}`, prep_time: 10, servings: 2, recipe_tags: [] }));
+  const fetchImpl = (async (url: string | URL) => {
+    call += 1;
+    if (call === 1) {
+      // First page reports a large total via Content-Range → triggers windowing.
+      return new Response(JSON.stringify(firstPage), { status: 200, headers: { "content-range": "0-149/5000" } });
+    }
+    windowUrl = String(url);
+    return new Response(JSON.stringify(windowPage), { status: 200 });
+  }) as typeof fetch;
+
+  const results = await searchRecipes("Bearer t", "https://example.supabase.co", "anon", { query: "chicken", limit: 10 }, fetchImpl, () => 0.5);
+
+  assertEquals(call, 2); // count page, then a random-offset window
+  assert(windowUrl.includes("offset="), `expected an offset on the window fetch, got ${windowUrl}`);
+  assert(results.every((r) => r.id >= 1000), "results should come from the random window, not the first page");
+  assertEquals(results.length, 10);
+});
+
+Deno.test("searchRecipes does not do a second fetch when the whole set fits in one pool", async () => {
+  let call = 0;
+  const page = Array.from({ length: 20 }, (_, i) => ({ id: i + 1, title: `R${i}`, prep_time: 10, servings: 2, recipe_tags: [] }));
+  const fetchImpl = (async () => {
+    call += 1;
+    return new Response(JSON.stringify(page), { status: 200, headers: { "content-range": "0-19/20" } });
+  }) as typeof fetch;
+
+  const results = await searchRecipes("Bearer t", "https://example.supabase.co", "anon", { query: "x", limit: 10 }, fetchImpl, () => 0.5);
+  assertEquals(call, 1); // small set → no windowing
+  assertEquals(results.length, 10);
 });
 
 Deno.test("normalizeChatTurns accepts the legacy single prompt", () => {

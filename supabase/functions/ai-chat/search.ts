@@ -17,16 +17,21 @@ export const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 // migration targets 15K+), the model is given a search_recipes tool and asked
 // to call it for only the recipes relevant to the user's question.
 export const SEARCH_RECIPES_TOOL_NAME = "search_recipes";
-export const SEARCH_RECIPES_DEFAULT_LIMIT = 20;
-export const SEARCH_RECIPES_MAX_LIMIT = 25;
-export const MAX_TOOL_ROUNDS = 3;
+// Llama 3.3 70B has a large context window (unlike the tiny on-device model),
+// so we can hand it many more recipes to choose from per search — a big lever on
+// answer quality / variety. Kept moderate to stay well inside the free tier's
+// daily token budget.
+export const SEARCH_RECIPES_DEFAULT_LIMIT = 35;
+export const SEARCH_RECIPES_MAX_LIMIT = 60;
+export const MAX_TOOL_ROUNDS = 4;
 // The DB query fetches a wider pool than the model asked for, and `searchRecipes`
-// shuffles it before slicing down to the requested count. Without this, ordering
-// by `id` made an identical query ("something healthy") return the same rows in
-// the same order every time, so the model kept recommending the same handful of
-// recipes. Sampling from a pool gives real variety across repeated asks while
-// still bounding how much data we pull per tool call.
-export const SEARCH_RECIPES_POOL_LIMIT = 60;
+// shuffles it before slicing down to the requested count. Critically, when the
+// matching set is bigger than one pool, we fetch that pool from a RANDOM offset
+// across the whole matching set (see searchRecipes) — otherwise ordering by `id`
+// meant the model only ever saw the first ~60 recipes of a 15K-row catalog, so it
+// kept recommending the same handful. Sampling a random window across the full
+// set is what makes it draw from the entire catalog.
+export const SEARCH_RECIPES_POOL_LIMIT = 150;
 
 // Conversation limits — the client sends the full chat history so follow-ups
 // ("give me a different one") have context, which means we must bound total token
@@ -86,11 +91,14 @@ export function clampLimit(limit: number | undefined): number {
 /// Builds the PostgREST URL for a `search_recipes` tool call. Pure (no
 /// fetch) so its query-building logic is unit-testable without a live
 /// database.
-export function buildSearchRecipesUrl(supabaseUrl: string, args: SearchRecipesArgs): string {
+export function buildSearchRecipesUrl(supabaseUrl: string, args: SearchRecipesArgs, offset = 0): string {
   // Fetch a wider pool than the model requested — `searchRecipes` samples from it
   // for variety (see SEARCH_RECIPES_POOL_LIMIT). `args.limit` still governs how
-  // many rows the model ultimately receives, applied after the shuffle.
+  // many rows the model ultimately receives, applied after the shuffle. `offset`
+  // lets searchRecipes pull the pool from a random point in the matching set so
+  // it spans the whole catalog, not just the first page.
   const params = new URLSearchParams({ limit: String(SEARCH_RECIPES_POOL_LIMIT) });
+  if (offset > 0) params.set("offset", String(offset));
 
   if (args.tag) {
     // `!inner` turns the horizontal filter on the embedded resource into an
@@ -122,25 +130,18 @@ export function shuffle<T>(items: T[], random: () => number = Math.random): T[] 
   return arr;
 }
 
-export async function searchRecipes(
-  authHeader: string,
-  supabaseUrl: string,
-  anonKey: string,
-  args: SearchRecipesArgs,
-  fetchImpl: typeof fetch = fetch,
-  random: () => number = Math.random,
-): Promise<RecipeCatalogEntry[]> {
-  const res = await fetchImpl(buildSearchRecipesUrl(supabaseUrl, args), {
-    headers: { apikey: anonKey, Authorization: authHeader },
-  });
+/// Parses the `total` out of a PostgREST `Content-Range` header (e.g.
+/// `0-149/12345` → 12345). Returns null when the total is unknown (`*`).
+export function parseContentRangeTotal(header: string | null): number | null {
+  if (!header) return null;
+  const total = header.split("/")[1];
+  if (!total || total === "*") return null;
+  const n = Number(total);
+  return Number.isFinite(n) ? n : null;
+}
 
-  if (!res.ok) {
-    console.error("search_recipes query failed:", res.status, await res.text());
-    return [];
-  }
-
-  const rows = await res.json();
-  const mapped: RecipeCatalogEntry[] = rows.map((r: any) => ({
+function mapRecipeRows(rows: any[]): RecipeCatalogEntry[] {
+  return (rows ?? []).map((r: any) => ({
     id: r.id,
     title: r.title,
     tags: (r.recipe_tags ?? [])
@@ -149,10 +150,48 @@ export async function searchRecipes(
     prep_time: r.prep_time,
     servings: r.servings,
   }));
+}
 
-  // Sample from the fetched pool so repeated identical queries don't keep
-  // returning the same rows in id order (the root cause of "same 3 meals").
-  return shuffle(mapped, random).slice(0, clampLimit(args.limit));
+export async function searchRecipes(
+  authHeader: string,
+  supabaseUrl: string,
+  anonKey: string,
+  args: SearchRecipesArgs,
+  fetchImpl: typeof fetch = fetch,
+  random: () => number = Math.random,
+): Promise<RecipeCatalogEntry[]> {
+  // First page + an exact count, so we know how big the matching set is.
+  const firstRes = await fetchImpl(buildSearchRecipesUrl(supabaseUrl, args, 0), {
+    headers: { apikey: anonKey, Authorization: authHeader, Prefer: "count=exact" },
+  });
+  if (!firstRes.ok) {
+    console.error("search_recipes query failed:", firstRes.status, await firstRes.text());
+    return [];
+  }
+
+  let rows = await firstRes.json();
+  const total = parseContentRangeTotal(firstRes.headers.get("content-range")) ?? (Array.isArray(rows) ? rows.length : 0);
+
+  // If the matching set is bigger than one pool, re-fetch a pool from a RANDOM
+  // offset across the whole set — so a 15K-row catalog (or hundreds of "chicken"
+  // matches) is sampled across its entirety, not just the first page by id. A
+  // stale/estimated count that overshoots just yields an empty window, in which
+  // case we keep the first page (no regression).
+  if (total > SEARCH_RECIPES_POOL_LIMIT) {
+    const maxOffset = total - SEARCH_RECIPES_POOL_LIMIT;
+    const offset = Math.floor(random() * (maxOffset + 1));
+    const windowRes = await fetchImpl(buildSearchRecipesUrl(supabaseUrl, args, offset), {
+      headers: { apikey: anonKey, Authorization: authHeader },
+    });
+    if (windowRes.ok) {
+      const windowRows = await windowRes.json();
+      if (Array.isArray(windowRows) && windowRows.length > 0) rows = windowRows;
+    }
+  }
+
+  // Shuffle the pool and slice to the requested count so repeated identical
+  // queries don't keep returning the same rows in id order.
+  return shuffle(mapRecipeRows(rows), random).slice(0, clampLimit(args.limit));
 }
 
 export type ChatRole = "user" | "assistant";
