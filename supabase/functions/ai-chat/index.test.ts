@@ -8,14 +8,21 @@
 // top level, which would start a real HTTP listener as a side effect of
 // merely importing it here.
 import {
+  buildFavoritesUrl,
+  buildPlannedMealsUrl,
+  buildRecipeDetailsUrl,
   buildSearchRecipesUrl,
   clampLimit,
   escapeIlike,
   fetchWithTimeout,
+  getFavorites,
+  getPlannedMeals,
+  getRecipeDetails,
   GroqRequestError,
   matchRecipes,
   normalizeChatTurns,
   parseContentRangeTotal,
+  parseRecipeId,
   parseToolArgs,
   runGroqWithTools,
   searchRecipes,
@@ -568,4 +575,171 @@ Deno.test("returned recipes are exactly the tool-surfaced set — a hallucinated
   // Groundedness by construction: only genuinely tool-surfaced recipes can enter
   // the structured payload the client renders.
   assertEquals(result.recipes, [{ id: 8, title: "Real Spaghetti" }]);
+});
+
+// ── Slice 2 agentic read tools: get_recipe_details / get_planned_meals / get_favorites ──
+
+Deno.test("parseRecipeId accepts positive integers and rejects everything else", () => {
+  assertEquals(parseRecipeId({ recipe_id: 42 }), 42);
+  assertEquals(parseRecipeId({ recipe_id: "42" }), 42);
+  assertEquals(parseRecipeId({ recipe_id: 0 }), null);
+  assertEquals(parseRecipeId({ recipe_id: -3 }), null);
+  assertEquals(parseRecipeId({ recipe_id: 1.5 }), null);
+  assertEquals(parseRecipeId({ recipe_id: "abc" }), null);
+  assertEquals(parseRecipeId({}), null);
+});
+
+Deno.test("buildRecipeDetailsUrl selects ingredients + tags for one recipe by id", () => {
+  const url = buildRecipeDetailsUrl("https://x.supabase.co", 7);
+  assert(url.includes("id=eq.7"), `expected id filter, got ${url}`);
+  assert(url.includes("ingredients"), `expected ingredients embed, got ${url}`);
+  assert(url.includes("limit=1"), `expected limit=1, got ${url}`);
+});
+
+Deno.test("buildPlannedMealsUrl filters an inclusive date window and embeds the recipe title", () => {
+  const url = buildPlannedMealsUrl("https://x.supabase.co", "2026-07-13", "2026-07-19");
+  assert(url.includes("date=gte.2026-07-13"), `expected lower bound, got ${url}`);
+  assert(url.includes("date=lte.2026-07-19"), `expected upper bound, got ${url}`);
+  assert(url.includes("recipes"), `expected recipe title embed, got ${url}`);
+});
+
+Deno.test("buildFavoritesUrl reads recipe_favorites with the recipe embed", () => {
+  const url = buildFavoritesUrl("https://x.supabase.co");
+  assert(url.includes("/rest/v1/recipe_favorites"), `expected favorites table, got ${url}`);
+  assert(url.includes("recipes"), `expected recipe embed, got ${url}`);
+});
+
+Deno.test("getRecipeDetails maps ingredients + tags, and returns null when the recipe isn't found", async () => {
+  const found = (async () =>
+    new Response(JSON.stringify([{
+      id: 7, title: "Coq au Vin", description: "d", instructions: "steps", prep_time: 90, servings: 4,
+      ingredients: [{ name: "chicken", amount: 2, unit: "lb" }, { name: "wine", amount: 1, unit: "bottle" }],
+      recipe_tags: [{ tags: { name: "French" } }],
+    }]), { status: 200 })) as typeof fetch;
+  const details = await getRecipeDetails("Bearer t", "https://x", "a", 7, found);
+  assertEquals(details?.id, 7);
+  assertEquals(details?.ingredients.length, 2);
+  assertEquals(details?.tags, ["French"]);
+
+  const empty = (async () => new Response(JSON.stringify([]), { status: 200 })) as typeof fetch;
+  assertEquals(await getRecipeDetails("Bearer t", "https://x", "a", 999, empty), null);
+
+  const errored = (async () => new Response("boom", { status: 500 })) as typeof fetch;
+  assertEquals(await getRecipeDetails("Bearer t", "https://x", "a", 7, errored), null);
+});
+
+Deno.test("getPlannedMeals flattens the embedded recipe title and returns [] on error", async () => {
+  const ok = (async () =>
+    new Response(JSON.stringify([
+      { date: "2026-07-13", meal_type: "dinner", recipe_id: 2, recipes: { title: "Tacos" } },
+    ]), { status: 200 })) as typeof fetch;
+  const meals = await getPlannedMeals("Bearer t", "https://x", "a", "2026-07-13", "2026-07-19", ok);
+  assertEquals(meals, [{ date: "2026-07-13", meal_type: "dinner", recipe_id: 2, title: "Tacos" }]);
+
+  const errored = (async () => new Response("boom", { status: 500 })) as typeof fetch;
+  assertEquals(await getPlannedMeals("Bearer t", "https://x", "a", "2026-07-13", "2026-07-19", errored), []);
+});
+
+Deno.test("getFavorites maps the recipe embed and drops rows with no visible recipe", async () => {
+  const ok = (async () =>
+    new Response(JSON.stringify([
+      { recipe_id: 3, recipes: { title: "Fav One", prep_time: 20, servings: 2, atk_rating: 4.5 } },
+      { recipe_id: 4, recipes: null }, // recipe not visible/deleted — dropped
+    ]), { status: 200 })) as typeof fetch;
+  const favorites = await getFavorites("Bearer t", "https://x", "a", ok);
+  assertEquals(favorites, [{ recipe_id: 3, title: "Fav One", prep_time: 20, servings: 2, atk_rating: 4.5 }]);
+});
+
+Deno.test("runGroqWithTools dispatches get_recipe_details and surfaces the recipe as grounded", async () => {
+  let detailsCalled = false;
+  let call = 0;
+  const fetchImpl = (async (url: string | URL) => {
+    if (String(url).includes("api.groq.com")) {
+      call += 1;
+      if (call === 1) return groqResponse({ choices: [namedToolCallMessage("get_recipe_details", { recipe_id: 7 })] });
+      return groqResponse({ choices: [{ message: { content: "Coq au Vin needs chicken and wine." }, finish_reason: "stop" }] });
+    }
+    detailsCalled = true;
+    assert(String(url).includes("id=eq.7"), `expected details query for id 7, got ${url}`);
+    return new Response(JSON.stringify([{ id: 7, title: "Coq au Vin", description: null, instructions: "s", prep_time: 90, servings: 4, ingredients: [{ name: "chicken", amount: 2, unit: "lb" }], recipe_tags: [] }]), { status: 200 });
+  }) as typeof fetch;
+
+  const result = await runGroqWithTools({ apiKey: "k", userPrompt: "what's in coq au vin (id 7)?", authHeader: "Bearer t", supabaseUrl: "https://x", anonKey: "a", fetchImpl, log: silentLog });
+  assert(detailsCalled, "should have called get_recipe_details");
+  assertEquals(result.recipes, [{ id: 7, title: "Coq au Vin" }]);
+});
+
+Deno.test("runGroqWithTools rejects get_recipe_details with a bad id and never hits the DB", async () => {
+  let dbCalls = 0;
+  let call = 0;
+  let toolResult = "";
+  const fetchImpl = (async (url: string | URL, init?: RequestInit) => {
+    if (String(url).includes("api.groq.com")) {
+      call += 1;
+      if (call === 1) return groqResponse({ choices: [namedToolCallMessage("get_recipe_details", { recipe_id: "not-a-number" })] });
+      toolResult = JSON.parse(String(init?.body)).messages.find((m: any) => m.role === "tool")?.content ?? "";
+      return groqResponse({ choices: [{ message: { content: "Which recipe did you mean?" }, finish_reason: "stop" }] });
+    }
+    dbCalls += 1;
+    return new Response(JSON.stringify([]), { status: 200 });
+  }) as typeof fetch;
+
+  await runGroqWithTools({ apiKey: "k", userPrompt: "details please", authHeader: "Bearer t", supabaseUrl: "https://x", anonKey: "a", fetchImpl, log: silentLog });
+  assertEquals(dbCalls, 0);
+  assert(toolResult.includes("positive integer"), `expected an invalid-id error result, got ${toolResult}`);
+});
+
+Deno.test("runGroqWithTools dispatches get_planned_meals with valid dates and rejects malformed ones", async () => {
+  // Valid dates → the planned-meals query runs.
+  let plannedUrl = "";
+  let call = 0;
+  const okFetch = (async (url: string | URL) => {
+    if (String(url).includes("api.groq.com")) {
+      call += 1;
+      if (call === 1) return groqResponse({ choices: [namedToolCallMessage("get_planned_meals", { start_date: "2026-07-13", end_date: "2026-07-19" })] });
+      return groqResponse({ choices: [{ message: { content: "You've got Tacos on Monday." }, finish_reason: "stop" }] });
+    }
+    plannedUrl = String(url);
+    return new Response(JSON.stringify([{ date: "2026-07-13", meal_type: "dinner", recipe_id: 2, recipes: { title: "Tacos" } }]), { status: 200 });
+  }) as typeof fetch;
+  const okResult = await runGroqWithTools({ apiKey: "k", userPrompt: "what's planned this week?", authHeader: "Bearer t", supabaseUrl: "https://x", anonKey: "a", fetchImpl: okFetch, log: silentLog });
+  assert(plannedUrl.includes("/rest/v1/meal_plans"), `expected a meal_plans query, got ${plannedUrl}`);
+  assertEquals(okResult.recipes, [{ id: 2, title: "Tacos" }]);
+
+  // Malformed date → error result, no DB hit.
+  let dbCalls = 0;
+  let call2 = 0;
+  let toolResult = "";
+  const badFetch = (async (url: string | URL, init?: RequestInit) => {
+    if (String(url).includes("api.groq.com")) {
+      call2 += 1;
+      if (call2 === 1) return groqResponse({ choices: [namedToolCallMessage("get_planned_meals", { start_date: "July 13th", end_date: "soon" })] });
+      toolResult = JSON.parse(String(init?.body)).messages.find((m: any) => m.role === "tool")?.content ?? "";
+      return groqResponse({ choices: [{ message: { content: "What dates?" }, finish_reason: "stop" }] });
+    }
+    dbCalls += 1;
+    return new Response(JSON.stringify([]), { status: 200 });
+  }) as typeof fetch;
+  await runGroqWithTools({ apiKey: "k", userPrompt: "what's planned?", authHeader: "Bearer t", supabaseUrl: "https://x", anonKey: "a", fetchImpl: badFetch, log: silentLog });
+  assertEquals(dbCalls, 0);
+  assert(toolResult.includes("YYYY-MM-DD"), `expected a date-format error result, got ${toolResult}`);
+});
+
+Deno.test("runGroqWithTools dispatches get_favorites and surfaces favorites as grounded recipes", async () => {
+  let favoritesCalled = false;
+  let call = 0;
+  const fetchImpl = (async (url: string | URL) => {
+    if (String(url).includes("api.groq.com")) {
+      call += 1;
+      if (call === 1) return groqResponse({ choices: [namedToolCallMessage("get_favorites", {})] });
+      return groqResponse({ choices: [{ message: { content: "You love Fav One — here's something similar." }, finish_reason: "stop" }] });
+    }
+    favoritesCalled = true;
+    assert(String(url).includes("recipe_favorites"), `expected favorites query, got ${url}`);
+    return new Response(JSON.stringify([{ recipe_id: 3, recipes: { title: "Fav One", prep_time: 20, servings: 2, atk_rating: 4.5 } }]), { status: 200 });
+  }) as typeof fetch;
+
+  const result = await runGroqWithTools({ apiKey: "k", userPrompt: "recommend based on my favorites", authHeader: "Bearer t", supabaseUrl: "https://x", anonKey: "a", fetchImpl, log: silentLog });
+  assert(favoritesCalled, "should have called get_favorites");
+  assertEquals(result.recipes, [{ id: 3, title: "Fav One" }]);
 });
