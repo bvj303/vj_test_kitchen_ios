@@ -33,8 +33,16 @@ struct AppleIntelligenceAIService: AIServicing {
     }
 
     /// How many recipes to hand the model as grounding context per turn. Enough
-    /// to choose from, small enough not to blow the on-device context window.
-    static let groundingLimit = 12
+    /// to choose from for real variety, small enough not to blow the on-device
+    /// context window (~a few hundred tokens for the list).
+    static let groundingLimit = 24
+
+    /// How many candidates to *fetch* before sampling `groundingLimit` of them.
+    /// A wider pool that's then shuffled means repeated/open-ended asks don't
+    /// keep surfacing the same recipes — the model effectively sees across the
+    /// whole catalog over time, not a fixed first page. Mirrors the old Gemini
+    /// `search_recipes` pool-then-shuffle behavior.
+    static let poolLimit = 75
 
     func sendMessage(_ history: [AIChatTurn]) async throws -> AIChatResponse {
         if let reason = unavailableReason {
@@ -73,22 +81,48 @@ struct AppleIntelligenceAIService: AIServicing {
 
     // MARK: - Retrieval
 
-    /// Search the user's collection, widening the net until we have something to
-    /// ground on: most-specific (query + tag + prep) → drop tag/prep → general
-    /// page. A vague or unmatched ask still yields real recipes to suggest.
+    /// Gather grounding recipes, then **shuffle and sample** `groundingLimit` of
+    /// them so the concierge draws widely and varies between asks (rather than
+    /// re-suggesting the same fixed page):
+    ///
+    /// - A **filtered** ask (query/tag/prep) fetches a wide pool of matches,
+    ///   widening (drop tag/prep, then a random catalog slice) if empty.
+    /// - An **open-ended** ask (no filters — "plan me some dinners") samples a
+    ///   **random slice of the whole catalog**, so it spans everything over
+    ///   repeated asks instead of always the first page.
     func retrieve(query: String?, tag: String?, maxPrepTime: Int?) async throws -> [Recipe] {
-        var results = try await recipeService.fetchPage(
-            offset: 0, limit: Self.groundingLimit, matching: query, tag: tag, maxPrepTime: maxPrepTime
-        )
-        if results.isEmpty, tag != nil || maxPrepTime != nil {
-            results = try await recipeService.fetchPage(
-                offset: 0, limit: Self.groundingLimit, matching: query, tag: nil, maxPrepTime: nil
+        let hasFilter = query != nil || tag != nil || maxPrepTime != nil
+        var pool: [Recipe]
+
+        if hasFilter {
+            pool = try await recipeService.fetchPage(
+                offset: 0, limit: Self.poolLimit, matching: query, tag: tag, maxPrepTime: maxPrepTime
             )
+            if pool.isEmpty, tag != nil || maxPrepTime != nil {
+                pool = try await recipeService.fetchPage(
+                    offset: 0, limit: Self.poolLimit, matching: query, tag: nil, maxPrepTime: nil
+                )
+            }
+            if pool.isEmpty {
+                pool = try await fetchRandomCatalogPool()
+            }
+        } else {
+            pool = try await fetchRandomCatalogPool()
         }
-        if results.isEmpty {
-            results = try await recipeService.fetchPage(offset: 0, limit: Self.groundingLimit, matching: nil)
-        }
-        return results
+
+        return Array(pool.shuffled().prefix(Self.groundingLimit))
+    }
+
+    /// A pool of recipes from a **random offset** across the whole catalog, so
+    /// open-ended asks (and unmatched fallbacks) sample the entire collection
+    /// over time instead of always the first page. Uses the HEAD-count so the
+    /// offset stays in range; falls back to the first page if the count is
+    /// unknown (e.g. test fakes default `totalCount` to 0).
+    private func fetchRandomCatalogPool() async throws -> [Recipe] {
+        let total = (try? await recipeService.totalCount()) ?? 0
+        let maxOffset = max(0, total - Self.poolLimit)
+        let offset = maxOffset > 0 ? Int.random(in: 0...maxOffset) : 0
+        return try await recipeService.fetchPage(offset: offset, limit: Self.poolLimit, matching: nil)
     }
 
     // MARK: - Model selection (on-device vs Private Cloud Compute)

@@ -14,14 +14,22 @@ private func makeRecipe(_ id: Int64, _ title: String, prep: Int? = nil, servings
 /// crashed on the latter (see memory: @MainActor test fakes).
 private actor StubRecipeService: RecipeServicing {
     private var responses: [[Recipe]]
+    private let total: Int
     private(set) var callFilters: [(query: String?, tag: String?, maxPrepTime: Int?)] = []
+    private(set) var callOffsets: [Int] = []
 
-    init(responses: [[Recipe]]) { self.responses = responses }
+    init(responses: [[Recipe]], total: Int = 0) {
+        self.responses = responses
+        self.total = total
+    }
 
     func fetchPage(offset: Int, limit: Int, matching search: String?, tag: String?, minPrepTime: Int?, maxPrepTime: Int?, minAtkRating: Double?) async throws -> [Recipe] {
         callFilters.append((search, tag, maxPrepTime))
+        callOffsets.append(offset)
         return responses.isEmpty ? [] : responses.removeFirst()
     }
+
+    func totalCount() async throws -> Int { total }
 
     func fetchDetail(id: Int64) async throws -> RecipeDetail { fatalError("not used") }
     func create(_ draft: RecipeDraft) async throws -> Recipe { fatalError("not used") }
@@ -118,6 +126,44 @@ struct AppleIntelligenceAIServiceTests {
         let calls = await stub.callFilters
         #expect(calls.count == 2)
         #expect(calls.last?.query == nil) // general page has no title filter
+    }
+
+    @Test func retrieveOpenEndedSamplesTheCatalog() async throws {
+        // No query/tag/prep → should sample the catalog (a general, matching:nil
+        // fetch), not try a filtered search first.
+        let stub = StubRecipeService(responses: [[makeRecipe(9, "Something Good")]])
+        let service = AppleIntelligenceAIService(recipeService: stub)
+        let recipes = try await service.retrieve(query: nil, tag: nil, maxPrepTime: nil)
+        #expect(recipes.map(\.id) == [9])
+        let calls = await stub.callFilters
+        #expect(calls.count == 1)
+        #expect(calls[0].query == nil) // straight to the general catalog sample
+    }
+
+    @Test func retrieveShufflesAndCapsToGroundingLimit() async throws {
+        // A pool larger than the grounding limit is sampled down to it, and
+        // every returned recipe comes from the pool (order may differ — shuffled).
+        let pool = (1...60).map { makeRecipe(Int64($0), "Recipe \($0)") }
+        let stub = StubRecipeService(responses: [pool])
+        let service = AppleIntelligenceAIService(recipeService: stub)
+        let recipes = try await service.retrieve(query: "anything", tag: nil, maxPrepTime: nil)
+        #expect(recipes.count == AppleIntelligenceAIService.groundingLimit)
+        let poolIds = Set(pool.map(\.id))
+        #expect(recipes.allSatisfy { poolIds.contains($0.id) })
+        #expect(Set(recipes.map(\.id)).count == recipes.count) // no dupes
+    }
+
+    @Test func retrieveRandomOffsetStaysWithinCatalog() async throws {
+        // With a known large catalog, the open-ended sample's offset must land in
+        // [0, total - poolLimit] so the page is always full/valid.
+        let total = 10_000
+        let stub = StubRecipeService(responses: [[makeRecipe(1, "X")]], total: total)
+        let service = AppleIntelligenceAIService(recipeService: stub)
+        _ = try await service.retrieve(query: nil, tag: nil, maxPrepTime: nil)
+        let offsets = await stub.callOffsets
+        #expect(offsets.count == 1)
+        #expect(offsets[0] >= 0)
+        #expect(offsets[0] <= total - AppleIntelligenceAIService.poolLimit)
     }
 
     // MARK: - groundedPrompt
