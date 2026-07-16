@@ -93,22 +93,20 @@ struct AppleIntelligenceAIService: AIServicing {
 
     // MARK: - Model selection (on-device vs Private Cloud Compute)
 
-    /// Builds the session for the *answer* turn. On iOS/macOS **27** it escalates
-    /// to Apple's **Private Cloud Compute** model when available — a larger model
-    /// that's still free (no cloud API cost under ~2M downloads), keyless, and
-    /// private (prompts aren't stored); see `docs/IOS27.md`. On iOS/macOS 26, or
-    /// when PCC reports unavailable (device not eligible / system not ready), it
-    /// falls back to the on-device model — so the family's iOS-26 install keeps
-    /// working unchanged. The cheap query-extraction call deliberately stays
-    /// on-device (`extractSearchParams`) to conserve the daily PCC quota.
+    /// Builds the session for the *answer* turn.
+    ///
+    /// **Currently on-device only.** Escalation to Apple's Private Cloud Compute
+    /// model (`PrivateCloudComputeLanguageModel`) is implemented in git history
+    /// but **reverted** because PCC is **entitlement-gated**: it requires the
+    /// `com.apple.developer.private-cloud-compute` capability *and* App Store
+    /// Small Business Program enrollment (<2M downloads). Without the
+    /// entitlement, merely *touching* the PCC type at runtime **traps** (a hard
+    /// crash, not a catchable error) on an iOS-27 device — which is exactly what
+    /// happened on the beta. Re-enable only after the entitlement is granted and
+    /// the signed build actually carries it (see docs/IOS27.md). Keeping the
+    /// on-device grounded path (the build-7 behavior) is the safe default.
     private static func makeAnswerSession() -> LanguageModelSession {
-        if #available(iOS 27.0, macOS 27.0, *) {
-            let pcc = PrivateCloudComputeLanguageModel()
-            if case .available = pcc.availability {
-                return LanguageModelSession(model: pcc, instructions: instructions)
-            }
-        }
-        return LanguageModelSession(instructions: instructions)
+        LanguageModelSession(instructions: instructions)
     }
 
     // MARK: - Query extraction (on-device)

@@ -15,28 +15,32 @@ the *selected* toolchain for the shipping app; build **this branch** with Xcode
 `DEVELOPER_DIR`, so `DEVELOPER_DIR=… scripts/deploy-testflight.sh --scheme
 VJTestKitchenAIBeta` ships the beta.
 
-**Why Xcode 27 is now required to build this branch:** `AppleIntelligenceAIService`
-references `PrivateCloudComputeLanguageModel`, which only exists in the iOS 27
-SDK. It's runtime-gated with `#available(iOS 27, *)` so the app still *runs* on
-iOS 26 (the deployment target stays **26.0** — the family's install is
-unaffected), but it must *compile* against SDK 27. Foundation Models + the new
-Vision OCR API otherwise shipped in the 26 SDK, so everything else is 26-native.
+**The branch currently builds on either Xcode 26.6 or 27** — the one iOS-27-only
+symbol (`PrivateCloudComputeLanguageModel`) was reverted after it crashed (see
+the PCC bullet below), so there's no hard SDK-27 dependency right now. Xcode 27
+is only *needed* again when PCC (or another 27-only API) is re-introduced; build
+that with `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer`.
 
 - The literal `deploymentTarget: 27.0` bump is **still not done and not needed** —
   keep the floor at 26.0 and gate 27-only APIs with `#available`.
 
 ## Done on this branch
 
-- **Kitchen Concierge — on-device Apple Intelligence, escalating to Private
-  Cloud Compute on iOS 27.** `AppleIntelligenceAIService` replaced the Gemini
-  Edge Function. It grounds every reply in the user's real recipes (retrieval +
-  structured-extraction, *not* model tool-calling — the small on-device model
-  wasn't reliable at deciding to search, which read as "generic answers"). For
-  the answer turn, `makeAnswerSession()` uses `PrivateCloudComputeLanguageModel`
-  (a bigger, free/keyless/private Apple cloud model) when it reports available on
-  iOS/macOS 27, and falls back to the on-device model on 26 / when PCC is
-  unavailable. The cheap query-extraction stays on-device to conserve PCC quota.
-  Verified: builds + 552 tests pass under Xcode 27 / iOS 27 SDK.
+- **Kitchen Concierge — on-device Apple Intelligence.** `AppleIntelligenceAIService`
+  replaced the Gemini Edge Function. It grounds every reply in the user's real
+  recipes (retrieval + structured-extraction, *not* model tool-calling — the
+  small on-device model wasn't reliable at deciding to search, which read as
+  "generic answers"). Builds + 552 tests pass.
+- **Private Cloud Compute escalation — implemented then REVERTED (build 8 crashed).**
+  `makeAnswerSession()` briefly used `PrivateCloudComputeLanguageModel` on iOS 27.
+  It shipped as beta build 8 and **hard-crashed** on the device: PCC is
+  **entitlement-gated** (`com.apple.developer.private-cloud-compute` + App Store
+  Small Business Program enrollment, <2M downloads), and *touching* the PCC type
+  without the entitlement **traps** — not a catchable error. Reverted to
+  on-device in build 9. The escalation code is one `git revert` away in history;
+  re-enable only after: (1) enroll in the Small Business Program, (2) request/get
+  the PCC entitlement on the App ID, (3) confirm the signed build carries it.
+  Until then the branch builds on **either** Xcode 26.6 or 27 (no PCC symbol).
 - **Graceful degradation** on Apple-Intelligence-ineligible devices (and the
   Simulator, which has no model): the Planner shows an "unavailable" panel
   (`AIPlannerViewModel.unavailableReason`), the scanner/writing-tools buttons
@@ -86,17 +90,17 @@ in the Foundation Models framework") — they need the **full** iOS 27 SDK to
 compile (the slim Xcode 27 install has no platform SDKs) and `#available(iOS 27,
 *)` gating so iOS-26 devices (the family) fall back to the on-device model.
 
-- [x] **`PrivateCloudComputeLanguageModel`** — **DONE** (see Done section). Apple's
-      *larger* model on Private Cloud Compute, selectable via
-      `LanguageModelSession(model: some LanguageModel, instructions:)`. Free (no
-      cloud API cost under ~2M downloads), keyless, prompts not stored. Wired as
-      the answer-turn model on iOS/macOS 27; on-device fallback on 26. Still
-      available to layer on: the `reasoningLevel` context option and surfacing
-      `quotaUsage` to the user.
-- [x] **Unified `LanguageModel` protocol** — **DONE**: the escalation uses the
-      generic `LanguageModelSession(model: some LanguageModel, …)` init, so
-      swapping models is one line. (Third-party Anthropic/Google Swift packages
-      also conform, if a non-Apple cloud is ever wanted.)
+- [ ] **`PrivateCloudComputeLanguageModel`** — API works and the code was proven
+      (built + tested under Xcode 27), but it's **blocked on the entitlement**:
+      needs `com.apple.developer.private-cloud-compute` + App Store Small Business
+      Program enrollment. Touching the type without it **traps** (crashed beta
+      build 8). Selectable via `LanguageModelSession(model: some LanguageModel,
+      instructions:)`; free (<2M downloads), keyless, prompts not stored. Re-add
+      once entitled; then optionally layer on `reasoningLevel` + surface
+      `quotaUsage`.
+- [~] **Unified `LanguageModel` protocol** — the generic
+      `LanguageModelSession(model: some LanguageModel, …)` init is confirmed and
+      was used for the (reverted) PCC path; re-lands with PCC.
 - [ ] **Multimodal prompts** — attach the recipe *photo/PDF page itself*
       (`Attachment(UIImage/CGImage/…)`) instead of OCR-then-text. Should improve
       extraction on messy layouts.
