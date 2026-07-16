@@ -121,6 +121,8 @@ Deno.serve(async (req: Request) => {
     : result.text;
 
   // `recipes` are the ones surfaced by search_recipes this turn; the client
-  // renders tappable cards for those the reply actually names.
-  return Response.json({ response, recipes: result.recipes });
+  // renders tappable cards for those the reply actually names. `actions` are
+  // proposed writes (add-to-calendar / add-to-grocery-list) the client shows as
+  // confirm-to-apply controls — nothing is written server-side.
+  return Response.json({ response, recipes: result.recipes, actions: result.actions });
 });

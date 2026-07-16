@@ -19,6 +19,8 @@ import {
   getPlannedMeals,
   getRecipeDetails,
   GroqRequestError,
+  validateGroceryProposal,
+  validateMealPlanItems,
   matchRecipes,
   normalizeChatTurns,
   parseContentRangeTotal,
@@ -330,7 +332,7 @@ Deno.test("runGroqWithTools returns the model's text directly when it never call
     fetchImpl,
   });
 
-  assertEquals(result, { text: "Try the Carbonara.", finishReason: "stop", blocked: false, roundCapHit: false, recipes: [] });
+  assertEquals(result, { text: "Try the Carbonara.", finishReason: "stop", blocked: false, roundCapHit: false, recipes: [], actions: [] });
 });
 
 Deno.test("runGroqWithTools sends the system prompt + full history (assistant stays 'assistant')", async () => {
@@ -742,4 +744,107 @@ Deno.test("runGroqWithTools dispatches get_favorites and surfaces favorites as g
   const result = await runGroqWithTools({ apiKey: "k", userPrompt: "recommend based on my favorites", authHeader: "Bearer t", supabaseUrl: "https://x", anonKey: "a", fetchImpl, log: silentLog });
   assert(favoritesCalled, "should have called get_favorites");
   assertEquals(result.recipes, [{ id: 3, title: "Fav One" }]);
+});
+
+// ── Slice 3 actionable proposals: propose_meal_plan / propose_grocery_additions ──
+
+Deno.test("validateMealPlanItems accepts only grounded items, uses the authoritative title, rejects the rest", () => {
+  const referenced = new Map<number, string>([[2, "Beef Tacos"]]);
+  const { actions, rejected } = validateMealPlanItems([
+    { recipe_id: 2, date: "2026-07-20", meal_type: "dinner" }, // ok
+    { recipe_id: 2, date: "bad-date", meal_type: "dinner" }, // invalid date
+    { recipe_id: 99, date: "2026-07-21", meal_type: "lunch" }, // id never surfaced
+    { recipe_id: 2, date: "2026-07-22", meal_type: "  " }, // blank meal type
+  ], referenced);
+  // Title comes from `referenced`, not the (untrusted) item — model can't relabel.
+  assertEquals(actions, [{ type: "add_to_meal_plan", recipeId: 2, recipeTitle: "Beef Tacos", date: "2026-07-20", mealType: "dinner" }]);
+  assertEquals(rejected, 3);
+});
+
+Deno.test("validateGroceryProposal maps items, coerces amounts, drops blanks, and returns null when empty", () => {
+  const action = validateGroceryProposal({
+    recipe_id: 5,
+    recipe_title: "Coq au Vin",
+    items: [
+      { name: "chicken", amount: 2, unit: "lb" },
+      { name: "  ", amount: 1 }, // blank name → dropped
+      { name: "wine", amount: "1", unit: "bottle" }, // string amount coerced
+      { name: "salt" }, // no amount/unit
+    ],
+  });
+  assertEquals(action, {
+    type: "add_to_grocery_list",
+    recipeId: 5,
+    recipeTitle: "Coq au Vin",
+    items: [
+      { name: "chicken", amount: 2, unit: "lb" },
+      { name: "wine", amount: 1, unit: "bottle" },
+      { name: "salt" },
+    ],
+  });
+  assertEquals(validateGroceryProposal({ items: [] }), null);
+  assertEquals(validateGroceryProposal({}), null);
+});
+
+Deno.test("propose_meal_plan records a proposed action and NEVER writes to the database", async () => {
+  const writeAttempts: string[] = [];
+  let call = 0;
+  const fetchImpl = (async (url: string | URL, init?: RequestInit) => {
+    const u = String(url);
+    if (u.includes("api.groq.com")) {
+      call += 1;
+      // 1) search (so recipe 2 is grounded) 2) propose it 3) final reply
+      if (call === 1) return groqResponse({ choices: [toolCallMessage({ query: "tacos" })] });
+      if (call === 2) return groqResponse({ choices: [namedToolCallMessage("propose_meal_plan", { items: [{ recipe_id: 2, date: "2026-07-20", meal_type: "dinner" }] })] });
+      return groqResponse({ choices: [{ message: { content: "I've proposed Beef Tacos for Monday dinner — tap to add it." }, finish_reason: "stop" }] });
+    }
+    const method = init?.method ?? "GET";
+    if (method !== "GET") writeAttempts.push(`${method} ${u}`);
+    return new Response(JSON.stringify([{ id: 2, title: "Beef Tacos", prep_time: 20, servings: 4, recipe_tags: [] }]), { status: 200 });
+  }) as typeof fetch;
+
+  const result = await runGroqWithTools({ apiKey: "k", userPrompt: "add tacos to monday dinner", authHeader: "Bearer t", supabaseUrl: "https://x", anonKey: "a", fetchImpl, log: silentLog });
+
+  assertEquals(writeAttempts, []); // proposal-only: the function never mutates user data
+  assertEquals(result.actions, [{ type: "add_to_meal_plan", recipeId: 2, recipeTitle: "Beef Tacos", date: "2026-07-20", mealType: "dinner" }]);
+});
+
+Deno.test("propose_meal_plan rejects a recipe id no tool ever surfaced (can't schedule a hallucinated recipe)", async () => {
+  let call = 0;
+  let toolResult = "";
+  const fetchImpl = (async (url: string | URL, init?: RequestInit) => {
+    if (String(url).includes("api.groq.com")) {
+      call += 1;
+      // Model proposes id 999 without ever searching for it.
+      if (call === 1) return groqResponse({ choices: [namedToolCallMessage("propose_meal_plan", { items: [{ recipe_id: 999, date: "2026-07-20", meal_type: "dinner" }] })] });
+      toolResult = JSON.parse(String(init?.body)).messages.find((m: any) => m.role === "tool")?.content ?? "";
+      return groqResponse({ choices: [{ message: { content: "Let me find a recipe first." }, finish_reason: "stop" }] });
+    }
+    return new Response(JSON.stringify([]), { status: 200 });
+  }) as typeof fetch;
+
+  const result = await runGroqWithTools({ apiKey: "k", userPrompt: "schedule recipe 999", authHeader: "Bearer t", supabaseUrl: "https://x", anonKey: "a", fetchImpl, log: silentLog });
+  assertEquals(result.actions, []);
+  assert(toolResult.includes("search"), `expected a 'search first' error result, got ${toolResult}`);
+});
+
+Deno.test("propose_grocery_additions records a proposed action and never writes to grocery_items", async () => {
+  const writeAttempts: string[] = [];
+  let call = 0;
+  const fetchImpl = (async (url: string | URL, init?: RequestInit) => {
+    if (String(url).includes("api.groq.com")) {
+      call += 1;
+      if (call === 1) return groqResponse({ choices: [namedToolCallMessage("propose_grocery_additions", { items: [{ name: "eggs", amount: 12 }, { name: "milk" }] })] });
+      return groqResponse({ choices: [{ message: { content: "Proposed 2 items — tap to add them to your list." }, finish_reason: "stop" }] });
+    }
+    const method = init?.method ?? "GET";
+    if (method !== "GET") writeAttempts.push(`${method} ${String(url)}`);
+    return new Response(JSON.stringify([]), { status: 200 });
+  }) as typeof fetch;
+
+  const result = await runGroqWithTools({ apiKey: "k", userPrompt: "add eggs and milk", authHeader: "Bearer t", supabaseUrl: "https://x", anonKey: "a", fetchImpl, log: silentLog });
+  assertEquals(writeAttempts, []);
+  assertEquals(result.actions.length, 1);
+  assertEquals(result.actions[0].type, "add_to_grocery_list");
+  assertEquals((result.actions[0] as any).items.length, 2);
 });

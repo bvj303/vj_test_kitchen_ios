@@ -24,6 +24,17 @@ export const SEARCH_RECIPES_TOOL_NAME = "search_recipes";
 export const GET_RECIPE_DETAILS_TOOL_NAME = "get_recipe_details";
 export const GET_PLANNED_MEALS_TOOL_NAME = "get_planned_meals";
 export const GET_FAVORITES_TOOL_NAME = "get_favorites";
+// Write PROPOSAL tools (Slice 3). Critically, these DO NOT write to the database.
+// They validate + echo a structured proposal back in the response's `actions[]`;
+// the client renders it as a confirm-to-apply control and performs the actual
+// write (via the existing MealPlanService / GroceryItemService, RLS-scoped) only
+// on explicit user tap. So every write stays user-confirmed and the LLM can never
+// silently mutate the user's data — the worst an injection can do is propose
+// something the user still has to accept.
+export const PROPOSE_MEAL_PLAN_TOOL_NAME = "propose_meal_plan";
+export const PROPOSE_GROCERY_TOOL_NAME = "propose_grocery_additions";
+export const MAX_PROPOSED_MEAL_PLAN_ITEMS = 21; // a week x 3 meals
+export const MAX_PROPOSED_GROCERY_ITEMS = 100;
 // Llama 3.3 70B has a large context window (unlike the tiny on-device model),
 // so we can hand it many more recipes to choose from per search — a big lever on
 // answer quality / variety. Kept moderate to stay well inside the free tier's
@@ -153,8 +164,168 @@ export const getFavoritesTool = {
   },
 };
 
+/// PROPOSES adding one or more recipes to the user's meal-plan calendar. Does
+/// NOT write — the user confirms in the app. Only recipe ids surfaced by a prior
+/// tool call this turn are accepted (groundedness).
+export const proposeMealPlanTool = {
+  type: "function",
+  function: {
+    name: PROPOSE_MEAL_PLAN_TOOL_NAME,
+    description:
+      "Proposes adding recipes to the user's meal-plan calendar. This does NOT save anything — it shows the user " +
+      "confirm buttons in the app, and they choose whether to apply it. Call it when the user asks to schedule/add " +
+      "a meal or accept a plan. Use recipe ids from a previous search_recipes result. After calling it, tell the " +
+      "user you've PROPOSED the plan and they can tap to add it — do not claim it's already saved.",
+    parameters: {
+      type: "object",
+      properties: {
+        items: {
+          type: "array",
+          description: "The meals to propose.",
+          items: {
+            type: "object",
+            properties: {
+              recipe_id: { type: "number", description: "Recipe id from a search result." },
+              date: { type: "string", description: "Date to schedule it, 'YYYY-MM-DD'." },
+              meal_type: { type: "string", description: "e.g. breakfast, lunch, dinner, snack." },
+            },
+            required: ["recipe_id", "date", "meal_type"],
+          },
+        },
+      },
+      required: ["items"],
+    },
+  },
+};
+
+/// PROPOSES adding ingredients to the user's grocery list. Does NOT write — the
+/// user confirms in the app.
+export const proposeGroceryTool = {
+  type: "function",
+  function: {
+    name: PROPOSE_GROCERY_TOOL_NAME,
+    description:
+      "Proposes adding ingredients to the user's grocery list. This does NOT save anything — the user taps to " +
+      "confirm in the app. Call it when the user asks to add ingredients / build a shopping list. If the items " +
+      "come from a specific recipe, first call get_recipe_details to get accurate ingredients, then pass the " +
+      "recipe_id/recipe_title here. After calling it, tell the user you've PROPOSED the additions — don't claim " +
+      "they're already saved.",
+    parameters: {
+      type: "object",
+      properties: {
+        recipe_id: { type: "number", description: "Optional source recipe id." },
+        recipe_title: { type: "string", description: "Optional source recipe title." },
+        items: {
+          type: "array",
+          description: "The ingredients to propose.",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string", description: "Ingredient name, e.g. 'chicken thighs'." },
+              amount: { type: "number", description: "Optional numeric quantity." },
+              unit: { type: "string", description: "Optional unit, e.g. 'lb', 'cup'." },
+            },
+            required: ["name"],
+          },
+        },
+      },
+      required: ["items"],
+    },
+  },
+};
+
 /// Every tool the concierge can call, in the order handed to Groq.
-export const conciergeTools = [searchRecipesTool, getRecipeDetailsTool, getPlannedMealsTool, getFavoritesTool];
+export const conciergeTools = [
+  searchRecipesTool,
+  getRecipeDetailsTool,
+  getPlannedMealsTool,
+  getFavoritesTool,
+  proposeMealPlanTool,
+  proposeGroceryTool,
+];
+
+// ── Proposed write actions (returned in the response for the client to confirm) ──
+
+export interface MealPlanAction {
+  type: "add_to_meal_plan";
+  recipeId: number;
+  recipeTitle: string;
+  date: string;
+  mealType: string;
+}
+
+export interface GroceryAction {
+  type: "add_to_grocery_list";
+  recipeId?: number;
+  recipeTitle?: string;
+  items: { name: string; amount?: number; unit?: string }[];
+}
+
+export type ConciergeAction = MealPlanAction | GroceryAction;
+
+/// Validates proposed meal-plan items. Each must reference a recipe id that was
+/// actually surfaced by a tool this turn (`referenced`) — so the model can't
+/// schedule a recipe it invented — and carry a valid YYYY-MM-DD date + non-empty
+/// meal type. The authoritative title comes from `referenced`, not the model.
+/// Returns the accepted actions and how many were rejected (for the tool result).
+export function validateMealPlanItems(
+  rawItems: unknown,
+  referenced: Map<number, string>,
+): { actions: MealPlanAction[]; rejected: number } {
+  if (!Array.isArray(rawItems)) return { actions: [], rejected: 0 };
+  const actions: MealPlanAction[] = [];
+  let rejected = 0;
+  for (const item of rawItems.slice(0, MAX_PROPOSED_MEAL_PLAN_ITEMS)) {
+    const recipeId = parseRecipeId(item);
+    const date = (item as Record<string, unknown>)?.date;
+    const mealType = (item as Record<string, unknown>)?.meal_type;
+    if (
+      recipeId === null || !referenced.has(recipeId) ||
+      typeof date !== "string" || !ISO_DATE_RE.test(date) ||
+      typeof mealType !== "string" || mealType.trim().length === 0
+    ) {
+      rejected += 1;
+      continue;
+    }
+    actions.push({
+      type: "add_to_meal_plan",
+      recipeId,
+      recipeTitle: referenced.get(recipeId)!,
+      date,
+      mealType: mealType.trim(),
+    });
+  }
+  return { actions, rejected };
+}
+
+/// Validates a proposed grocery addition: a non-empty list of named items with
+/// optional numeric amount + unit. An optional source recipe id/title tags the
+/// items with where they came from (snapshot). Returns null if nothing valid.
+export function validateGroceryProposal(rawArgs: unknown): GroceryAction | null {
+  const a = (rawArgs ?? {}) as Record<string, unknown>;
+  if (!Array.isArray(a.items)) return null;
+  const items: { name: string; amount?: number; unit?: string }[] = [];
+  for (const raw of a.items.slice(0, MAX_PROPOSED_GROCERY_ITEMS)) {
+    const r = (raw ?? {}) as Record<string, unknown>;
+    const name = typeof r.name === "string" ? r.name.trim() : "";
+    if (!name) continue;
+    const amountNum = typeof r.amount === "number" ? r.amount : typeof r.amount === "string" ? Number(r.amount) : NaN;
+    items.push({
+      name,
+      amount: Number.isFinite(amountNum) && amountNum > 0 ? amountNum : undefined,
+      unit: typeof r.unit === "string" && r.unit.trim() ? r.unit.trim() : undefined,
+    });
+  }
+  if (items.length === 0) return null;
+  const recipeId = parseRecipeId(a);
+  const recipeTitle = typeof a.recipe_title === "string" && a.recipe_title.trim() ? a.recipe_title.trim() : undefined;
+  return {
+    type: "add_to_grocery_list",
+    ...(recipeId !== null ? { recipeId } : {}),
+    ...(recipeTitle ? { recipeTitle } : {}),
+    items,
+  };
+}
 
 /// Escapes PostgREST `ilike` wildcard characters so user/model-supplied text
 /// is matched literally. Mirrors `RecipeService.escapedForIlike` on the
@@ -609,6 +780,11 @@ You have several tools for working with the user's OWN data. Use them instead of
 - "${GET_PLANNED_MEALS_TOOL_NAME}": reads the meals the user has ALREADY scheduled on their calendar in a date range. Before planning new meals for a day/week, call this so you plan AROUND what's already there and don't recommend something they're already making.
 - "${GET_FAVORITES_TOOL_NAME}": reads the recipes the user has favorited — use it to personalize suggestions toward their tastes.
 
+TAKING ACTION: When the user asks to ADD a meal to their calendar, SCHEDULE a plan, or ADD ingredients to their grocery list, use the proposal tools:
+- "${PROPOSE_MEAL_PLAN_TOOL_NAME}": proposes scheduling recipes on the calendar (use recipe ids from a ${SEARCH_RECIPES_TOOL_NAME} result).
+- "${PROPOSE_GROCERY_TOOL_NAME}": proposes adding ingredients to the grocery list (call ${GET_RECIPE_DETAILS_TOOL_NAME} first to get a recipe's real ingredients).
+These tools DO NOT save anything themselves — they show the user confirm buttons in the app. So after calling one, tell the user you've PROPOSED it and they can tap to confirm; NEVER say you've already added/saved it. Only propose recipes that came from a tool result.
+
 COMPREHENSIVE MENUS: When the user asks for a menu, a multi-course meal, or a week of meals, first consider calling ${GET_PLANNED_MEALS_TOOL_NAME} (to avoid clashes) and ${GET_FAVORITES_TOOL_NAME} (to personalize), then run SEVERAL ${SEARCH_RECIPES_TOOL_NAME} searches — one per course or slot (e.g. "appetizer", "hearty main", "fresh side", "dessert", or per day/meal) — and assemble a complete, cohesive menu from the results. Don't settle for a single search when they've asked for something comprehensive.
 
 Keep responses well-organized and readable. Use simple markdown — short paragraphs, and clear headers/bullet lists for menus and multi-day plans.
@@ -651,6 +827,10 @@ export interface ToolLoopResult {
   /// Recipes surfaced by `search_recipes` during the loop, deduped. The client
   /// shows tappable cards for the ones the assistant actually names in its reply.
   recipes: RecipeRef[];
+  /// Proposed write actions (add-to-calendar / add-to-grocery-list) the model
+  /// requested via the propose_* tools. NOT applied server-side — the client
+  /// renders them as confirm-to-apply controls and writes only on user tap.
+  actions: ConciergeAction[];
 }
 
 export class GroqRequestError extends Error {
@@ -712,6 +892,8 @@ export async function runGroqWithTools(params: {
   const referenced = new Map<number, string>();
   const collectRecipes = (): RecipeRef[] =>
     [...referenced].map(([id, title]) => ({ id, title }));
+  // Proposed write actions accumulated from the propose_* tools this turn.
+  const actions: ConciergeAction[] = [];
 
   for (let round = 1; round <= MAX_TOOL_ROUNDS; round++) {
     const startedAt = Date.now();
@@ -773,6 +955,7 @@ export async function runGroqWithTools(params: {
         blocked: false,
         roundCapHit: false,
         recipes: collectRecipes(),
+        actions,
       };
     }
 
@@ -791,6 +974,7 @@ export async function runGroqWithTools(params: {
         fetchImpl,
         embed: params.embed,
         referenced,
+        actions,
         round,
         log,
       });
@@ -799,7 +983,7 @@ export async function runGroqWithTools(params: {
   }
 
   log({ event: "round_cap_hit", rounds: MAX_TOOL_ROUNDS });
-  return { blocked: false, roundCapHit: true, recipes: collectRecipes() };
+  return { blocked: false, roundCapHit: true, recipes: collectRecipes(), actions };
 }
 
 /// Executes a single tool call by name and returns the JSON string to feed back
@@ -816,6 +1000,7 @@ async function executeToolCall(
     fetchImpl: typeof fetch;
     embed?: Embedder;
     referenced: Map<number, string>;
+    actions: ConciergeAction[];
     round: number;
     log: ConciergeLog;
   },
@@ -871,9 +1056,43 @@ async function executeToolCall(
     return JSON.stringify({ favorites });
   }
 
+  // ── Proposal tools: validate + record for the client to confirm. NEVER write. ──
+  if (name === PROPOSE_MEAL_PLAN_TOOL_NAME) {
+    const { actions, rejected } = validateMealPlanItems((rawArgs as Record<string, unknown>).items, ctx.referenced);
+    ctx.actions.push(...actions);
+    ctx.log({ event: "tool_call", round: ctx.round, tool: name, proposed: actions.length, rejected });
+    if (actions.length === 0) {
+      return JSON.stringify({ error: "No valid meals to propose. Each item needs a recipe_id from a search result, a 'YYYY-MM-DD' date, and a meal_type. Search for recipes first." });
+    }
+    // Signal to the model that this is PROPOSED, not saved — so it doesn't tell
+    // the user it's done. The client shows confirm buttons and writes on tap.
+    return JSON.stringify({
+      proposed: true,
+      status: "awaiting_user_confirmation",
+      meals: actions.map((a) => ({ recipe_title: a.recipeTitle, date: a.date, meal_type: a.mealType })),
+      ...(rejected > 0 ? { rejected } : {}),
+    });
+  }
+
+  if (name === PROPOSE_GROCERY_TOOL_NAME) {
+    const action = validateGroceryProposal(rawArgs);
+    if (!action) {
+      ctx.log({ event: "tool_call", round: ctx.round, tool: name, proposed: 0 });
+      return JSON.stringify({ error: "No valid items to propose. Provide an 'items' array of named ingredients." });
+    }
+    ctx.actions.push(action);
+    ctx.log({ event: "tool_call", round: ctx.round, tool: name, proposed: action.items.length, recipeId: action.recipeId ?? null });
+    return JSON.stringify({
+      proposed: true,
+      status: "awaiting_user_confirmation",
+      item_count: action.items.length,
+      items: action.items.map((i) => i.name),
+    });
+  }
+
   ctx.log({ event: "unknown_tool", round: ctx.round, tool: name ?? null });
   return JSON.stringify({
-    error: `Unknown tool "${name ?? "?"}". Available tools: ${[SEARCH_RECIPES_TOOL_NAME, GET_RECIPE_DETAILS_TOOL_NAME, GET_PLANNED_MEALS_TOOL_NAME, GET_FAVORITES_TOOL_NAME].join(", ")}.`,
+    error: `Unknown tool "${name ?? "?"}". Available tools: ${[SEARCH_RECIPES_TOOL_NAME, GET_RECIPE_DETAILS_TOOL_NAME, GET_PLANNED_MEALS_TOOL_NAME, GET_FAVORITES_TOOL_NAME, PROPOSE_MEAL_PLAN_TOOL_NAME, PROPOSE_GROCERY_TOOL_NAME].join(", ")}.`,
   });
 }
 

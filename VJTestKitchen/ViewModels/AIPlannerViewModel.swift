@@ -16,18 +16,37 @@ final class AIPlannerViewModel {
         /// Recipes the assistant named in this message — rendered as tappable
         /// cards. Empty for user messages and replies that don't cite a recipe.
         var recipes: [AIRecipeRef] = []
+        /// Write actions the assistant proposed in this message — rendered as
+        /// confirm-to-apply controls. Nothing is written until the user taps.
+        var actions: [AIChatAction] = []
     }
 
     private(set) var messages: [ChatMessage] = []
     var inputText = ""
     private(set) var isSending = false
     var errorMessage: String?
+    /// A transient success banner shown after a confirmed action is applied.
+    var actionResultMessage: String?
+    /// Ids of proposed actions the user has already applied (for a persistent
+    /// "Added ✓" state on the control), so re-tapping can't double-write.
+    private(set) var appliedActionIds: Set<String> = []
+    /// The action id currently being written (for a per-control spinner).
+    private(set) var applyingActionId: String?
 
     private let aiService: AIServicing
+    private let mealPlanService: MealPlanServicing
+    private let groceryService: GroceryItemServicing
     private let logger: AppLogger
 
-    init(aiService: AIServicing = AIService(), logger: AppLogger = .shared) {
+    init(
+        aiService: AIServicing = AIService(),
+        mealPlanService: MealPlanServicing = MealPlanService(),
+        groceryService: GroceryItemServicing = GroceryItemService(),
+        logger: AppLogger = .shared
+    ) {
         self.aiService = aiService
+        self.mealPlanService = mealPlanService
+        self.groceryService = groceryService
         self.logger = logger
     }
 
@@ -49,7 +68,8 @@ final class AIPlannerViewModel {
             messages.append(ChatMessage(
                 role: .assistant,
                 content: response.text,
-                recipes: Self.recipesReferenced(in: response.text, from: response.recipes)
+                recipes: Self.recipesReferenced(in: response.text, from: response.recipes),
+                actions: response.actions
             ))
         } catch {
             // Surfaced via errorMessage, but logged raw — a failing Edge Function
@@ -72,6 +92,50 @@ final class AIPlannerViewModel {
 
     func clearChat() {
         messages = []
+        appliedActionIds = []
+        actionResultMessage = nil
+    }
+
+    func hasApplied(_ action: AIChatAction) -> Bool { appliedActionIds.contains(action.id) }
+
+    /// Applies a user-confirmed proposed action by writing through the existing
+    /// (RLS-scoped) services. Called ONLY from a confirm gesture in the UI — the
+    /// concierge never triggers this itself, so no write happens without an
+    /// explicit tap. Idempotent per action id.
+    func apply(_ action: AIChatAction) async {
+        guard !appliedActionIds.contains(action.id), applyingActionId == nil else { return }
+        applyingActionId = action.id
+        defer { applyingActionId = nil }
+        do {
+            switch action {
+            case let .addToMealPlan(proposal):
+                _ = try await mealPlanService.create(
+                    MealPlanDraft(date: proposal.date, mealType: proposal.mealType, recipeId: proposal.recipeId)
+                )
+                appliedActionIds.insert(action.id)
+                actionResultMessage = "Added \(proposal.recipeTitle) to your calendar."
+            case let .addToGroceryList(proposal):
+                let drafts = proposal.items.map { item in
+                    GroceryItemDraft(
+                        name: item.name,
+                        amount: item.amount ?? 0,
+                        unit: item.unit ?? "",
+                        category: GroceryCategorizer.categorize(item.name),
+                        sourceRecipeId: proposal.recipeId,
+                        sourceRecipeTitle: proposal.recipeTitle
+                    )
+                }
+                _ = try await groceryService.addMany(drafts)
+                appliedActionIds.insert(action.id)
+                let n = drafts.count
+                actionResultMessage = "Added \(n) item\(n == 1 ? "" : "s") to your grocery list."
+            case .unknown:
+                break
+            }
+        } catch {
+            logger.error("Applying a concierge action failed", category: "ai", error: error)
+            errorMessage = ErrorPresenter.message(for: error)
+        }
     }
 
     /// Filters the tool-surfaced recipes down to the ones the assistant actually
