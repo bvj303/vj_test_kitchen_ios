@@ -5,6 +5,9 @@ struct AIPlannerView: View {
     @FocusState private var isInputFocused: Bool
     /// The recipe whose "Add to Calendar" sheet is open, if any.
     @State private var calendarTarget: AIRecipeRef?
+    /// A proposed action awaiting the user's explicit confirmation before it's
+    /// written — nothing is applied until the confirmation dialog is confirmed.
+    @State private var pendingAction: AIChatAction?
 
     private static let suggestions: [(label: String, prompt: String, icon: String)] = [
         ("Plan healthy dinners", "Plan a 3-day healthy dinner menu", "calendar"),
@@ -56,6 +59,32 @@ struct AIPlannerView: View {
         .sheet(item: $calendarTarget) { recipe in
             AddToCalendarSheet(recipeId: recipe.id, recipeTitle: recipe.title)
                 .platformMediumLargeDetents()
+        }
+        .confirmationDialog(
+            pendingAction.map(Self.confirmTitle) ?? "",
+            isPresented: Binding(
+                get: { pendingAction != nil },
+                set: { if !$0 { pendingAction = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: pendingAction
+        ) { action in
+            Button(Self.confirmButtonLabel(action)) {
+                pendingAction = nil
+                Task { await viewModel.apply(action) }
+            }
+            Button("Cancel", role: .cancel) { pendingAction = nil }
+        }
+        .alert(
+            "Done",
+            isPresented: Binding(
+                get: { viewModel.actionResultMessage != nil },
+                set: { if !$0 { viewModel.actionResultMessage = nil } }
+            )
+        ) {
+            Button("OK") { viewModel.actionResultMessage = nil }
+        } message: {
+            Text(viewModel.actionResultMessage ?? "")
         }
         .alert(
             "Something Went Wrong",
@@ -138,6 +167,11 @@ struct AIPlannerView: View {
                             recipeCard(recipe)
                         }
                     }
+                    if !message.actions.isEmpty {
+                        ForEach(message.actions) { action in
+                            actionControl(action)
+                        }
+                    }
                 }
                 Spacer(minLength: 40)
             } else {
@@ -179,6 +213,98 @@ struct AIPlannerView: View {
         }
         .padding(12)
         .glassEffect(.regular.tint(Color.brandPrimary.opacity(0.10)), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    /// A confirm-to-apply control for a proposed write action. Tapping opens a
+    /// confirmation dialog — nothing is written until the user confirms — and
+    /// once applied it shows a persistent "Added ✓" state.
+    @ViewBuilder
+    private func actionControl(_ action: AIChatAction) -> some View {
+        let applied = viewModel.hasApplied(action)
+        let applying = viewModel.applyingActionId == action.id
+        Button {
+            pendingAction = action
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: applied ? "checkmark.circle.fill" : Self.actionIcon(action))
+                    .foregroundStyle(applied ? Color.brandSage : Color.brandPrimary)
+                Text(applied ? Self.appliedLabel(action) : Self.actionLabel(action))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.leading)
+                Spacer(minLength: 0)
+                if applying {
+                    ProgressView()
+                } else if !applied {
+                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .contentShape(Rectangle())
+            .padding(12)
+        }
+        .buttonStyle(.plain)
+        .disabled(applied || applying)
+        .glassEffect(.regular.tint(Color.brandSage.opacity(applied ? 0.06 : 0.14)), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private static func actionIcon(_ action: AIChatAction) -> String {
+        switch action {
+        case .addToMealPlan: return "calendar.badge.plus"
+        case .addToGroceryList: return "cart.badge.plus"
+        case .unknown: return "questionmark"
+        }
+    }
+
+    private static func actionLabel(_ action: AIChatAction) -> String {
+        switch action {
+        case let .addToMealPlan(p):
+            return "Add \(p.recipeTitle) to \(friendlyDate(p.date)) \(p.mealType.capitalized)"
+        case let .addToGroceryList(p):
+            let n = p.items.count
+            let suffix = p.recipeTitle.map { " for \($0)" } ?? ""
+            return "Add \(n) ingredient\(n == 1 ? "" : "s")\(suffix) to grocery list"
+        case .unknown:
+            return "Unsupported action"
+        }
+    }
+
+    private static func appliedLabel(_ action: AIChatAction) -> String {
+        switch action {
+        case .addToMealPlan: return "Added to calendar"
+        case .addToGroceryList: return "Added to grocery list"
+        case .unknown: return "Done"
+        }
+    }
+
+    /// Confirmation-dialog title summarizing exactly what will be written.
+    private static func confirmTitle(_ action: AIChatAction) -> String {
+        switch action {
+        case let .addToMealPlan(p):
+            return "Add \(p.recipeTitle) to \(friendlyDate(p.date)) \(p.mealType.capitalized)?"
+        case let .addToGroceryList(p):
+            let n = p.items.count
+            return "Add \(n) ingredient\(n == 1 ? "" : "s") to your grocery list?"
+        case .unknown:
+            return ""
+        }
+    }
+
+    private static func confirmButtonLabel(_ action: AIChatAction) -> String {
+        switch action {
+        case .addToMealPlan: return "Add to Calendar"
+        case .addToGroceryList: return "Add to Grocery List"
+        case .unknown: return "OK"
+        }
+    }
+
+    /// "2026-07-20" → "Mon, Jul 20". Falls back to the raw string if unparsable.
+    private static func friendlyDate(_ iso: String) -> String {
+        guard let date = MealPlan.dateFormatter.date(from: iso) else { return iso }
+        let out = DateFormatter()
+        out.calendar = Calendar(identifier: .gregorian)
+        out.timeZone = TimeZone(identifier: "UTC")
+        out.dateFormat = "EEE, MMM d"
+        return out.string(from: date)
     }
 
     private func bubbleText(_ message: AIPlannerViewModel.ChatMessage) -> some View {

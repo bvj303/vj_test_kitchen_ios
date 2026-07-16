@@ -10,14 +10,19 @@ final class FakeAIService: AIServicing, @unchecked Sendable {
     var receivedPrompts: [String] { receivedHistories.map { $0.last?.content ?? "" } }
     var responseToReturn = "Here's a plan!"
     var recipesToReturn: [AIRecipeRef] = []
+    var actionsToReturn: [AIChatAction] = []
     var errorToThrow: Error?
 
     func sendMessage(_ history: [AIChatTurn]) async throws -> AIChatResponse {
         receivedHistories.append(history)
         if let errorToThrow { throw errorToThrow }
-        return AIChatResponse(text: responseToReturn, recipes: recipesToReturn)
+        return AIChatResponse(text: responseToReturn, recipes: recipesToReturn, actions: actionsToReturn)
     }
 }
+
+// Reuses the existing test-target spies FakeMealPlanService (records
+// `createdDrafts` / `errorToThrow`) and FakeGroceryItemService (records
+// `addedDrafts` / `addError`) rather than redeclaring them.
 
 private struct TestError: Error, LocalizedError {
     var errorDescription: String? { "failed" }
@@ -154,5 +159,122 @@ struct AIPlannerViewModelTests {
         viewModel.clearChat()
 
         #expect(viewModel.messages.isEmpty)
+    }
+
+    // ── Slice 3: proposed write actions require explicit confirmation ──
+
+    @Test func proposedActionsAttachToAssistantMessageButNothingIsWrittenYet() async {
+        let ai = FakeAIService()
+        let meal = FakeMealPlanService()
+        let grocery = FakeGroceryItemService()
+        let action = AIChatAction.addToMealPlan(
+            AIMealPlanProposal(recipeId: 2, recipeTitle: "Beef Tacos", date: "2026-07-20", mealType: "dinner")
+        )
+        ai.responseToReturn = "I've proposed Beef Tacos for Monday — tap to add it."
+        ai.actionsToReturn = [action]
+        let viewModel = AIPlannerViewModel(aiService: ai, mealPlanService: meal, groceryService: grocery)
+        viewModel.inputText = "add tacos to monday dinner"
+
+        await viewModel.send()
+
+        // The proposal is surfaced for the user...
+        #expect(viewModel.messages[1].actions == [action])
+        // ...but merely receiving it writes NOTHING (never silent).
+        #expect(meal.createdDrafts.isEmpty)
+        #expect(!viewModel.hasApplied(action))
+    }
+
+    @Test func applyMealPlanWritesThroughTheServiceOnlyWhenConfirmed() async {
+        let meal = FakeMealPlanService()
+        let viewModel = AIPlannerViewModel(aiService: FakeAIService(), mealPlanService: meal, groceryService: FakeGroceryItemService())
+        let action = AIChatAction.addToMealPlan(
+            AIMealPlanProposal(recipeId: 7, recipeTitle: "Coq au Vin", date: "2026-07-21", mealType: "dinner")
+        )
+
+        await viewModel.apply(action)
+
+        #expect(meal.createdDrafts.count == 1)
+        #expect(meal.createdDrafts[0].recipeId == 7)
+        #expect(meal.createdDrafts[0].date == "2026-07-21")
+        #expect(meal.createdDrafts[0].mealType == "dinner")
+        #expect(viewModel.hasApplied(action))
+        #expect(viewModel.actionResultMessage?.contains("Coq au Vin") == true)
+    }
+
+    @Test func applyGroceryMapsItemsAndCategorizesThem() async {
+        let grocery = FakeGroceryItemService()
+        let viewModel = AIPlannerViewModel(aiService: FakeAIService(), mealPlanService: FakeMealPlanService(), groceryService: grocery)
+        let action = AIChatAction.addToGroceryList(
+            AIGroceryProposal(recipeId: 7, recipeTitle: "Coq au Vin", items: [
+                AIGroceryProposalItem(name: "chicken thighs", amount: 2, unit: "lb"),
+                AIGroceryProposalItem(name: "red wine", amount: nil, unit: nil),
+            ])
+        )
+
+        await viewModel.apply(action)
+
+        let drafts = grocery.addedDrafts
+        #expect(drafts.count == 2)
+        #expect(drafts[0].name == "chicken thighs")
+        #expect(drafts[0].amount == 2)
+        #expect(drafts[0].unit == "lb")
+        #expect(drafts[0].sourceRecipeId == 7)
+        // A missing amount/unit defaults cleanly rather than failing.
+        #expect(drafts[1].amount == 0)
+        #expect(drafts[1].unit == "")
+        // Category is derived, not required from the model.
+        #expect(drafts[0].category == GroceryCategorizer.categorize("chicken thighs"))
+        #expect(viewModel.hasApplied(action))
+    }
+
+    @Test func applyIsIdempotentAndWontDoubleWrite() async {
+        let meal = FakeMealPlanService()
+        let viewModel = AIPlannerViewModel(aiService: FakeAIService(), mealPlanService: meal, groceryService: FakeGroceryItemService())
+        let action = AIChatAction.addToMealPlan(
+            AIMealPlanProposal(recipeId: 3, recipeTitle: "Ragu", date: "2026-07-22", mealType: "dinner")
+        )
+
+        await viewModel.apply(action)
+        await viewModel.apply(action) // second tap is a no-op
+
+        #expect(meal.createdDrafts.count == 1)
+    }
+
+    @Test func applyFailureSurfacesErrorAndLeavesActionUnapplied() async {
+        struct WriteError: Error {}
+        let meal = FakeMealPlanService()
+        meal.errorToThrow = WriteError()
+        let viewModel = AIPlannerViewModel(aiService: FakeAIService(), mealPlanService: meal, groceryService: FakeGroceryItemService())
+        let action = AIChatAction.addToMealPlan(
+            AIMealPlanProposal(recipeId: 4, recipeTitle: "Stew", date: "2026-07-23", mealType: "dinner")
+        )
+
+        await viewModel.apply(action)
+
+        #expect(viewModel.errorMessage != nil)
+        #expect(!viewModel.hasApplied(action)) // a failed write can be retried
+    }
+
+    @Test func actionsDecodeKnownTypesAndTolerateUnknownFutureTypes() throws {
+        // Mirrors the wire shape the Edge Function emits (camelCase keys), incl. a
+        // future action type this build doesn't know — which must not break decoding.
+        let json = """
+        [
+          { "type": "add_to_meal_plan", "recipeId": 2, "recipeTitle": "Beef Tacos", "date": "2026-07-20", "mealType": "dinner" },
+          { "type": "add_to_grocery_list", "recipeId": 7, "recipeTitle": "Coq au Vin", "items": [ { "name": "chicken", "amount": 2, "unit": "lb" }, { "name": "wine" } ] },
+          { "type": "some_future_action", "foo": "bar" }
+        ]
+        """.data(using: .utf8)!
+
+        let actions = try JSONDecoder().decode([AIChatAction].self, from: json)
+        #expect(actions.count == 3)
+        #expect(actions[0] == .addToMealPlan(AIMealPlanProposal(recipeId: 2, recipeTitle: "Beef Tacos", date: "2026-07-20", mealType: "dinner")))
+        if case let .addToGroceryList(p) = actions[1] {
+            #expect(p.items.count == 2)
+            #expect(p.items[1].amount == nil)
+        } else {
+            Issue.record("expected a grocery action")
+        }
+        #expect(actions[2] == .unknown) // gracefully tolerated; AIService filters it out
     }
 }

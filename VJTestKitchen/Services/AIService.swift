@@ -8,10 +8,64 @@ struct AIRecipeRef: Decodable, Sendable, Hashable, Identifiable {
     let title: String
 }
 
-/// The assistant's reply plus any recipes it referenced this turn.
+/// A proposed "add these recipes to the calendar" action. The concierge never
+/// writes — the client renders this as a confirm-to-apply control and performs
+/// the write only on explicit user tap.
+struct AIMealPlanProposal: Decodable, Sendable, Hashable {
+    let recipeId: Int64
+    let recipeTitle: String
+    let date: String
+    let mealType: String
+}
+
+/// One proposed grocery item (amount/unit optional).
+struct AIGroceryProposalItem: Decodable, Sendable, Hashable {
+    let name: String
+    let amount: Double?
+    let unit: String?
+}
+
+/// A proposed "add these ingredients to the grocery list" action.
+struct AIGroceryProposal: Decodable, Sendable, Hashable {
+    let recipeId: Int64?
+    let recipeTitle: String?
+    let items: [AIGroceryProposalItem]
+}
+
+/// A proposed write action the concierge surfaced. Every case requires an
+/// explicit user confirmation in the UI before anything is written. `.unknown`
+/// tolerates action types a future server adds that this build doesn't render.
+enum AIChatAction: Decodable, Sendable, Hashable, Identifiable {
+    case addToMealPlan(AIMealPlanProposal)
+    case addToGroceryList(AIGroceryProposal)
+    case unknown
+
+    private enum CodingKeys: String, CodingKey { case type }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        switch try container.decode(String.self, forKey: .type) {
+        case "add_to_meal_plan": self = .addToMealPlan(try AIMealPlanProposal(from: decoder))
+        case "add_to_grocery_list": self = .addToGroceryList(try AIGroceryProposal(from: decoder))
+        default: self = .unknown
+        }
+    }
+
+    var id: String {
+        switch self {
+        case let .addToMealPlan(p): return "mp-\(p.recipeId)-\(p.date)-\(p.mealType)"
+        case let .addToGroceryList(p): return "gl-\(p.recipeId.map(String.init) ?? "none")-\(p.items.map(\.name).joined(separator: ","))"
+        case .unknown: return "unknown"
+        }
+    }
+}
+
+/// The assistant's reply plus any recipes it referenced and write actions it
+/// proposed this turn.
 struct AIChatResponse: Sendable {
     let text: String
     let recipes: [AIRecipeRef]
+    let actions: [AIChatAction]
 }
 
 /// One turn of the Kitchen Concierge conversation, as sent to the Edge Function.
@@ -52,6 +106,8 @@ struct AIService: AIServicing {
         // decodes — the actionable-cards feature just stays dormant until the
         // updated function is deployed.
         let recipes: [AIRecipeRef]?
+        // Optional for the same reason — a pre-Slice-3 function omits `actions`.
+        let actions: [AIChatAction]?
     }
 
     private let client: SupabaseClient
@@ -81,6 +137,9 @@ struct AIService: AIServicing {
                 body: RequestBody(messages: history)
             )
         )
-        return AIChatResponse(text: result.response, recipes: result.recipes ?? [])
+        // Drop any `.unknown` actions a future server might send that this build
+        // can't render — never surface a confirm control we don't understand.
+        let actions = (result.actions ?? []).filter { $0 != .unknown }
+        return AIChatResponse(text: result.response, recipes: result.recipes ?? [], actions: actions)
     }
 }
