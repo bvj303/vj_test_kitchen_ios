@@ -1,22 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!--
-  Info.plist for the VJTestKitchenAIBeta target — a standalone TestFlight POC
-  app (bundle id com.bvj303.vjtestkitchen.aibeta) that carries the on-device
-  Apple Intelligence features, installed only on the developer's own devices
-  while the shipping app (com.bvj303.vjtestkitchen) stays untouched for the
-  family. Mirrors Info.plist with two deliberate differences:
-    - CFBundleDisplayName "VJTK AI" so it reads distinctly on the home screen
-      next to the real app.
-    - NO CFBundleURLTypes: the beta drops the `vjtestkitchen://` scheme so it
-      can't hijack the real app's Supabase auth-callback / deep-link URLs (two
-      apps claiming one scheme is undefined). The beta has no widgets/deep links
-      and you sign in with an existing confirmed account, so it needs no scheme.
--->
 <plist version="1.0">
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>VJTK AI</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -25,14 +14,12 @@
 	<string>6.0</string>
 	<key>CFBundleName</key>
 	<string>$(PRODUCT_NAME)</string>
-	<key>CFBundleDisplayName</key>
-	<string>VJTK AI</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>1.2</string>
 	<key>CFBundleVersion</key>
-	<string>5</string>
+	<string>6</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LSRequiresIPhoneOS</key>
