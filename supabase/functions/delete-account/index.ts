@@ -9,7 +9,7 @@
 // The caller's own JWT (verified by the platform before this code runs, see
 // config.toml) only proves who they are — deleting an auth.users row needs
 // the Admin API, which requires an admin-level key. That key never reaches
-// the client; it's read here from the env, same as GEMINI_API_KEY in
+// the client; it's read here from the env, same as GROQ_API_KEY in
 // ai-chat. All app tables' user_id columns are `on delete cascade`/`set null`
 // against auth.users (see the initial_schema migration), so deleting the
 // auth user cleans up the user's recipes/ratings/meal plans/profile too.

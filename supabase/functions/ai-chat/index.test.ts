@@ -11,8 +11,11 @@ import {
   buildSearchRecipesUrl,
   clampLimit,
   escapeIlike,
+  matchRecipes,
   normalizeChatTurns,
-  runGeminiWithTools,
+  parseContentRangeTotal,
+  parseToolArgs,
+  runGroqWithTools,
   searchRecipes,
   SEARCH_RECIPES_POOL_LIMIT,
   shuffle,
@@ -30,12 +33,12 @@ function assert(condition: boolean, message: string) {
   if (!condition) throw new Error(message);
 }
 
-Deno.test("clampLimit defaults to 20 when omitted", () => {
-  assertEquals(clampLimit(undefined), 20);
+Deno.test("clampLimit defaults to SEARCH_RECIPES_DEFAULT_LIMIT when omitted", () => {
+  assertEquals(clampLimit(undefined), 35);
 });
 
-Deno.test("clampLimit caps at 25 even when a larger value is requested", () => {
-  assertEquals(clampLimit(1000), 25);
+Deno.test("clampLimit caps at SEARCH_RECIPES_MAX_LIMIT even when a larger value is requested", () => {
+  assertEquals(clampLimit(1000), 60);
 });
 
 Deno.test("clampLimit floors at 1 for zero/negative values", () => {
@@ -130,6 +133,107 @@ Deno.test("searchRecipes samples from the pool: same rows, varied order, capped 
   assert(results.every((r) => poolIds.has(r.id)), "every result should come from the pool");
 });
 
+Deno.test("matchRecipes posts the query embedding to the RPC and flattens tags", async () => {
+  let sentBody: any;
+  let calledUrl = "";
+  const fetchImpl = (async (url: string | URL, init?: RequestInit) => {
+    calledUrl = String(url);
+    sentBody = JSON.parse(String(init?.body));
+    return new Response(JSON.stringify([
+      { id: 7, title: "Coq au Vin", prep_time: 90, servings: 4, tags: ["Dinner", "French"], similarity: 0.82 },
+    ]), { status: 200 });
+  }) as typeof fetch;
+
+  const results = await matchRecipes("Bearer t", "https://x.supabase.co", "anon", [0.1, 0.2, 0.3], { query: "french stew", tag: "Dinner", limit: 10 }, fetchImpl);
+
+  assert(calledUrl.includes("/rest/v1/rpc/match_recipes"), `expected rpc url, got ${calledUrl}`);
+  assertEquals(sentBody.query_embedding, [0.1, 0.2, 0.3]);
+  assertEquals(sentBody.match_count, 10);
+  assertEquals(sentBody.filter_tag, "Dinner");
+  assertEquals(results, [{ id: 7, title: "Coq au Vin", tags: ["Dinner", "French"], prep_time: 90, servings: 4 }]);
+});
+
+Deno.test("searchRecipes uses semantic match when an embedder + query are provided", async () => {
+  let calledRpc = false;
+  const embed = async (_t: string) => [0.5, 0.5, 0.5];
+  const fetchImpl = (async (url: string | URL) => {
+    if (String(url).includes("rpc/match_recipes")) {
+      calledRpc = true;
+      return new Response(JSON.stringify([
+        { id: 3, title: "Beef Bourguignon", prep_time: 120, servings: 6, tags: ["Dinner"], similarity: 0.9 },
+      ]), { status: 200 });
+    }
+    return new Response(JSON.stringify([]), { status: 200 });
+  }) as typeof fetch;
+
+  const results = await searchRecipes("Bearer t", "https://x.supabase.co", "anon", { query: "cozy winter dinner", limit: 5 }, fetchImpl, () => 0.5, embed);
+  assert(calledRpc, "should have used the semantic match_recipes RPC");
+  assertEquals(results.map((r) => r.id), [3]);
+});
+
+Deno.test("searchRecipes falls back to keyword search when semantic returns nothing", async () => {
+  const embed = async (_t: string) => [0.1, 0.2, 0.3];
+  let keywordCalls = 0;
+  const fetchImpl = (async (url: string | URL) => {
+    if (String(url).includes("rpc/match_recipes")) return new Response(JSON.stringify([]), { status: 200 });
+    keywordCalls += 1;
+    return new Response(JSON.stringify([{ id: 9, title: "Keyword Hit", prep_time: 10, servings: 2, recipe_tags: [] }]), { status: 200, headers: { "content-range": "0-0/1" } });
+  }) as typeof fetch;
+
+  const results = await searchRecipes("Bearer t", "https://x.supabase.co", "anon", { query: "zzz", limit: 5 }, fetchImpl, () => 0.5, embed);
+  assert(keywordCalls >= 1, "should have fallen back to the keyword PostgREST query");
+  assertEquals(results.map((r) => r.id), [9]);
+});
+
+Deno.test("parseContentRangeTotal extracts the total, or null when unknown", () => {
+  assertEquals(parseContentRangeTotal("0-149/12345"), 12345);
+  assertEquals(parseContentRangeTotal("0-149/*"), null);
+  assertEquals(parseContentRangeTotal(null), null);
+});
+
+Deno.test("buildSearchRecipesUrl includes a non-zero offset for random-window sampling", () => {
+  const url = buildSearchRecipesUrl("https://example.supabase.co", { query: "x" }, 300);
+  assert(url.includes("offset=300"), `expected offset, got ${url}`);
+  // Offset 0 is omitted (the common first-page case).
+  assert(!buildSearchRecipesUrl("https://example.supabase.co", { query: "x" }).includes("offset="), "offset should be omitted when 0");
+});
+
+Deno.test("searchRecipes samples a random window across the whole set when it exceeds the pool", async () => {
+  let call = 0;
+  let windowUrl = "";
+  const firstPage = Array.from({ length: 150 }, (_, i) => ({ id: i + 1, title: `First ${i}`, prep_time: 10, servings: 2, recipe_tags: [] }));
+  const windowPage = Array.from({ length: 150 }, (_, i) => ({ id: 1000 + i, title: `Window ${i}`, prep_time: 10, servings: 2, recipe_tags: [] }));
+  const fetchImpl = (async (url: string | URL) => {
+    call += 1;
+    if (call === 1) {
+      // First page reports a large total via Content-Range → triggers windowing.
+      return new Response(JSON.stringify(firstPage), { status: 200, headers: { "content-range": "0-149/5000" } });
+    }
+    windowUrl = String(url);
+    return new Response(JSON.stringify(windowPage), { status: 200 });
+  }) as typeof fetch;
+
+  const results = await searchRecipes("Bearer t", "https://example.supabase.co", "anon", { query: "chicken", limit: 10 }, fetchImpl, () => 0.5);
+
+  assertEquals(call, 2); // count page, then a random-offset window
+  assert(windowUrl.includes("offset="), `expected an offset on the window fetch, got ${windowUrl}`);
+  assert(results.every((r) => r.id >= 1000), "results should come from the random window, not the first page");
+  assertEquals(results.length, 10);
+});
+
+Deno.test("searchRecipes does not do a second fetch when the whole set fits in one pool", async () => {
+  let call = 0;
+  const page = Array.from({ length: 20 }, (_, i) => ({ id: i + 1, title: `R${i}`, prep_time: 10, servings: 2, recipe_tags: [] }));
+  const fetchImpl = (async () => {
+    call += 1;
+    return new Response(JSON.stringify(page), { status: 200, headers: { "content-range": "0-19/20" } });
+  }) as typeof fetch;
+
+  const results = await searchRecipes("Bearer t", "https://example.supabase.co", "anon", { query: "x", limit: 10 }, fetchImpl, () => 0.5);
+  assertEquals(call, 1); // small set → no windowing
+  assertEquals(results.length, 10);
+});
+
 Deno.test("normalizeChatTurns accepts the legacy single prompt", () => {
   const result = normalizeChatTurns({ prompt: "what should I cook?" });
   assertEquals(result, [{ role: "user", text: "what should I cook?" }]);
@@ -178,17 +282,32 @@ Deno.test("normalizeChatTurns rejects an over-long conversation", () => {
   });
 });
 
-/// Builds a fake `generateContent` response: a functionCall part if `tag`/`query`
-/// aren't done yet, otherwise a plain text reply.
-function geminiResponse(body: unknown): Response {
+function groqResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), { status: 200 });
 }
 
-Deno.test("runGeminiWithTools returns Gemini's text directly when it never calls the tool", async () => {
-  const fetchImpl = (async () =>
-    geminiResponse({ candidates: [{ content: { parts: [{ text: "Try the Carbonara." }] }, finishReason: "STOP" }] })) as typeof fetch;
+/// A Groq assistant message that requests one search_recipes tool call.
+function toolCallMessage(args: Record<string, unknown>) {
+  return {
+    message: {
+      content: null,
+      tool_calls: [{ id: "call_1", type: "function", function: { name: "search_recipes", arguments: JSON.stringify(args) } }],
+    },
+    finish_reason: "tool_calls",
+  };
+}
 
-  const result = await runGeminiWithTools({
+Deno.test("parseToolArgs parses valid JSON and tolerates junk", () => {
+  assertEquals(parseToolArgs('{"query":"chicken"}'), { query: "chicken" });
+  assertEquals(parseToolArgs(undefined), {});
+  assertEquals(parseToolArgs("not json"), {});
+});
+
+Deno.test("runGroqWithTools returns the model's text directly when it never calls the tool", async () => {
+  const fetchImpl = (async () =>
+    groqResponse({ choices: [{ message: { content: "Try the Carbonara." }, finish_reason: "stop" }] })) as typeof fetch;
+
+  const result = await runGroqWithTools({
     apiKey: "key",
     userPrompt: "what should I make?",
     authHeader: "Bearer token",
@@ -197,17 +316,17 @@ Deno.test("runGeminiWithTools returns Gemini's text directly when it never calls
     fetchImpl,
   });
 
-  assertEquals(result, { text: "Try the Carbonara.", finishReason: "STOP", blocked: false, roundCapHit: false, recipes: [] });
+  assertEquals(result, { text: "Try the Carbonara.", finishReason: "stop", blocked: false, roundCapHit: false, recipes: [] });
 });
 
-Deno.test("runGeminiWithTools sends the full conversation history, mapping assistant->model", async () => {
-  let sentContents: unknown;
+Deno.test("runGroqWithTools sends the system prompt + full history (assistant stays 'assistant')", async () => {
+  let sentMessages: any;
   const fetchImpl = (async (_url: string | URL, init?: RequestInit) => {
-    sentContents = JSON.parse(String(init?.body)).contents;
-    return geminiResponse({ candidates: [{ content: { parts: [{ text: "Here's another." }] }, finishReason: "STOP" }] });
+    sentMessages = JSON.parse(String(init?.body)).messages;
+    return groqResponse({ choices: [{ message: { content: "Here's another." }, finish_reason: "stop" }] });
   }) as typeof fetch;
 
-  const result = await runGeminiWithTools({
+  const result = await runGroqWithTools({
     apiKey: "key",
     messages: [
       { role: "user", text: "something healthy" },
@@ -221,32 +340,27 @@ Deno.test("runGeminiWithTools sends the full conversation history, mapping assis
   });
 
   assertEquals(result.text, "Here's another.");
-  assertEquals(sentContents, [
-    { role: "user", parts: [{ text: "something healthy" }] },
-    { role: "model", parts: [{ text: "Try the Kale Salad." }] },
-    { role: "user", parts: [{ text: "something else" }] },
+  assertEquals(sentMessages[0].role, "system"); // system instruction first
+  assertEquals(sentMessages.slice(1), [
+    { role: "user", content: "something healthy" },
+    { role: "assistant", content: "Try the Kale Salad." },
+    { role: "user", content: "something else" },
   ]);
 });
 
-Deno.test("runGeminiWithTools executes a tool call and feeds the result back for a final answer", async () => {
+Deno.test("runGroqWithTools executes a tool call and feeds the result back for a final answer", async () => {
   let call = 0;
-  const fetchImpl = (async (url: string | URL, init?: RequestInit) => {
+  const fetchImpl = (async (url: string | URL) => {
     call += 1;
-    if (typeof url === "string" && url.includes("generativelanguage.googleapis.com")) {
-      if (call === 1) {
-        return geminiResponse({
-          candidates: [{ content: { parts: [{ functionCall: { name: "search_recipes", args: { query: "taco" } } }] } }],
-        });
-      }
-      return geminiResponse({
-        candidates: [{ content: { parts: [{ text: "The Beef Tacos recipe fits." }] }, finishReason: "STOP" }],
-      });
+    if (typeof url === "string" && url.includes("api.groq.com")) {
+      if (call === 1) return groqResponse({ choices: [toolCallMessage({ query: "taco" })] });
+      return groqResponse({ choices: [{ message: { content: "The Beef Tacos recipe fits." }, finish_reason: "stop" }] });
     }
     // The search_recipes PostgREST call.
     return new Response(JSON.stringify([{ id: 2, title: "Beef Tacos", prep_time: 20, servings: 4, recipe_tags: [] }]), { status: 200 });
   }) as typeof fetch;
 
-  const result = await runGeminiWithTools({
+  const result = await runGroqWithTools({
     apiKey: "key",
     userPrompt: "I want tacos",
     authHeader: "Bearer token",
@@ -261,18 +375,16 @@ Deno.test("runGeminiWithTools executes a tool call and feeds the result back for
   assertEquals(result.recipes, [{ id: 2, title: "Beef Tacos" }]);
 });
 
-Deno.test("runGeminiWithTools stops after MAX_TOOL_ROUNDS and reports roundCapHit instead of looping forever", async () => {
+Deno.test("runGroqWithTools stops after MAX_TOOL_ROUNDS and reports roundCapHit instead of looping forever", async () => {
   const fetchImpl = (async (url: string | URL) => {
-    if (typeof url === "string" && url.includes("generativelanguage.googleapis.com")) {
+    if (typeof url === "string" && url.includes("api.groq.com")) {
       // Always asks for another search — never produces a final answer.
-      return geminiResponse({
-        candidates: [{ content: { parts: [{ functionCall: { name: "search_recipes", args: { query: "anything" } } }] } }],
-      });
+      return groqResponse({ choices: [toolCallMessage({ query: "anything" })] });
     }
     return new Response(JSON.stringify([]), { status: 200 });
   }) as typeof fetch;
 
-  const result = await runGeminiWithTools({
+  const result = await runGroqWithTools({
     apiKey: "key",
     userPrompt: "keep searching forever",
     authHeader: "Bearer token",

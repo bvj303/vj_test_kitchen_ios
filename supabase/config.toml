@@ -448,3 +448,21 @@ enabled = true
 # design (see index.ts).
 verify_jwt = true
 entrypoint = "./functions/delete-account/index.ts"
+
+[functions.embed-recipes]
+enabled = true
+# verify_jwt is FALSE: this is an operational backfill endpoint, not user-facing.
+# It's gated by a shared secret (EMBED_BACKFILL_SECRET) checked in the function,
+# not by a Supabase user JWT — so we turn off platform JWT verification and let
+# the function do its own secret check. DB writes use the service key.
+verify_jwt = false
+entrypoint = "./functions/embed-recipes/index.ts"
+
+[functions.embed-text]
+enabled = true
+# verify_jwt FALSE, same as embed-recipes: internal endpoint (ai-chat calls it to
+# embed a query) gated by the shared EMBED_BACKFILL_SECRET, not a user JWT. Kept
+# separate from ai-chat so the heavy gte-small model never loads in ai-chat's
+# worker (which crashed it — WORKER_RESOURCE_LIMIT → 502).
+verify_jwt = false
+entrypoint = "./functions/embed-text/index.ts"
