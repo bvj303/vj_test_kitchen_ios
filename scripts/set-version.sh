@@ -52,6 +52,7 @@ if [[ ${#plists[@]} -eq 0 ]]; then
     "$REPO_ROOT/VJTestKitchen/Resources/Info.plist"        # iOS app  (source of truth)
     "$REPO_ROOT/VJTestKitchen/Resources/Info-macOS.plist"  # macOS app
     "$REPO_ROOT/VJTestKitchenWidgets/Info.plist"           # embedded widget extension
+    "$REPO_ROOT/VJTestKitchen/Resources/Info-AIBeta.plist" # AI-POC TestFlight app (separate bundle id)
   )
 fi
 
