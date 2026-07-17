@@ -24,6 +24,21 @@ export const SEARCH_RECIPES_TOOL_NAME = "search_recipes";
 export const SEARCH_RECIPES_DEFAULT_LIMIT = 35;
 export const SEARCH_RECIPES_MAX_LIMIT = 60;
 export const MAX_TOOL_ROUNDS = 4;
+
+// A single Groq / PostgREST call must not be able to hang the worker forever
+// (the platform would eventually kill it with an opaque 5xx). Every upstream
+// fetch runs under this deadline; on expiry we surface a clear "took too long"
+// message instead of a dead connection. Kept generous — Groq is usually fast,
+// but a long tool-assisted menu can legitimately take a few seconds per round.
+export const GROQ_TIMEOUT_MS = 30_000;
+
+// The semantic path (match_recipes) is deterministic top-N by cosine similarity,
+// so repeated similar queries would return the SAME recipes — the keyword path's
+// shuffle/random-window variety never covered it. Fix: over-fetch a band of the
+// most-similar recipes, then shuffle and slice to the requested count, so "give
+// me another" varies which of the top matches it surfaces while every one stays
+// genuinely relevant (they're all within the top NxOVERFETCH by similarity).
+export const SEARCH_RECIPES_SEMANTIC_OVERFETCH = 3;
 // The DB query fetches a wider pool than the model asked for, and `searchRecipes`
 // shuffles it before slicing down to the requested count. Critically, when the
 // matching set is bigger than one pool, we fetch that pool from a RANDOM offset
@@ -86,6 +101,39 @@ export function escapeIlike(text: string): string {
 export function clampLimit(limit: number | undefined): number {
   const value = Math.trunc(limit ?? SEARCH_RECIPES_DEFAULT_LIMIT);
   return Math.min(Math.max(value, 1), SEARCH_RECIPES_MAX_LIMIT);
+}
+
+/// Thrown when an upstream fetch exceeds its deadline. Distinguished from
+/// GroqRequestError so index.ts can show a "took too long" message rather than
+/// a generic failure.
+export class TimeoutError extends Error {
+  constructor(readonly timeoutMs: number) {
+    super(`Request timed out after ${timeoutMs}ms`);
+  }
+}
+
+/// Runs a fetch under a hard deadline, aborting it (and rejecting with
+/// TimeoutError) if it overruns. `fetchImpl` is injectable for tests; the
+/// AbortSignal is passed through so a real fetch is actually cancelled. A
+/// caller-supplied `signal` in `init` still composes (its own abort wins).
+export async function fetchWithTimeout(
+  fetchImpl: typeof fetch,
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetchImpl(url, { ...init, signal: controller.signal });
+  } catch (err) {
+    // A DOMException/AbortError from the timeout becomes a typed TimeoutError;
+    // any other network error propagates unchanged.
+    if (controller.signal.aborted) throw new TimeoutError(timeoutMs);
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /// Builds the PostgREST URL for a `search_recipes` tool call. Pure (no
@@ -167,16 +215,17 @@ export async function matchRecipes(
   queryEmbedding: number[],
   args: SearchRecipesArgs,
   fetchImpl: typeof fetch = fetch,
+  matchCount: number = clampLimit(args.limit),
 ): Promise<RecipeCatalogEntry[]> {
-  const res = await fetchImpl(`${supabaseUrl}/rest/v1/rpc/match_recipes`, {
+  const res = await fetchWithTimeout(fetchImpl, `${supabaseUrl}/rest/v1/rpc/match_recipes`, {
     method: "POST",
     headers: { apikey: anonKey, Authorization: authHeader, "Content-Type": "application/json" },
     body: JSON.stringify({
       query_embedding: queryEmbedding,
-      match_count: clampLimit(args.limit),
+      match_count: matchCount,
       filter_tag: args.tag?.trim() ? args.tag.trim() : null,
     }),
-  });
+  }, GROQ_TIMEOUT_MS);
   if (!res.ok) {
     console.error("match_recipes rpc failed:", res.status, await res.text());
     return [];
@@ -204,12 +253,18 @@ export async function searchRecipes(
   // Semantic-first: when there's a query and an embedder, rank the whole catalog
   // by meaning (match_recipes RPC). This is the "consider all my recipes" path.
   const query = args.query?.trim();
+  const limit = clampLimit(args.limit);
   if (query && embed) {
     try {
       const vector = await embed(query);
       if (Array.isArray(vector) && vector.length > 0) {
-        const matches = await matchRecipes(authHeader, supabaseUrl, anonKey, vector, args, fetchImpl);
-        if (matches.length > 0) return matches;
+        // Over-fetch a band of the most-similar recipes, then shuffle + slice so
+        // repeated similar asks vary which top matches surface (see the OVERFETCH
+        // constant). Every returned recipe is still within the top NxOVERFETCH by
+        // similarity, so relevance holds.
+        const bandCount = Math.min(limit * SEARCH_RECIPES_SEMANTIC_OVERFETCH, SEARCH_RECIPES_POOL_LIMIT);
+        const matches = await matchRecipes(authHeader, supabaseUrl, anonKey, vector, args, fetchImpl, bandCount);
+        if (matches.length > 0) return shuffle(matches, random).slice(0, limit);
       }
     } catch (err) {
       console.error("semantic search failed; falling back to keyword:", err);
@@ -219,9 +274,9 @@ export async function searchRecipes(
   // Keyword / whole-catalog random sampling — used for open-ended asks (no
   // query) or if semantic search is unavailable / returns nothing.
   // First page + an exact count, so we know how big the matching set is.
-  const firstRes = await fetchImpl(buildSearchRecipesUrl(supabaseUrl, args, 0), {
+  const firstRes = await fetchWithTimeout(fetchImpl, buildSearchRecipesUrl(supabaseUrl, args, 0), {
     headers: { apikey: anonKey, Authorization: authHeader, Prefer: "count=exact" },
-  });
+  }, GROQ_TIMEOUT_MS);
   if (!firstRes.ok) {
     console.error("search_recipes query failed:", firstRes.status, await firstRes.text());
     return [];
@@ -238,9 +293,9 @@ export async function searchRecipes(
   if (total > SEARCH_RECIPES_POOL_LIMIT) {
     const maxOffset = total - SEARCH_RECIPES_POOL_LIMIT;
     const offset = Math.floor(random() * (maxOffset + 1));
-    const windowRes = await fetchImpl(buildSearchRecipesUrl(supabaseUrl, args, offset), {
+    const windowRes = await fetchWithTimeout(fetchImpl, buildSearchRecipesUrl(supabaseUrl, args, offset), {
       headers: { apikey: anonKey, Authorization: authHeader },
-    });
+    }, GROQ_TIMEOUT_MS);
     if (windowRes.ok) {
       const windowRows = await windowRes.json();
       if (Array.isArray(windowRows) && windowRows.length > 0) rows = windowRows;
@@ -249,7 +304,7 @@ export async function searchRecipes(
 
   // Shuffle the pool and slice to the requested count so repeated identical
   // queries don't keep returning the same rows in id order.
-  return shuffle(mapRecipeRows(rows), random).slice(0, clampLimit(args.limit));
+  return shuffle(mapRecipeRows(rows), random).slice(0, limit);
 }
 
 export type ChatRole = "user" | "assistant";
@@ -372,6 +427,21 @@ export class GroqRequestError extends Error {
   }
 }
 
+/// Structured observability sink for the tool loop. One call per notable event
+/// (a Groq round, a tool dispatch, an unknown-tool rejection) with a flat bag of
+/// fields, so the concierge is debuggable from function logs (chosen queries,
+/// round counts, latency, token usage). Injectable so tests can assert on it;
+/// defaults to a JSON-line console emitter in production.
+export type ConciergeLog = (event: Record<string, unknown>) => void;
+
+export const defaultConciergeLog: ConciergeLog = (event) => {
+  try {
+    console.log(JSON.stringify({ fn: "ai-chat", ...event }));
+  } catch {
+    // Logging must never break the request.
+  }
+};
+
 /// Drives the Groq chat-completions + function-calling round trip: calls Groq,
 /// and whenever it requests `search_recipes`, executes the search and feeds the
 /// result back, up to `MAX_TOOL_ROUNDS` calls total (bounding both latency and
@@ -392,8 +462,12 @@ export async function runGroqWithTools(params: {
   /// Embeds the tool's query for semantic search (see searchRecipes). When
   /// absent, search_recipes falls back to keyword/catalog sampling.
   embed?: Embedder;
+  /// Structured observability sink (default: JSON-line console). Injectable so
+  /// tests can assert the loop logs tool calls / rounds / latency / usage.
+  log?: ConciergeLog;
 }): Promise<ToolLoopResult> {
   const fetchImpl = params.fetchImpl ?? fetch;
+  const log = params.log ?? defaultConciergeLog;
   const turns: ChatTurn[] = params.messages ??
     (params.userPrompt ? [{ role: "user", text: params.userPrompt }] : []);
 
@@ -408,24 +482,37 @@ export async function runGroqWithTools(params: {
     [...referenced].map(([id, title]) => ({ id, title }));
 
   for (let round = 1; round <= MAX_TOOL_ROUNDS; round++) {
-    const groqResponse = await fetchImpl(GROQ_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${params.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: GROQ_MODEL,
-        messages: chatMessages,
-        tools: [searchRecipesTool],
-        temperature: 0.7,
-        max_tokens: 2048,
-      }),
-    });
+    const startedAt = Date.now();
+    let groqResponse: Response;
+    try {
+      groqResponse = await fetchWithTimeout(fetchImpl, GROQ_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${params.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: GROQ_MODEL,
+          messages: chatMessages,
+          tools: [searchRecipesTool],
+          temperature: 0.7,
+          max_tokens: 2048,
+        }),
+      }, GROQ_TIMEOUT_MS);
+    } catch (err) {
+      // A timeout is reported as a 408 so index.ts can show a "took too long"
+      // message; any other network error propagates to index.ts's 502 path.
+      if (err instanceof TimeoutError) {
+        log({ event: "groq_timeout", round, latencyMs: Date.now() - startedAt });
+        throw new GroqRequestError(408);
+      }
+      throw err;
+    }
 
     if (!groqResponse.ok) {
       const errText = await groqResponse.text();
       console.error("Groq API error:", groqResponse.status, errText);
+      log({ event: "groq_error", round, status: groqResponse.status, latencyMs: Date.now() - startedAt });
       throw new GroqRequestError(groqResponse.status);
     }
 
@@ -434,6 +521,18 @@ export async function runGroqWithTools(params: {
     const message = choice?.message ?? {};
     const toolCalls: OpenAIToolCall[] = message.tool_calls ?? [];
     const finishReason: string | undefined = choice?.finish_reason;
+    const usage = data?.usage;
+
+    log({
+      event: "groq_round",
+      round,
+      latencyMs: Date.now() - startedAt,
+      toolCallCount: toolCalls.length,
+      finishReason,
+      promptTokens: usage?.prompt_tokens,
+      completionTokens: usage?.completion_tokens,
+      totalTokens: usage?.total_tokens,
+    });
 
     if (toolCalls.length === 0) {
       return {
@@ -447,23 +546,68 @@ export async function runGroqWithTools(params: {
 
     if (round === MAX_TOOL_ROUNDS) break;
 
-    // Echo the assistant's tool-call message, then append one tool result per call.
+    // Echo the assistant's tool-call message, then append one tool result per
+    // call. Dispatch is BY TOOL NAME — an unknown tool (or a future tool this
+    // build doesn't implement) gets a structured error result so the model can
+    // recover, rather than being silently treated as a recipe search.
     chatMessages.push({ role: "assistant", content: message.content ?? null, tool_calls: toolCalls });
     for (const call of toolCalls) {
-      const args = parseToolArgs(call.function?.arguments);
-      const results = await searchRecipes(params.authHeader, params.supabaseUrl, params.anonKey, args, fetchImpl, Math.random, params.embed);
-      for (const r of results) {
-        if (!referenced.has(r.id)) referenced.set(r.id, r.title);
-      }
-      chatMessages.push({
-        role: "tool",
-        tool_call_id: call.id,
-        content: JSON.stringify({ recipes: results }),
+      const content = await executeToolCall(call, {
+        authHeader: params.authHeader,
+        supabaseUrl: params.supabaseUrl,
+        anonKey: params.anonKey,
+        fetchImpl,
+        embed: params.embed,
+        referenced,
+        round,
+        log,
       });
+      chatMessages.push({ role: "tool", tool_call_id: call.id, content });
     }
   }
 
+  log({ event: "round_cap_hit", rounds: MAX_TOOL_ROUNDS });
   return { blocked: false, roundCapHit: true, recipes: collectRecipes() };
+}
+
+/// Executes a single tool call by name and returns the JSON string to feed back
+/// to the model as the tool result. Recipe results are recorded into
+/// `referenced` (for the client's cards). Unknown tools yield a structured error
+/// result — never a silent fallthrough — so adding tools later is a matter of
+/// extending this switch, and a hallucinated tool name can't misfire a search.
+async function executeToolCall(
+  call: OpenAIToolCall,
+  ctx: {
+    authHeader: string;
+    supabaseUrl: string;
+    anonKey: string;
+    fetchImpl: typeof fetch;
+    embed?: Embedder;
+    referenced: Map<number, string>;
+    round: number;
+    log: ConciergeLog;
+  },
+): Promise<string> {
+  const name = call.function?.name;
+  if (name === SEARCH_RECIPES_TOOL_NAME) {
+    const args = parseToolArgs(call.function?.arguments);
+    const results = await searchRecipes(ctx.authHeader, ctx.supabaseUrl, ctx.anonKey, args, ctx.fetchImpl, Math.random, ctx.embed);
+    for (const r of results) {
+      if (!ctx.referenced.has(r.id)) ctx.referenced.set(r.id, r.title);
+    }
+    ctx.log({
+      event: "tool_call",
+      round: ctx.round,
+      tool: name,
+      query: args.query ?? null,
+      tag: args.tag ?? null,
+      resultCount: results.length,
+    });
+    return JSON.stringify({ recipes: results });
+  }
+
+  ctx.log({ event: "unknown_tool", round: ctx.round, tool: name ?? null });
+  return JSON.stringify({ error: `Unknown tool "${name ?? "?"}". Available tools: ${SEARCH_RECIPES_TOOL_NAME}.` });
 }
 
 /// Parse the tool_call arguments JSON string into `SearchRecipesArgs`. Tolerant:

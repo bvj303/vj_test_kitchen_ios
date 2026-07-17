@@ -26,6 +26,9 @@ function makeEmbedder(supabaseUrl: string, anonKey: string, embedSecret: string 
         method: "POST",
         headers: { "Content-Type": "application/json", apikey: anonKey, "x-backfill-secret": embedSecret },
         body: JSON.stringify({ text }),
+        // Never let a slow embedder hang the whole chat — semantic search is a
+        // best-effort enhancement; searchRecipes falls back to keyword on [].
+        signal: AbortSignal.timeout(10_000),
       });
       if (!res.ok) return [];
       const data = await res.json();
@@ -84,6 +87,12 @@ Deno.serve(async (req: Request) => {
     result = await runGroqWithTools({ apiKey, messages, authHeader, supabaseUrl, anonKey, embed });
   } catch (err) {
     if (err instanceof GroqRequestError) {
+      if (err.status === 408) {
+        return Response.json(
+          { error: "The assistant took too long to respond — please try again." },
+          { status: 504 },
+        );
+      }
       const status = err.status === 429 ? 429 : 502;
       return Response.json(
         { error: status === 429 ? "The assistant is busy right now — try again shortly." : "Failed to reach the assistant." },
