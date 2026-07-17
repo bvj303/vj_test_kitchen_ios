@@ -923,6 +923,69 @@ async function callGroq(
   }
 }
 
+/// Grounded fallback for when the model's tool-calling fails. Instead of asking
+/// the model to answer with no data (which produces "I couldn't find anything"
+/// and no recipe cards), we run the recipe search OURSELVES from the user's
+/// request — decoupled from llama's flaky tool-calling — and have the model write
+/// the answer from those real results with tools off. So a failed tool call still
+/// yields grounded recommendations the user can act on. Returns null if the
+/// search finds nothing or the model produces no text (caller then degrades
+/// further).
+async function runGroundedFallback(
+  params: {
+    apiKey: string;
+    authHeader: string;
+    supabaseUrl: string;
+    anonKey: string;
+    fetchImpl: typeof fetch;
+    embed?: Embedder;
+  },
+  chatMessages: OpenAIMessage[],
+  referenced: Map<number, string>,
+  actions: ConciergeAction[],
+  query: string,
+  round: number,
+  retryBudget: { remaining: number },
+  log: ConciergeLog,
+): Promise<ToolLoopResult | null> {
+  if (!query.trim()) return null;
+  const results = await searchRecipes(
+    params.authHeader,
+    params.supabaseUrl,
+    params.anonKey,
+    { query, limit: SEARCH_RECIPES_MAX_LIMIT },
+    params.fetchImpl,
+    Math.random,
+    params.embed,
+  );
+  if (results.length === 0) return null;
+  for (const r of results) {
+    if (!referenced.has(r.id)) referenced.set(r.id, r.title);
+  }
+  log({ event: "grounded_fallback", round, resultCount: results.length });
+
+  const context: OpenAIMessage[] = [
+    ...chatMessages,
+    {
+      role: "user",
+      content:
+        "Here are recipes from my collection that match my request — use ONLY these, refer to each by its EXACT title, and don't invent any: " +
+        JSON.stringify(results.map((r) => ({ id: r.id, title: r.title, prep_time: r.prep_time, servings: r.servings }))),
+    },
+  ];
+  const fb = await callGroq(params.apiKey, context, undefined, params.fetchImpl, round, log, retryBudget).catch(() => null);
+  const msg = fb?.choices?.[0]?.message;
+  if (typeof msg?.content !== "string" || msg.content.length === 0) return null;
+  return {
+    text: msg.content,
+    finishReason: fb?.choices?.[0]?.finish_reason,
+    blocked: false,
+    roundCapHit: false,
+    recipes: [...referenced].map(([id, title]) => ({ id, title })),
+    actions,
+  };
+}
+
 /// Drives the Groq chat-completions + function-calling round trip: calls Groq,
 /// and whenever it requests `search_recipes`, executes the search and feeds the
 /// result back, up to `MAX_TOOL_ROUNDS` calls total (bounding both latency and
@@ -966,6 +1029,9 @@ export async function runGroqWithTools(params: {
   // Shared across every Groq call this turn so flaky tool-calling can't retry in
   // every round and exhaust the TPM budget.
   const retryBudget = { remaining: TOOL_USE_RETRY_BUDGET };
+  // The user's current request — used to search the catalog ourselves if the
+  // model's tool-calling fails (see runGroundedFallback).
+  const lastUserText = [...turns].reverse().find((t) => t.role === "user")?.text ?? "";
 
   for (let round = 1; round <= MAX_TOOL_ROUNDS; round++) {
     const startedAt = Date.now();
@@ -974,12 +1040,20 @@ export async function runGroqWithTools(params: {
       data = await callGroq(params.apiKey, chatMessages, conciergeTools, fetchImpl, round, log, retryBudget);
     } catch (err) {
       // A persistent `tool_use_failed` means llama produced a tool call Groq's
-      // parser keeps rejecting even after retries. Rather than 502, degrade
-      // gracefully: ask the model to answer WITHOUT tools, using whatever it has
-      // already gathered this turn. The client only renders cards for
-      // tool-surfaced recipes, so this can't fabricate a card.
+      // parser keeps rejecting even after retries. Rather than 502 or an empty
+      // "I couldn't find anything", degrade in TWO steps:
+      //   1) GROUNDED fallback — search the catalog ourselves from the user's
+      //      request and answer from those real results (recipes still surface
+      //      as cards the user can act on);
+      //   2) if that finds nothing, a plain tool-less answer (still better than 502).
       if (err instanceof GroqRequestError && err.toolUseFailed) {
         log({ event: "tool_use_failed_fallback", round });
+        const grounded = await runGroundedFallback(
+          { apiKey: params.apiKey, authHeader: params.authHeader, supabaseUrl: params.supabaseUrl, anonKey: params.anonKey, fetchImpl, embed: params.embed },
+          chatMessages, referenced, actions, lastUserText, round, retryBudget, log,
+        ).catch(() => null);
+        if (grounded) return grounded;
+
         const fb = await callGroq(params.apiKey, chatMessages, undefined, fetchImpl, round, log, retryBudget).catch(() => null);
         const fbMessage = fb?.choices?.[0]?.message;
         if (typeof fbMessage?.content === "string" && fbMessage.content.length > 0) {

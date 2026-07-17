@@ -931,6 +931,37 @@ Deno.test("tool_use_failed the fallback can't recover throws GroqRequestError(to
   assertEquals((threw as GroqRequestError).toolUseFailed, true);
 });
 
+Deno.test("grounded fallback: a failed tool call still yields real recipes via a server-side search", async () => {
+  // This is the fix for the "it couldn't find anything / no meals to add" report:
+  // when llama's tool-calling keeps failing, we search the catalog ourselves and
+  // answer from those results, so recipes still surface as cards.
+  let sawGroundedContext = false;
+  const fetchImpl = (async (url: string | URL, init?: RequestInit) => {
+    const u = String(url);
+    if (u.includes("api.groq.com")) {
+      const body = JSON.parse(String(init?.body));
+      if (body.tools) return toolUseFailedResponse(); // every tool-enabled call fails
+      // The tool-less call — is it the GROUNDED one carrying our search results?
+      sawGroundedContext = JSON.stringify(body.messages).includes("recipes from my collection");
+      return groqResponse({ choices: [{ message: { content: "Try the Beef Tacos and Kale Salad." }, finish_reason: "stop" }] });
+    }
+    // Our own server-side search returns real recipes.
+    return new Response(
+      JSON.stringify([
+        { id: 2, title: "Beef Tacos", prep_time: 20, servings: 4, recipe_tags: [] },
+        { id: 5, title: "Kale Salad", prep_time: 10, servings: 2, recipe_tags: [] },
+      ]),
+      { status: 200, headers: { "content-range": "0-1/2" } },
+    );
+  }) as typeof fetch;
+
+  const result = await runGroqWithTools({ apiKey: "k", userPrompt: "healthy dinners", authHeader: "Bearer t", supabaseUrl: "https://x", anonKey: "a", fetchImpl, log: silentLog });
+
+  assert(sawGroundedContext, "the tool-less answer should be grounded with the server-side search results");
+  assertEquals(result.recipes.map((r) => r.id).sort(), [2, 5]); // real recipes surfaced as cards
+  assertEquals(result.text, "Try the Beef Tacos and Kale Salad.");
+});
+
 Deno.test("tool_use_failed retries are capped by the shared per-turn budget (TPM protection)", async () => {
   const events: Record<string, unknown>[] = [];
   const fetchImpl = (async (url: string | URL) => {
