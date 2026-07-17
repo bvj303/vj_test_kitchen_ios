@@ -34,6 +34,7 @@ import {
   SEARCH_RECIPES_SEMANTIC_OVERFETCH,
   shuffle,
   TimeoutError,
+  TOOL_USE_RETRY_BUDGET,
 } from "./search.ts";
 
 /// A no-op observability sink so the tool-loop tests don't spam console output.
@@ -908,7 +909,7 @@ Deno.test("persistent tool_use_failed degrades to a tool-less answer instead of 
   }) as typeof fetch;
 
   const result = await runGroqWithTools({ apiKey: "k", userPrompt: "plan a 3-day menu", authHeader: "Bearer t", supabaseUrl: "https://x", anonKey: "a", fetchImpl, log: silentLog });
-  assertEquals(withTools, 3); // initial + 2 retries, all tool_use_failed
+  assertEquals(withTools, 2); // initial + 1 retry (MAX_TOOL_USE_RETRIES), all tool_use_failed
   assertEquals(withoutTools, 1); // one tool-less fallback call
   assertEquals(result.text, "Here are some general dinner ideas.");
   assertEquals(result.roundCapHit, false);
@@ -928,4 +929,19 @@ Deno.test("tool_use_failed the fallback can't recover throws GroqRequestError(to
   }
   assert(threw instanceof GroqRequestError, `expected GroqRequestError, got ${threw}`);
   assertEquals((threw as GroqRequestError).toolUseFailed, true);
+});
+
+Deno.test("tool_use_failed retries are capped by the shared per-turn budget (TPM protection)", async () => {
+  const events: Record<string, unknown>[] = [];
+  const fetchImpl = (async (url: string | URL) => {
+    if (String(url).includes("api.groq.com")) return toolUseFailedResponse(); // always fails
+    return new Response(JSON.stringify([]), { status: 200 });
+  }) as typeof fetch;
+  try {
+    await runGroqWithTools({ apiKey: "k", userPrompt: "x", authHeader: "Bearer t", supabaseUrl: "https://x", anonKey: "a", fetchImpl, log: (e) => events.push(e) });
+  } catch {
+    // expected — unrecoverable
+  }
+  const retries = events.filter((e) => e.event === "tool_use_failed_retry").length;
+  assert(retries <= TOOL_USE_RETRY_BUDGET, `retries ${retries} must not exceed the budget ${TOOL_USE_RETRY_BUDGET}`);
 });
