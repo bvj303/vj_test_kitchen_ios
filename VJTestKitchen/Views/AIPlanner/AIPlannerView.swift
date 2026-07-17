@@ -307,15 +307,26 @@ struct AIPlannerView: View {
         return out.string(from: date)
     }
 
+    @ViewBuilder
     private func bubbleText(_ message: AIPlannerViewModel.ChatMessage) -> some View {
         let isUser = message.role == .user
-        return Text(LocalizedStringKey(message.content))
-            .foregroundStyle(isUser ? .white : .primary)
-            .padding(12)
-            .glassEffect(
-                isUser ? .regular.tint(Color.brandPrimary.opacity(0.85)) : .regular,
-                in: RoundedRectangle(cornerRadius: 16, style: .continuous)
-            )
+        Group {
+            if isUser {
+                // The user's own typed text — render plain (no markdown surprises).
+                Text(message.content)
+                    .foregroundStyle(.white)
+            } else {
+                // The assistant replies in block markdown (headers, lists) — render
+                // it properly instead of showing raw ## / - characters.
+                ConciergeMarkdownText(content: message.content)
+                    .foregroundStyle(.primary)
+            }
+        }
+        .padding(12)
+        .glassEffect(
+            isUser ? .regular.tint(Color.brandPrimary.opacity(0.85)) : .regular,
+            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+        )
     }
 
     private var inputBar: some View {
