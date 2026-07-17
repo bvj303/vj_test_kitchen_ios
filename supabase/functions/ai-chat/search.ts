@@ -35,13 +35,26 @@ export const PROPOSE_MEAL_PLAN_TOOL_NAME = "propose_meal_plan";
 export const PROPOSE_GROCERY_TOOL_NAME = "propose_grocery_additions";
 export const MAX_PROPOSED_MEAL_PLAN_ITEMS = 21; // a week x 3 meals
 export const MAX_PROPOSED_GROCERY_ITEMS = 100;
-// Llama 3.3 70B has a large context window (unlike the tiny on-device model),
-// so we can hand it many more recipes to choose from per search — a big lever on
-// answer quality / variety. Kept moderate to stay well inside the free tier's
-// daily token budget.
-export const SEARCH_RECIPES_DEFAULT_LIMIT = 35;
-export const SEARCH_RECIPES_MAX_LIMIT = 60;
+// Kept deliberately SMALL. Tool results accumulate in the conversation across
+// rounds, and Groq's free tier caps at 12,000 tokens/minute — a comprehensive
+// menu runs several searches, so 35 recipes/search (the old value) blew the TPM
+// budget and 429'd. 12 gives the model plenty to choose from while keeping each
+// tool result (and the growing context it becomes) cheap. See DECISIONS 2026-07-17.
+export const SEARCH_RECIPES_DEFAULT_LIMIT = 12;
+export const SEARCH_RECIPES_MAX_LIMIT = 24;
 export const MAX_TOOL_ROUNDS = 4;
+
+// Completion budget per Groq call. Counts against the same 12k TPM limit (the
+// 429 error reported "Requested" = prompt + this), so it's a direct lever on
+// rate-limiting; 1536 still fits a multi-day menu, with the finish_reason:length
+// truncation notice as the safety net.
+export const MAX_COMPLETION_TOKENS = 1536;
+
+// llama-3.3-70b occasionally emits a malformed tool call that Groq rejects with
+// HTTP 400 `tool_use_failed` — a stochastic generation failure, not a real bad
+// request. Retry the same call this many times before giving up (after which we
+// fall back to a tool-less answer rather than 502ing — see runGroqWithTools).
+export const MAX_TOOL_USE_RETRIES = 2;
 
 // A single Groq / PostgREST call must not be able to hang the worker forever
 // (the platform would eventually kill it with an opaque 5xx). Every upstream
@@ -834,7 +847,7 @@ export interface ToolLoopResult {
 }
 
 export class GroqRequestError extends Error {
-  constructor(readonly status: number) {
+  constructor(readonly status: number, readonly toolUseFailed = false) {
     super(`Groq request failed with status ${status}`);
   }
 }
@@ -853,6 +866,58 @@ export const defaultConciergeLog: ConciergeLog = (event) => {
     // Logging must never break the request.
   }
 };
+
+/// One Groq chat-completions call, with resilience baked in:
+///  - runs under the fetch deadline (a timeout → GroqRequestError(408));
+///  - RETRIES on HTTP 400 `tool_use_failed` (llama emitting an invalid tool call
+///    is stochastic — a retry usually succeeds) up to MAX_TOOL_USE_RETRIES;
+///  - on any other non-2xx, throws GroqRequestError(status, toolUseFailed) so the
+///    caller can pick a graceful fallback vs. a hard error.
+/// Pass `tools: undefined` to force a tool-less completion (the fallback path).
+async function callGroq(
+  apiKey: string,
+  messages: OpenAIMessage[],
+  tools: unknown[] | undefined,
+  fetchImpl: typeof fetch,
+  round: number,
+  log: ConciergeLog,
+): Promise<any> {
+  for (let attempt = 0;; attempt++) {
+    const startedAt = Date.now();
+    let res: Response;
+    try {
+      res = await fetchWithTimeout(fetchImpl, GROQ_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model: GROQ_MODEL,
+          messages,
+          ...(tools ? { tools } : {}),
+          temperature: 0.7,
+          max_tokens: MAX_COMPLETION_TOKENS,
+        }),
+      }, GROQ_TIMEOUT_MS);
+    } catch (err) {
+      if (err instanceof TimeoutError) {
+        log({ event: "groq_timeout", round, latencyMs: Date.now() - startedAt });
+        throw new GroqRequestError(408);
+      }
+      throw err;
+    }
+
+    if (res.ok) return await res.json();
+
+    const errText = await res.text();
+    const toolUseFailed = res.status === 400 && errText.includes("tool_use_failed");
+    if (toolUseFailed && attempt < MAX_TOOL_USE_RETRIES) {
+      log({ event: "tool_use_failed_retry", round, attempt: attempt + 1 });
+      continue;
+    }
+    console.error("Groq API error:", res.status, errText);
+    log({ event: "groq_error", round, status: res.status, toolUseFailed, latencyMs: Date.now() - startedAt });
+    throw new GroqRequestError(res.status, toolUseFailed);
+  }
+}
 
 /// Drives the Groq chat-completions + function-calling round trip: calls Groq,
 /// and whenever it requests `search_recipes`, executes the search and feeds the
@@ -897,40 +962,33 @@ export async function runGroqWithTools(params: {
 
   for (let round = 1; round <= MAX_TOOL_ROUNDS; round++) {
     const startedAt = Date.now();
-    let groqResponse: Response;
+    let data: any;
     try {
-      groqResponse = await fetchWithTimeout(fetchImpl, GROQ_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${params.apiKey}`,
-        },
-        body: JSON.stringify({
-          model: GROQ_MODEL,
-          messages: chatMessages,
-          tools: conciergeTools,
-          temperature: 0.7,
-          max_tokens: 2048,
-        }),
-      }, GROQ_TIMEOUT_MS);
+      data = await callGroq(params.apiKey, chatMessages, conciergeTools, fetchImpl, round, log);
     } catch (err) {
-      // A timeout is reported as a 408 so index.ts can show a "took too long"
-      // message; any other network error propagates to index.ts's 502 path.
-      if (err instanceof TimeoutError) {
-        log({ event: "groq_timeout", round, latencyMs: Date.now() - startedAt });
-        throw new GroqRequestError(408);
+      // A persistent `tool_use_failed` means llama produced a tool call Groq's
+      // parser keeps rejecting even after retries. Rather than 502, degrade
+      // gracefully: ask the model to answer WITHOUT tools, using whatever it has
+      // already gathered this turn. The client only renders cards for
+      // tool-surfaced recipes, so this can't fabricate a card.
+      if (err instanceof GroqRequestError && err.toolUseFailed) {
+        log({ event: "tool_use_failed_fallback", round });
+        const fb = await callGroq(params.apiKey, chatMessages, undefined, fetchImpl, round, log).catch(() => null);
+        const fbMessage = fb?.choices?.[0]?.message;
+        if (typeof fbMessage?.content === "string" && fbMessage.content.length > 0) {
+          return {
+            text: fbMessage.content,
+            finishReason: fb?.choices?.[0]?.finish_reason,
+            blocked: false,
+            roundCapHit: false,
+            recipes: collectRecipes(),
+            actions,
+          };
+        }
       }
       throw err;
     }
 
-    if (!groqResponse.ok) {
-      const errText = await groqResponse.text();
-      console.error("Groq API error:", groqResponse.status, errText);
-      log({ event: "groq_error", round, status: groqResponse.status, latencyMs: Date.now() - startedAt });
-      throw new GroqRequestError(groqResponse.status);
-    }
-
-    const data = await groqResponse.json();
     const choice = data?.choices?.[0];
     const message = choice?.message ?? {};
     const toolCalls: OpenAIToolCall[] = message.tool_calls ?? [];

@@ -28,6 +28,8 @@ import {
   parseToolArgs,
   runGroqWithTools,
   searchRecipes,
+  SEARCH_RECIPES_DEFAULT_LIMIT,
+  SEARCH_RECIPES_MAX_LIMIT,
   SEARCH_RECIPES_POOL_LIMIT,
   SEARCH_RECIPES_SEMANTIC_OVERFETCH,
   shuffle,
@@ -50,11 +52,18 @@ function assert(condition: boolean, message: string) {
 }
 
 Deno.test("clampLimit defaults to SEARCH_RECIPES_DEFAULT_LIMIT when omitted", () => {
-  assertEquals(clampLimit(undefined), 35);
+  assertEquals(clampLimit(undefined), SEARCH_RECIPES_DEFAULT_LIMIT);
 });
 
 Deno.test("clampLimit caps at SEARCH_RECIPES_MAX_LIMIT even when a larger value is requested", () => {
-  assertEquals(clampLimit(1000), 60);
+  assertEquals(clampLimit(1000), SEARCH_RECIPES_MAX_LIMIT);
+});
+
+Deno.test("search result limits are kept small to fit Groq's free-tier token/min budget", () => {
+  // Regression guard for the 2026-07-17 429 incident: large tool results (35+
+  // recipes/search) accumulated across rounds blew the 12k TPM limit.
+  assert(SEARCH_RECIPES_DEFAULT_LIMIT <= 15, `default limit should stay small, got ${SEARCH_RECIPES_DEFAULT_LIMIT}`);
+  assert(SEARCH_RECIPES_MAX_LIMIT <= 30, `max limit should stay small, got ${SEARCH_RECIPES_MAX_LIMIT}`);
 });
 
 Deno.test("clampLimit floors at 1 for zero/negative values", () => {
@@ -847,4 +856,76 @@ Deno.test("propose_grocery_additions records a proposed action and never writes 
   assertEquals(result.actions.length, 1);
   assertEquals(result.actions[0].type, "add_to_grocery_list");
   assertEquals((result.actions[0] as any).items.length, 2);
+});
+
+// ── 2026-07-17 hotfix: Groq tool_use_failed resilience (killed a prod 502) ──
+
+/// Groq's HTTP 400 when llama emits a tool call its parser rejects.
+function toolUseFailedResponse(): Response {
+  return new Response(
+    JSON.stringify({
+      error: {
+        message: "Failed to call a function. Please adjust your prompt.",
+        type: "invalid_request_error",
+        code: "tool_use_failed",
+        failed_generation: "### Day 1\nTo plan a healthy dinner menu...",
+      },
+    }),
+    { status: 400 },
+  );
+}
+
+Deno.test("runGroqWithTools retries a transient tool_use_failed and then succeeds", async () => {
+  let groqCalls = 0;
+  const fetchImpl = (async (url: string | URL) => {
+    if (String(url).includes("api.groq.com")) {
+      groqCalls += 1;
+      if (groqCalls === 1) return toolUseFailedResponse(); // Groq rejects the first tool call
+      return groqResponse({ choices: [{ message: { content: "Here's your plan." }, finish_reason: "stop" }] });
+    }
+    return new Response(JSON.stringify([]), { status: 200 });
+  }) as typeof fetch;
+
+  const result = await runGroqWithTools({ apiKey: "k", userPrompt: "plan dinner", authHeader: "Bearer t", supabaseUrl: "https://x", anonKey: "a", fetchImpl, log: silentLog });
+  assertEquals(groqCalls, 2); // retried once, then succeeded — no 502
+  assertEquals(result.text, "Here's your plan.");
+});
+
+Deno.test("persistent tool_use_failed degrades to a tool-less answer instead of a 502", async () => {
+  let withTools = 0;
+  let withoutTools = 0;
+  const fetchImpl = (async (url: string | URL, init?: RequestInit) => {
+    if (String(url).includes("api.groq.com")) {
+      const body = JSON.parse(String(init?.body));
+      if (body.tools) {
+        withTools += 1;
+        return toolUseFailedResponse(); // every tool-enabled call fails
+      }
+      withoutTools += 1;
+      return groqResponse({ choices: [{ message: { content: "Here are some general dinner ideas." }, finish_reason: "stop" }] });
+    }
+    return new Response(JSON.stringify([]), { status: 200 });
+  }) as typeof fetch;
+
+  const result = await runGroqWithTools({ apiKey: "k", userPrompt: "plan a 3-day menu", authHeader: "Bearer t", supabaseUrl: "https://x", anonKey: "a", fetchImpl, log: silentLog });
+  assertEquals(withTools, 3); // initial + 2 retries, all tool_use_failed
+  assertEquals(withoutTools, 1); // one tool-less fallback call
+  assertEquals(result.text, "Here are some general dinner ideas.");
+  assertEquals(result.roundCapHit, false);
+});
+
+Deno.test("tool_use_failed the fallback can't recover throws GroqRequestError(toolUseFailed) → index maps to 502", async () => {
+  const fetchImpl = (async (url: string | URL) => {
+    if (String(url).includes("api.groq.com")) return toolUseFailedResponse(); // both tool + tool-less calls fail
+    return new Response(JSON.stringify([]), { status: 200 });
+  }) as typeof fetch;
+
+  let threw: unknown;
+  try {
+    await runGroqWithTools({ apiKey: "k", userPrompt: "x", authHeader: "Bearer t", supabaseUrl: "https://x", anonKey: "a", fetchImpl, log: silentLog });
+  } catch (e) {
+    threw = e;
+  }
+  assert(threw instanceof GroqRequestError, `expected GroqRequestError, got ${threw}`);
+  assertEquals((threw as GroqRequestError).toolUseFailed, true);
 });
