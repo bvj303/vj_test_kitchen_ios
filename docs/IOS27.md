@@ -13,7 +13,9 @@ everything worth keeping from them now lives on `main`. See DECISIONS.md
   `/Applications/Xcode-beta.app`; use
   `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer` — no `sudo`,
   no change to the global `xcode-select`). Verified: the full unit suite passes
-  on an **iOS 27.0 simulator** built with the iOS 27 SDK, and on iOS 26.
+  on an **iOS 27.0 simulator** built with the iOS 27 SDK, and on iOS 26, with
+  zero deprecation warnings (the last ones, `CLGeocoder`, were replaced by
+  MapKit geocoding — `MapKitGeocodingService`).
 - **Deployment target stays 26.0** (iOS/iPadOS/macOS). Everything below ships in
   the 26 SDK, so iOS 27 users get all of it while family devices still on 26
   keep getting updates. Gate any future 27-only API with `#available(iOS 27, *)`.
@@ -72,8 +74,6 @@ grocery list" via Siri.
 - [ ] PCC concierge fallback (blocked on the entitlement — see above).
 - [ ] Multimodal prompts — attach the recipe photo/PDF page itself
       (`Attachment(…)`) instead of OCR-then-text, for messy layouts.
-- [ ] Replace the deprecated `CLGeocoder` calls in `GeocodingProviding` with
-      `MKGeocodingRequest` / `MKReverseGeocodingRequest`.
 
 ## Privacy / review notes
 
