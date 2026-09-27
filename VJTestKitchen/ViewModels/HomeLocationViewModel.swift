@@ -30,7 +30,7 @@ final class HomeLocationViewModel {
     init(
         store: WeatherPreferenceStoring = UserDefaultsWeatherPreferenceStore(),
         locationProvider: LocationProviding = CoreLocationService(),
-        geocoder: GeocodingProviding = CLGeocoderService(),
+        geocoder: GeocodingProviding = MapKitGeocodingService(),
         logger: AppLogger = .shared
     ) {
         self.store = store

@@ -4,7 +4,10 @@ As of 2026-09-27 there is **one app** (`VJTestKitchen`, bundle
 `com.bvj303.vjtestkitchen`, plus its native macOS sibling `VJTestKitchenMac`).
 The separate `ios27` branch and its **"VJTK AI"** TestFlight POC target
 (`VJTestKitchenAIBeta`, bundle `com.bvj303.vjtestkitchen.aibeta`) are retired:
-everything worth keeping from them now lives on `main`. See DECISIONS.md
+everything worth keeping from them now lives on `main`. The branches are deleted
+but preserved as tags — `archive/ios27` (incl. the on-device concierge and the
+PCC escalation) and `archive/ios27-apple-intelligence` — and the beta's
+TestFlight builds (6–11) were expired on 2026-09-27. See DECISIONS.md
 (2026-09-27).
 
 ## Toolchain
@@ -13,7 +16,9 @@ everything worth keeping from them now lives on `main`. See DECISIONS.md
   `/Applications/Xcode-beta.app`; use
   `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer` — no `sudo`,
   no change to the global `xcode-select`). Verified: the full unit suite passes
-  on an **iOS 27.0 simulator** built with the iOS 27 SDK, and on iOS 26.
+  on an **iOS 27.0 simulator** built with the iOS 27 SDK, and on iOS 26, with
+  zero deprecation warnings (the last ones, `CLGeocoder`, were replaced by
+  MapKit geocoding — `MapKitGeocodingService`).
 - **Deployment target stays 26.0** (iOS/iPadOS/macOS). Everything below ships in
   the 26 SDK, so iOS 27 users get all of it while family devices still on 26
   keep getting updates. Gate any future 27-only API with `#available(iOS 27, *)`.
@@ -55,7 +60,7 @@ key server-side, RLS-scoped pgvector search). Why not Apple Intelligence:
   requested at https://developer.apple.com/private-cloud-compute/ (Apple
   approves; not automatic). *Touching the type without the entitlement traps* —
   that crashed beta build 8. When/if it's granted: re-land from commit `1ca407e`
-  (on the archived `ios27` branch) as a **fallback** tier behind the cloud chain,
+  (preserved in the `archive/ios27` tag — the branch itself was deleted) as a **fallback** tier behind the cloud chain,
   with Apple's recommended network-failure retry on the on-device model and
   `quotaUsage` handling. The grounded on-device concierge
   (`AppleIntelligenceAIService`) is also preserved on that branch.
@@ -72,8 +77,6 @@ grocery list" via Siri.
 - [ ] PCC concierge fallback (blocked on the entitlement — see above).
 - [ ] Multimodal prompts — attach the recipe photo/PDF page itself
       (`Attachment(…)`) instead of OCR-then-text, for messy layouts.
-- [ ] Replace the deprecated `CLGeocoder` calls in `GeocodingProviding` with
-      `MKGeocodingRequest` / `MKReverseGeocodingRequest`.
 
 ## Privacy / review notes
 
