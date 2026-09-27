@@ -1,4 +1,5 @@
-// Kitchen Concierge — AI menu-planning chat, backed by Groq (llama-3.3-70b).
+// Kitchen Concierge — AI menu-planning chat, backed by Groq's free tier
+// (a model chain — see GROQ_MODELS / resolveModelChain in search.ts).
 //
 // Deliberately zero external imports (no npm:/jsr: specifiers) — Deno.serve,
 // Deno.env, and fetch are runtime built-ins; ./search.ts is a local relative
@@ -11,7 +12,7 @@
 // so RLS applies exactly as it does everywhere else in the app (recipes are
 // shared-readable by any authenticated user — see DECISIONS.md). No
 // service_role/admin access is used here.
-import { GroqRequestError, normalizeChatTurns, runGroqWithTools, type ToolLoopResult } from "./search.ts";
+import { GroqRequestError, normalizeChatTurns, resolveModelChain, resolveToday, runGroqWithTools, type ToolLoopResult } from "./search.ts";
 
 // Query embeddings for semantic search are produced by the separate `embed-text`
 // function, NOT here: loading the gte-small model in this worker overran the Edge
@@ -84,7 +85,11 @@ Deno.serve(async (req: Request) => {
   let result: ToolLoopResult;
   try {
     const embed = makeEmbedder(supabaseUrl, anonKey, Deno.env.get("EMBED_BACKFILL_SECRET"));
-    result = await runGroqWithTools({ apiKey, messages, authHeader, supabaseUrl, anonKey, embed });
+    // GROQ_MODEL (optional secret) pins a new primary model without a redeploy.
+    const models = resolveModelChain(Deno.env.get("GROQ_MODEL"));
+    // The client's local calendar day (UTC fallback for older clients).
+    const today = resolveToday(body);
+    result = await runGroqWithTools({ apiKey, messages, authHeader, supabaseUrl, anonKey, embed, models, today });
   } catch (err) {
     if (err instanceof GroqRequestError) {
       if (err.status === 408) {
