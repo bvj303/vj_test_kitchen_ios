@@ -67,4 +67,34 @@ struct ErrorPresenterTests {
     @Test func unmappedAuthCodeFallsBackToServerMessage() {
         #expect(ErrorPresenter.message(for: authError(.unknown, message: "something odd")) == "something odd")
     }
+
+    // MARK: - Edge Function errors
+    // ai-chat returns user-facing copy as {"error": "..."} (rate limit, message
+    // too long, timeout). The SDK wraps a non-2xx as FunctionsError.httpError,
+    // whose localizedDescription is just "Edge Function returned a non-2xx status
+    // code" — so without this mapping the friendly text never reached the user.
+
+    @Test func showsTheEdgeFunctionsOwnErrorMessage() {
+        let body = Data(#"{"error":"You've reached the Kitchen Concierge's limit for now — please try again in about 40 minutes."}"#.utf8)
+        let message = ErrorPresenter.message(for: FunctionsError.httpError(code: 429, data: body))
+        #expect(message == "You've reached the Kitchen Concierge's limit for now — please try again in about 40 minutes.")
+    }
+
+    @Test func fallsBackToFriendlyCopyWhenTheFunctionBodyHasNoMessage() {
+        let rateLimited = ErrorPresenter.message(for: FunctionsError.httpError(code: 429, data: Data("oops".utf8)))
+        #expect(rateLimited.localizedCaseInsensitiveContains("try again"))
+        #expect(!rateLimited.localizedCaseInsensitiveContains("non-2xx"))
+
+        let serverError = ErrorPresenter.message(for: FunctionsError.httpError(code: 502, data: Data()))
+        #expect(!serverError.localizedCaseInsensitiveContains("non-2xx"))
+        #expect(serverError.localizedCaseInsensitiveContains("try again"))
+    }
+
+    @Test func ignoresAnOverlongOrBlankFunctionMessage() {
+        let blank = ErrorPresenter.message(for: FunctionsError.httpError(code: 500, data: Data(#"{"error":"   "}"#.utf8)))
+        #expect(!blank.trimmingCharacters(in: .whitespaces).isEmpty)
+        let huge = String(repeating: "x", count: 2_000)
+        let long = ErrorPresenter.message(for: FunctionsError.httpError(code: 500, data: Data("{\"error\":\"\(huge)\"}".utf8)))
+        #expect(long.count < 300)
+    }
 }
