@@ -80,8 +80,28 @@ struct AIChatTurn: Encodable, Sendable, Equatable {
     static func assistant(_ content: String) -> AIChatTurn { AIChatTurn(role: "assistant", content: content) }
 }
 
+/// The "ai-chat" request body: the conversation plus the user's LOCAL calendar
+/// day ("yyyy-MM-dd"), so the concierge resolves "Tuesday" / "this week" against
+/// the day the user is actually living in. Deriving a calendar day is a
+/// display-layer concern — the function's UTC fallback is already tomorrow
+/// during US evenings (same reasoning as `MealCalendarViewModel.weekDates`).
+struct AIChatRequest: Encodable, Sendable {
+    let messages: [AIChatTurn]
+    let today: String
+
+    init(messages: [AIChatTurn], now: Date = Date(), timeZone: TimeZone = .current) {
+        self.messages = messages
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = timeZone
+        formatter.dateFormat = "yyyy-MM-dd"
+        self.today = formatter.string(from: now)
+    }
+}
+
 protocol AIServicing: Sendable {
-    /// Sends the conversation history to the "ai-chat" Edge Function (Gemini-backed
+    /// Sends the conversation history to the "ai-chat" Edge Function (Groq-backed
     /// Kitchen Concierge) and returns its reply plus any recipes it referenced.
     /// The last turn must be the user's current message.
     func sendMessage(_ history: [AIChatTurn]) async throws -> AIChatResponse
@@ -96,10 +116,6 @@ extension AIServicing {
 }
 
 struct AIService: AIServicing {
-    private struct RequestBody: Encodable {
-        let messages: [AIChatTurn]
-    }
-
     private struct ResponseBody: Decodable {
         let response: String
         // Optional so an older deployed function (no `recipes` field) still
@@ -134,7 +150,7 @@ struct AIService: AIServicing {
             "ai-chat",
             options: FunctionInvokeOptions(
                 headers: ["Authorization": "Bearer \(accessToken)"],
-                body: RequestBody(messages: history)
+                body: AIChatRequest(messages: history)
             )
         )
         // Drop any `.unknown` actions a future server might send that this build
