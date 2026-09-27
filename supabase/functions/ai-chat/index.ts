@@ -12,6 +12,7 @@
 // so RLS applies exactly as it does everywhere else in the app (recipes are
 // shared-readable by any authenticated user — see DECISIONS.md). No
 // service_role/admin access is used here.
+import { consumeChatQuota, quotaExceededMessage } from "./quota.ts";
 import { GroqRequestError, normalizeChatTurns, resolveModelChain, resolveToday, runGroqWithTools, type ToolLoopResult } from "./search.ts";
 
 // Query embeddings for semantic search are produced by the separate `embed-text`
@@ -80,6 +81,20 @@ Deno.serve(async (req: Request) => {
   if (!supabaseUrl || !anonKey) {
     console.error("SUPABASE_URL/APP_PUBLISHABLE_KEY are not set for this project.");
     return Response.json({ error: "AI planning isn't configured yet." }, { status: 500 });
+  }
+
+  // Per-user rate limit, checked before any Groq call (see quota.ts). Keyed on
+  // the caller's own token; fails open if the check itself breaks.
+  const quota = await consumeChatQuota(authHeader, supabaseUrl, anonKey);
+  if (!quota.allowed) {
+    console.log(JSON.stringify({ fn: "ai-chat", event: "quota_exceeded", retryAfterSeconds: quota.retryAfterSeconds }));
+    return Response.json(
+      { error: quotaExceededMessage(quota.retryAfterSeconds) },
+      { status: 429, headers: { "Retry-After": String(quota.retryAfterSeconds) } },
+    );
+  }
+  if ("checkFailed" in quota) {
+    console.log(JSON.stringify({ fn: "ai-chat", event: "quota_check_failed" }));
   }
 
   let result: ToolLoopResult;

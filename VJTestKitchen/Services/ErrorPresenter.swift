@@ -48,6 +48,19 @@ enum ErrorPresenter {
                 break
             }
         }
+        // Edge Functions (ai-chat, delete-account) return user-facing copy as
+        // {"error": "..."}; the SDK's own description is just "non-2xx status
+        // code", so surface the function's message (or friendly copy by status).
+        if let functionsError = error as? FunctionsError, case let .httpError(code, data) = functionsError {
+            if let body = try? JSONDecoder().decode(FunctionErrorBody.self, from: data),
+               let text = body.error?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !text.isEmpty, text.count <= 280 {
+                return text
+            }
+            return code == 429
+                ? "Too many requests right now. Please wait a bit and try again."
+                : "Something went wrong on our end. Please try again in a moment."
+        }
         // Auth errors: the ones reachable from the sign-in / sign-up forms.
         if let authError = error as? AuthError {
             switch authError.errorCode {
@@ -64,5 +77,10 @@ enum ErrorPresenter {
             }
         }
         return error.localizedDescription
+    }
+
+    /// The `{"error": "..."}` body our Edge Functions return on failure.
+    private struct FunctionErrorBody: Decodable {
+        let error: String?
     }
 }
