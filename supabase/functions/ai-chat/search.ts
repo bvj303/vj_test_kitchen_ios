@@ -321,6 +321,29 @@ export interface GroceryAction {
 
 export type ConciergeAction = MealPlanAction | GroceryAction;
 
+/// The server's ground truth about proposals this turn, appended to every
+/// tool-less (answer-writing) request. Without it, a forced final answer said
+/// "I've PROPOSED this to your calendar" with zero proposals made — the model
+/// pattern-matches the prompt's "say you've PROPOSED it" wording.
+export function proposalStatusNote(actions: ConciergeAction[]): string {
+  if (actions.length === 0) {
+    return "Status: nothing has been proposed this turn — don't say you proposed, added, or scheduled anything. " +
+      "If the user asked for that, offer to do it next.";
+  }
+  const lines = actions.map((a) =>
+    a.type === "add_to_meal_plan"
+      ? `- calendar: ${a.recipeTitle} (${a.mealType}, ${a.date})`
+      : `- grocery list: ${a.items.length} item(s)${a.recipeTitle ? ` for ${a.recipeTitle}` : ""}`
+  );
+  return `Status: these proposals were made this turn and await the user's confirmation — describe only these ` +
+    `(as proposed, not saved):\n${lines.join("\n")}`;
+}
+
+/// `messages` plus the proposal status note — for every answer-writing call.
+function withProposalStatus(messages: OpenAIMessage[], actions: ConciergeAction[]): OpenAIMessage[] {
+  return [...messages, { role: "user", content: proposalStatusNote(actions) }];
+}
+
 /// A plain summary of the proposals actually made this turn, used when the model
 /// returns an empty final answer — the proposals are real and confirmable, so the
 /// user gets them (with honest wording) instead of a 502.
@@ -718,6 +741,26 @@ export async function searchRecipes(
   random: () => number = Math.random,
   embed?: Embedder,
 ): Promise<RecipeCatalogEntry[]> {
+  const results = await searchRecipesOnce(authHeader, supabaseUrl, anonKey, args, fetchImpl, random, embed);
+  // The model guesses tags ("vegetarian", "cozy") that aren't in the catalog's
+  // course/cuisine tag vocabulary; an exact tag filter then matches nothing and
+  // the concierge wrongly tells the user they have no such recipes. Retry with
+  // the tag folded into the (semantic) query and no tag filter.
+  const tag = args.tag?.trim();
+  if (results.length > 0 || !tag) return results;
+  const query = [args.query?.trim(), tag].filter(Boolean).join(" ");
+  return searchRecipesOnce(authHeader, supabaseUrl, anonKey, { query, limit: args.limit }, fetchImpl, random, embed);
+}
+
+async function searchRecipesOnce(
+  authHeader: string,
+  supabaseUrl: string,
+  anonKey: string,
+  args: SearchRecipesArgs,
+  fetchImpl: typeof fetch,
+  random: () => number,
+  embed?: Embedder,
+): Promise<RecipeCatalogEntry[]> {
   // Semantic-first: when there's a query and an embedder, rank the whole catalog
   // by meaning (match_recipes RPC). This is the "consider all my recipes" path.
   const query = args.query?.trim();
@@ -881,7 +924,7 @@ export function buildSystemInstruction(today: string = new Date().toISOString().
 TODAY is ${weekday}, ${today} (the user's local date). Resolve relative days ("Tuesday", "tomorrow", "this week") by looking them up in this list — never compute weekdays yourself: ${upcomingDays(today)}. "Tuesday" means the next upcoming Tuesday in the list. Only propose dates on or after today, and don't ask which date the user means when a relative day is clear.
 
 TOOLS:
-- ${SEARCH_RECIPES_TOOL_NAME}: semantic search over the user's whole recipe collection (matches by MEANING, e.g. "cozy winter dinner" finds stews). Use it to find recipes; refer to results by their EXACT title. If nothing fits, say so and suggest a general idea rather than inventing a recipe.
+- ${SEARCH_RECIPES_TOOL_NAME}: semantic search over the user's whole recipe collection (matches by MEANING, e.g. "cozy winter dinner" finds stews). Use it to find recipes; refer to results by their EXACT title. Never show recipe ids to the user. If nothing fits, say so and suggest a general idea rather than inventing a recipe.
 - ${GET_RECIPE_DETAILS_TOOL_NAME}: full ingredients + steps for ONE recipe id (from a search result) — ${SEARCH_RECIPES_TOOL_NAME} omits ingredients. Call before answering about ingredients/method or before proposing grocery items.
 - ${PROPOSE_MEAL_PLAN_TOOL_NAME}: proposes scheduling recipes on the calendar (ids from a search result).
 - ${PROPOSE_GROCERY_TOOL_NAME}: proposes adding ingredients to the grocery list.
@@ -1127,7 +1170,7 @@ async function runGroundedFallback(
         JSON.stringify(results.map((r) => ({ id: r.id, title: r.title, prep_time: r.prep_time, servings: r.servings }))),
     },
   ];
-  const fb = await callGroq(params.apiKey, context, undefined, params.fetchImpl, round, log, retryBudget, cursor).catch(() => null);
+  const fb = await callGroq(params.apiKey, withProposalStatus(context, actions), undefined, params.fetchImpl, round, log, retryBudget, cursor).catch(() => null);
   const msg = fb?.choices?.[0]?.message;
   if (typeof msg?.content !== "string" || msg.content.length === 0) return null;
   return {
@@ -1198,7 +1241,9 @@ export async function runGroqWithTools(params: {
     let data: any;
     try {
       const isFinalRound = round === MAX_TOOL_ROUNDS;
-      data = await callGroq(params.apiKey, chatMessages, isFinalRound ? undefined : conciergeTools, fetchImpl, round, log, retryBudget, cursor);
+      data = isFinalRound
+        ? await callGroq(params.apiKey, withProposalStatus(chatMessages, actions), undefined, fetchImpl, round, log, retryBudget, cursor)
+        : await callGroq(params.apiKey, chatMessages, conciergeTools, fetchImpl, round, log, retryBudget, cursor);
     } catch (err) {
       // A persistent `tool_use_failed` means the model produced a tool call Groq's
       // parser keeps rejecting even after retries. Rather than 502 or an empty
@@ -1215,7 +1260,7 @@ export async function runGroqWithTools(params: {
         ).catch(() => null);
         if (grounded) return grounded;
 
-        const fb = await callGroq(params.apiKey, chatMessages, undefined, fetchImpl, round, log, retryBudget, cursor).catch(() => null);
+        const fb = await callGroq(params.apiKey, withProposalStatus(chatMessages, actions), undefined, fetchImpl, round, log, retryBudget, cursor).catch(() => null);
         const fbMessage = fb?.choices?.[0]?.message;
         if (typeof fbMessage?.content === "string" && fbMessage.content.length > 0) {
           return {

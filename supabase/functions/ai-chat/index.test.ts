@@ -33,6 +33,7 @@ import {
   parseContentRangeTotal,
   parseRecipeId,
   parseToolArgs,
+  proposalStatusNote,
   runGroqWithTools,
   searchRecipes,
   SEARCH_RECIPES_DEFAULT_LIMIT,
@@ -1310,4 +1311,74 @@ Deno.test("an empty final answer with proposals falls back to a summary of what 
 
   assertEquals(result.actions.length, 1);
   assert(typeof result.text === "string" && result.text.includes("Beef Tacos") && /confirm/i.test(result.text), `expected a synthesized summary, got ${result.text}`);
+});
+
+// ── Found by end-to-end testing on the local stack (real runtime, RLS, pgvector,
+// Groq): the model invents tags ("vegetarian") that don't exist in the catalog's
+// course/cuisine vocabulary, gets zero results, and tells the user they have no
+// such recipes; and on the forced final round it claimed proposals it never made. ──
+
+Deno.test("searchRecipes: a tag that matches nothing is retried as part of the query, without the tag filter", async () => {
+  const urls: string[] = [];
+  const fetchImpl = (async (url: string | URL) => {
+    const u = decodeURIComponent(String(url));
+    urls.push(u);
+    if (u.includes("tags.name")) return new Response(JSON.stringify([]), { status: 200, headers: { "content-range": "*/0" } });
+    return new Response(
+      JSON.stringify([{ id: 7, title: "Vegetable Minestrone", prep_time: 45, servings: 6, recipe_tags: [] }]),
+      { status: 200, headers: { "content-range": "0-0/1" } },
+    );
+  }) as typeof fetch;
+
+  const results = await searchRecipes("Bearer t", "https://x", "a", { query: "cozy", tag: "vegetarian" }, fetchImpl, () => 0);
+
+  assertEquals(results.map((r) => r.id), [7]);
+  assert(urls.some((u) => u.includes("tags.name")), "the tag filter is tried first");
+  const retry = urls.at(-1)!;
+  assert(!retry.includes("tags.name"), "the retry drops the tag filter");
+  assert(retry.includes("cozy") && retry.includes("vegetarian"), `the retry folds the tag into the query: ${retry}`);
+});
+
+Deno.test("searchRecipes: a tag that DOES match is not retried", async () => {
+  let calls = 0;
+  const fetchImpl = (async () => {
+    calls += 1;
+    return new Response(JSON.stringify([{ id: 1, title: "Tacos", prep_time: 20, servings: 4, recipe_tags: [] }]), { status: 200, headers: { "content-range": "0-0/1" } });
+  }) as typeof fetch;
+  const results = await searchRecipes("Bearer t", "https://x", "a", { tag: "Mexican" }, fetchImpl, () => 0);
+  assertEquals(results.length, 1);
+  assertEquals(calls, 1);
+});
+
+Deno.test("proposalStatusNote states deterministically what was (or wasn't) proposed", () => {
+  const none = proposalStatusNote([]);
+  assert(/nothing has been proposed/i.test(none), none);
+  const some = proposalStatusNote([
+    { type: "add_to_meal_plan", recipeId: 2, recipeTitle: "Beef Tacos", date: "2026-09-29", mealType: "dinner" },
+    { type: "add_to_grocery_list", recipeId: 2, recipeTitle: "Beef Tacos", items: [{ name: "tortillas" }] },
+  ]);
+  assert(some.includes("Beef Tacos") && some.includes("2026-09-29") && /grocery/i.test(some), some);
+  assert(/only these/i.test(some), "must restrict claims to the listed proposals");
+});
+
+Deno.test("the forced final answer carries the proposal status note (so it can't claim actions it never took)", async () => {
+  let finalMessages: any[] = [];
+  const fetchImpl = (async (url: string | URL, init?: RequestInit) => {
+    if (String(url).includes("api.groq.com")) {
+      const body = JSON.parse(String(init?.body));
+      if (!body.tools) {
+        finalMessages = body.messages;
+        return groqResponse({ choices: [{ message: { content: "Here are some options." }, finish_reason: "stop" }] });
+      }
+      return groqResponse({ choices: [toolCallMessage({ query: "stew" })] });
+    }
+    return new Response(JSON.stringify([{ id: 3, title: "Beef Stew", prep_time: 90, servings: 6, recipe_tags: [] }]), { status: 200 });
+  }) as typeof fetch;
+
+  await runGroqWithTools({ apiKey: "k", userPrompt: "stew", authHeader: "Bearer t", supabaseUrl: "https://x", anonKey: "a", fetchImpl, log: silentLog });
+  assert(/nothing has been proposed/i.test(String(finalMessages.at(-1)?.content)), `final turn: ${JSON.stringify(finalMessages.at(-1))}`);
+});
+
+Deno.test("the system prompt forbids showing internal recipe ids", () => {
+  assert(/never show recipe ids/i.test(buildSystemInstruction("2026-09-27")), "prompt must forbid ids in replies");
 });
