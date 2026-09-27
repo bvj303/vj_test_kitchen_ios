@@ -97,4 +97,14 @@ struct ErrorPresenterTests {
         let long = ErrorPresenter.message(for: FunctionsError.httpError(code: 500, data: Data("{\"error\":\"\(huge)\"}".utf8)))
         #expect(long.count < 300)
     }
+
+    // Server-side length/size limits (migration 20260927020000): CHECK
+    // constraints and save_recipe's tag/ingredient caps raise 23514 with raw SQL
+    // text ("violates check constraint recipes_title_length") — show copy instead.
+    @Test func mapsCheckViolationToFriendlyTooLongMessage() {
+        let error = PostgrestError(code: "23514", message: "new row for relation \"recipes\" violates check constraint \"recipes_title_length\"")
+        let message = ErrorPresenter.message(for: error)
+        #expect(message.localizedCaseInsensitiveContains("too long") || message.localizedCaseInsensitiveContains("too many"))
+        #expect(!message.contains("constraint"))
+    }
 }

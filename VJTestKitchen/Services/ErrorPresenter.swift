@@ -44,6 +44,10 @@ enum ErrorPresenter {
                 return "That can't be saved because something it refers to no longer exists. Refresh and try again."
             case "42501":
                 return "You don't have permission to do that."
+            case "23514":
+                // Server-side size limits (text length caps; max 20 categories /
+                // 150 ingredients per recipe).
+                return "Some of that is too long or has too many items to save. Shorten it and try again."
             default:
                 break
             }
