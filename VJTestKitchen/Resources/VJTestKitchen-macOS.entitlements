@@ -26,6 +26,12 @@
 	<key>com.apple.security.personal-information.calendars</key>
 	<true/>
 
+	<!-- Read PDFs the user picks in the "Import from PDF" recipe scanner
+	     (SwiftUI .fileImporter). Read-only, user-selected — the file is read
+	     once inside a security-scoped window and never written. -->
+	<key>com.apple.security.files.user-selected.read-only</key>
+	<true/>
+
 	<!-- Shared container the app writes and the desktop widget reads (see
 	     WidgetDataStore). macOS requires the Team ID prefix on the group id and
 	     the matching UserDefaults suite name (WidgetSharedConfig), unlike iOS's
