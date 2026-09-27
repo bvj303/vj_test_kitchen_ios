@@ -4,7 +4,10 @@ As of 2026-09-27 there is **one app** (`VJTestKitchen`, bundle
 `com.bvj303.vjtestkitchen`, plus its native macOS sibling `VJTestKitchenMac`).
 The separate `ios27` branch and its **"VJTK AI"** TestFlight POC target
 (`VJTestKitchenAIBeta`, bundle `com.bvj303.vjtestkitchen.aibeta`) are retired:
-everything worth keeping from them now lives on `main`. See DECISIONS.md
+everything worth keeping from them now lives on `main`. The branches are deleted
+but preserved as tags — `archive/ios27` (incl. the on-device concierge and the
+PCC escalation) and `archive/ios27-apple-intelligence` — and the beta's
+TestFlight builds (6–11) were expired on 2026-09-27. See DECISIONS.md
 (2026-09-27).
 
 ## Toolchain
@@ -57,7 +60,7 @@ key server-side, RLS-scoped pgvector search). Why not Apple Intelligence:
   requested at https://developer.apple.com/private-cloud-compute/ (Apple
   approves; not automatic). *Touching the type without the entitlement traps* —
   that crashed beta build 8. When/if it's granted: re-land from commit `1ca407e`
-  (on the archived `ios27` branch) as a **fallback** tier behind the cloud chain,
+  (preserved in the `archive/ios27` tag — the branch itself was deleted) as a **fallback** tier behind the cloud chain,
   with Apple's recommended network-failure retry on the on-device model and
   `quotaUsage` handling. The grounded on-device concierge
   (`AppleIntelligenceAIService`) is also preserved on that branch.
