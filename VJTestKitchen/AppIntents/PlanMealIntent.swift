@@ -20,6 +20,8 @@ struct PlanMealIntent: AppIntent {
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
         do {
+            // Cloud concierge (Groq via the ai-chat Edge Function), same in-process
+            // Supabase session as the in-app chat.
             let response = try await AIService().sendMessage(query)
             return .result(dialog: IntentDialog(stringLiteral: response.text))
         } catch {
@@ -41,6 +43,24 @@ struct VJTestKitchenShortcuts: AppShortcutsProvider {
             ],
             shortTitle: "Plan a Meal",
             systemImageName: "sparkles"
+        )
+        AppShortcut(
+            intent: FindRecipeIntent(),
+            phrases: [
+                "Find a recipe in \(.applicationName)",
+                "Search \(.applicationName)",
+            ],
+            shortTitle: "Find a Recipe",
+            systemImageName: "magnifyingglass"
+        )
+        AppShortcut(
+            intent: AddGroceryItemIntent(),
+            phrases: [
+                "Add to my \(.applicationName) grocery list",
+                "Add an item in \(.applicationName)",
+            ],
+            shortTitle: "Add Grocery Item",
+            systemImageName: "cart.badge.plus"
         )
     }
 }
