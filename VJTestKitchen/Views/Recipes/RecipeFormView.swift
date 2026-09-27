@@ -1,9 +1,15 @@
 import SwiftUI
+import PhotosUI
+import UniformTypeIdentifiers
 
 struct RecipeFormView: View {
     @State private var viewModel: RecipeFormViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var showingDeleteConfirmation = false
+    /// Picked recipe photo to scan (Apple Intelligence prefill).
+    @State private var scanPickerItem: PhotosPickerItem?
+    /// True while the PDF/document importer sheet is presented.
+    @State private var showingDocumentImporter = false
 
     /// Called after a successful save, in addition to `dismiss()`. `dismiss()`
     /// is a no-op when this view is a tab's root rather than something
@@ -31,19 +37,68 @@ struct RecipeFormView: View {
         self.onDeleted = onDeleted
     }
 
+    /// On-device recipe-photo scanner entry. A computed property (not inlined)
+    /// so its `viewModel` reads reference the view's `@State`, not the body's
+    /// shadowed `@Bindable` local — which the compiler flags as a captured var.
+    private var scanSection: some View {
+        Section {
+            if viewModel.isScanningPhoto {
+                HStack(spacing: 8) {
+                    ProgressView()
+                    Text("Reading recipe…").foregroundStyle(.secondary)
+                }
+            } else {
+                PhotosPicker(selection: $scanPickerItem, matching: .images) {
+                    Label("Scan from Photo", systemImage: "text.viewfinder")
+                        .foregroundStyle(Color.brandPrimary)
+                }
+                Button {
+                    showingDocumentImporter = true
+                } label: {
+                    Label("Import from PDF", systemImage: "doc.viewfinder")
+                        .foregroundStyle(Color.brandPrimary)
+                }
+            }
+        } footer: {
+            Text("Pick a photo or PDF of a recipe and Apple Intelligence will fill in the form — entirely on your device.")
+        }
+    }
+
     var body: some View {
         @Bindable var viewModel = viewModel
 
         Form {
+            // Apple Intelligence: OCR a recipe photo on-device and prefill the
+            // form. Create-only (so it never clobbers an in-progress edit) and
+            // hidden on devices without on-device Apple Intelligence.
+            if !viewModel.isEditing && viewModel.canScanPhoto {
+                scanSection
+            }
+
             Section("Basics") {
                 TextField("Title", text: $viewModel.title)
                 TextField("Description", text: $viewModel.description, axis: .vertical)
                     .lineLimit(2...4)
+                    .writingToolsBehavior(.complete)
+                if viewModel.canUseWritingTools {
+                    Button {
+                        Task { await viewModel.generateDescription() }
+                    } label: {
+                        if viewModel.isGeneratingDescription {
+                            HStack(spacing: 8) { ProgressView(); Text("Writing…").foregroundStyle(.secondary) }
+                        } else {
+                            Label("Generate Description", systemImage: "sparkles")
+                                .foregroundStyle(Color.brandPrimary)
+                        }
+                    }
+                    .disabled(viewModel.isGeneratingDescription)
+                }
             }
 
             Section("Instructions") {
                 TextField("Step-by-step instructions", text: $viewModel.instructions, axis: .vertical)
                     .lineLimit(4...10)
+                    .writingToolsBehavior(.complete)
             }
 
             Section {
@@ -94,6 +149,19 @@ struct RecipeFormView: View {
 
             Section("Categories") {
                 TextField("Italian, Spicy, ...", text: $viewModel.tagsText)
+                if viewModel.canUseWritingTools {
+                    Button {
+                        Task { await viewModel.suggestTags() }
+                    } label: {
+                        if viewModel.isSuggestingTags {
+                            HStack(spacing: 8) { ProgressView(); Text("Thinking…").foregroundStyle(.secondary) }
+                        } else {
+                            Label("Suggest Tags", systemImage: "sparkles")
+                                .foregroundStyle(Color.brandSage)
+                        }
+                    }
+                    .disabled(viewModel.isSuggestingTags)
+                }
             }
 
             if viewModel.isEditing {
@@ -129,6 +197,43 @@ struct RecipeFormView: View {
             }
         }
         .task { await viewModel.loadIfNeeded() }
+        .onChange(of: scanPickerItem) { _, newItem in
+            guard let newItem else { return }
+            Task {
+                if let data = try? await newItem.loadTransferable(type: Data.self) {
+                    await viewModel.scanRecipe(from: data)
+                }
+                scanPickerItem = nil
+            }
+        }
+        .fileImporter(
+            isPresented: $showingDocumentImporter,
+            allowedContentTypes: [.pdf],
+            allowsMultipleSelection: false
+        ) { result in
+            guard case let .success(urls) = result, let url = urls.first else { return }
+            Task {
+                // The picked file lives outside our sandbox — read it inside a
+                // security-scoped access window before handing bytes to the
+                // on-device importer.
+                let didScope = url.startAccessingSecurityScopedResource()
+                defer { if didScope { url.stopAccessingSecurityScopedResource() } }
+                if let data = try? Data(contentsOf: url) {
+                    await viewModel.importRecipe(fromDocument: data)
+                }
+            }
+        }
+        .alert(
+            "Couldn't Scan Recipe",
+            isPresented: Binding(
+                get: { viewModel.scanErrorMessage != nil },
+                set: { if !$0 { viewModel.scanErrorMessage = nil } }
+            )
+        ) {
+            Button("OK") { viewModel.scanErrorMessage = nil }
+        } message: {
+            Text(viewModel.scanErrorMessage ?? "")
+        }
         .confirmationDialog(
             "Delete this recipe?",
             isPresented: $showingDeleteConfirmation,
