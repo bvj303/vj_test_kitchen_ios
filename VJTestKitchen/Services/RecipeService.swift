@@ -3,7 +3,7 @@ import Supabase
 
 protocol RecipeServicing: Sendable {
     /// Fetches one page of the recipe list (`id` order), optionally narrowed by
-    /// a title substring match, a tag name, a prep-time range (`minPrepTime`/
+    /// a title search (every word must appear, any order — `RecipeSearchTerms`), a tag name, a prep-time range (`minPrepTime`/
     /// `maxPrepTime`, either bound optional — e.g. only `max` for "30 min or
     /// less", only `min` for "Long Cooks"), and/or a minimum ATK rating
     /// (`minAtkRating`, e.g. 4.5 for "4.5+ Stars"). Selects only list-relevant
@@ -74,8 +74,13 @@ struct RecipeService: RecipeServicing {
             .from("recipes")
             .select(columns)
 
-        if let search, !search.isEmpty {
-            query = query.ilike("title", pattern: "%\(Self.escapedForIlike(search))%")
+        // Every word must appear somewhere in the title, in any order (multiple
+        // filters on one column are ANDed) — see RecipeSearchTerms. Each term is
+        // its own trigram-indexed ilike, so this stays fast at catalog scale.
+        if let search {
+            for term in RecipeSearchTerms.terms(from: search) {
+                query = query.ilike("title", pattern: "%\(Self.escapedForIlike(term))%")
+            }
         }
         if let tag, hasTag {
             query = query.eq("recipe_tags.tags.name", value: tag)
