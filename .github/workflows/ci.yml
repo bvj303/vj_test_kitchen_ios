@@ -3,10 +3,10 @@ name: CI
 # Runs the full test suite as a merge gate (Engineering Principles: "deploys
 # come from the pipeline" — this is the CI half; CD lands in a later phase).
 #
-# Verified on the `macos-26` image (Xcode 26.0.1): the macOS sandboxed test host
-# launches with ad-hoc signing and the Deno checks pass. The image ships Xcode 26
-# but NOT the iOS 26 simulator runtime, so the iOS job downloads it (see the
-# "Install the iOS 26 simulator runtime" step). If you're on a different plan/
+# The iOS job runs on the `xcode-27` image (release Xcode 27.0, iOS deployment
+# target 27.0); the macOS job stays on `macos-26` / Xcode 26 (macOS target 26.0). The image
+# ships Xcode but NOT the matching iOS simulator runtime, so the iOS job
+# downloads it (see the "Install the iOS 27 simulator runtime" step). If you're on a different plan/
 # image, adjust the `runs-on` label and the setup-xcode version accordingly.
 
 on:
@@ -22,14 +22,19 @@ concurrency:
 jobs:
   ios-tests:
     name: iOS build & unit tests
-    runs-on: macos-26
+    # `xcode-27` (GitHub public preview, actions/runner-images#14404): macos-26
+    # tops out at Xcode 26.6, which can't build the iOS 27.0 deployment target.
+    runs-on: xcode-27
     steps:
       - uses: actions/checkout@v4
 
-      - name: Select Xcode 26
+      - name: Select Xcode 27
+        # The iOS/iPadOS deployment target is 27.0 (DECISIONS.md, 2026-09-28), which
+        # needs the iOS 27 SDK. Pinned (not latest-stable) so a runner image without
+        # Xcode 27 fails loudly here instead of building with the wrong toolchain.
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: '26.0'
+          xcode-version: '27.0'
 
       - name: Install xcodegen
         run: brew install xcodegen
@@ -45,13 +50,13 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
-      - name: Install the iOS 26 simulator runtime
-        # The macos-26 image ships Xcode 26 but NOT the iOS 26 simulator runtime,
-        # and this app's deployment target is iOS 26 — so the app can't install on
+      - name: Install the iOS 27 simulator runtime
+        # The runner image ships Xcode but NOT the matching iOS simulator runtime,
+        # and this app's iOS deployment target is 27 — so the app can't install on
         # any older runtime. Download the runtime for the selected Xcode.
         run: xcodebuild -downloadPlatform iOS
 
-      - name: Create an iOS 26 simulator
+      - name: Create an iOS 27 simulator
         id: sim
         # Downloading a runtime doesn't auto-create devices, so make one explicitly
         # from the newest available iOS runtime + any iPhone device type.
@@ -59,7 +64,7 @@ jobs:
           RUNTIME=$(xcrun simctl list runtimes -j | python3 -c "import json,sys; r=[x['identifier'] for x in json.load(sys.stdin)['runtimes'] if x.get('isAvailable') and x.get('platform')=='iOS']; print(r[-1] if r else '')")
           # Pick the HIGHEST-numbered iPhone (e.g. iPhone 17) — the devicetypes list
           # is not ordered newest-last (it ends on old models like iPhone 6s Plus,
-          # which are incompatible with an iOS 26 runtime).
+          # which are incompatible with an iOS 27 runtime).
           DEVTYPE=$(xcrun simctl list devicetypes -j | python3 -c "import json,sys,re; c=[(int(re.search(r'(\d+)',x['name']).group(1)),x['identifier']) for x in json.load(sys.stdin)['devicetypes'] if 'iPhone' in x['name'] and re.search(r'\d',x['name'])]; c.sort(); print(c[-1][1] if c else '')")
           if [ -z "$RUNTIME" ] || [ -z "$DEVTYPE" ]; then echo 'No iOS runtime / iPhone device type available'; xcrun simctl list runtimes; exit 1; fi
           echo "Runtime=$RUNTIME  DeviceType=$DEVTYPE"

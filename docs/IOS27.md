@@ -12,20 +12,19 @@ TestFlight builds (6–11) were expired on 2026-09-27. See DECISIONS.md
 
 ## Toolchain
 
-- Builds and tests on **Xcode 26.x and Xcode 27** (Xcode 27 lives at
-  `/Applications/Xcode-beta.app`; use
-  `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer` — no `sudo`,
-  no change to the global `xcode-select`). Verified: the full unit suite passes
-  on an **iOS 27.0 simulator** built with the iOS 27 SDK, and on iOS 26, with
-  zero deprecation warnings (the last ones, `CLGeocoder`, were replaced by
-  MapKit geocoding — `MapKitGeocodingService`).
-- **Deployment target stays 26.0** (iOS/iPadOS/macOS). Everything below ships in
-  the 26 SDK, so iOS 27 users get all of it while family devices still on 26
-  keep getting updates. Gate any future 27-only API with `#available(iOS 27, *)`.
-  Bumping the floor to 27.0 is a one-line-per-target `project.yml` change if we
-  ever want to drop 26.
-- `scripts/deploy-testflight.sh` honors `DEVELOPER_DIR`, so an Xcode-27-built
-  archive of the one app is `DEVELOPER_DIR=… scripts/deploy-testflight.sh`.
+- **iOS/iPadOS deployment target: 27.0** (raised from 26.0 on 2026-09-28). iOS 27
+  dropped no iPhones — every device that ran iOS 26 can update — so the only cost
+  is that family members must be on iOS 27 to receive new app versions. The
+  macOS target stays 26.0.
+- **Requires Xcode 27.** Archives for TestFlight/App Store must use the **release**
+  Xcode 27 (27A266a, released 2026-09-14) — App Store Connect rejects builds from
+  a beta Xcode. The machine's `/Applications/Xcode-beta.app` (27A5218g) is a
+  beta: fine for local builds/tests (`DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer`),
+  **not** for uploads. Install the release Xcode 27 (Mac App Store or
+  developer.apple.com) and select it (`sudo xcode-select -s …` or `DEVELOPER_DIR`)
+  before running `scripts/deploy-testflight.sh`.
+- CI's iOS job selects Xcode 27.0; the macOS job stays on Xcode 26.
+- Last iOS-26-minimum release: **1.4 (build 10)**, uploaded 2026-09-28.
 
 ## What's in the app (from the former `ios27` branch)
 

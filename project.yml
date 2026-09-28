@@ -2,7 +2,7 @@ name: VJTestKitchen
 options:
   bundleIdPrefix: com.bvj303
   deploymentTarget:
-    iOS: "26.0"
+    iOS: "27.0"
     macOS: "26.0"
   developmentLanguage: en
 
@@ -33,7 +33,7 @@ targets:
   VJTestKitchen:
     type: application
     platform: iOS
-    deploymentTarget: "26.0"
+    deploymentTarget: "27.0"
     sources:
       - path: VJTestKitchen
         excludes:
@@ -154,7 +154,7 @@ targets:
   VJTestKitchenWidgets:
     type: app-extension
     platform: iOS
-    deploymentTarget: "26.0"
+    deploymentTarget: "27.0"
     sources:
       - path: VJTestKitchenWidgets
         excludes:
@@ -192,7 +192,7 @@ targets:
   VJTestKitchenTests:
     type: bundle.unit-test
     platform: iOS
-    deploymentTarget: "26.0"
+    deploymentTarget: "27.0"
     sources:
       - path: VJTestKitchenTests
     settings:
