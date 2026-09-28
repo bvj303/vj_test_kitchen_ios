@@ -3,8 +3,8 @@ name: CI
 # Runs the full test suite as a merge gate (Engineering Principles: "deploys
 # come from the pipeline" — this is the CI half; CD lands in a later phase).
 #
-# Runs on the `macos-26` image. The iOS job selects Xcode 27 (iOS deployment
-# target 27.0); the macOS job stays on Xcode 26 (macOS target 26.0). The image
+# The iOS job runs on the `xcode-27` image (release Xcode 27.0, iOS deployment
+# target 27.0); the macOS job stays on `macos-26` / Xcode 26 (macOS target 26.0). The image
 # ships Xcode but NOT the matching iOS simulator runtime, so the iOS job
 # downloads it (see the "Install the iOS 27 simulator runtime" step). If you're on a different plan/
 # image, adjust the `runs-on` label and the setup-xcode version accordingly.
@@ -22,7 +22,9 @@ concurrency:
 jobs:
   ios-tests:
     name: iOS build & unit tests
-    runs-on: macos-26
+    # `xcode-27` (GitHub public preview, actions/runner-images#14404): macos-26
+    # tops out at Xcode 26.6, which can't build the iOS 27.0 deployment target.
+    runs-on: xcode-27
     steps:
       - uses: actions/checkout@v4
 
