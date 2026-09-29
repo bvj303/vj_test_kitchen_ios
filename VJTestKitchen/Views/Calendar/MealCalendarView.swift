@@ -36,6 +36,11 @@ struct MealCalendarView: View {
     /// planner (which sits above the agenda) into view first.
     @FocusState private var plannerSearchFocused: Bool
     @State private var pendingPlannerScroll = false
+    /// The agenda day at the top of the scroll view. Owned here — above the
+    /// compact/regular layout switch — and bound into both layouts' scroll views,
+    /// so opening or closing iPhone Duo (which flips the size class and swaps the
+    /// layout) keeps the user's place instead of jumping back to the top.
+    @State private var scrollAnchorDay: String?
 
     /// Caps the agenda column's width so a landscape iPad reads as a centered
     /// schedule column rather than rows spanning the whole display.
@@ -117,6 +122,7 @@ struct MealCalendarView: View {
                 .padding()
             }
             .scrollDismissesKeyboard(.interactively)
+            .scrollPosition(id: $scrollAnchorDay, anchor: .top)
             // An empty day's "Add a meal" tap scrolls the planner (above the
             // agenda) into view before focusing its search field.
             .onChange(of: pendingPlannerScroll) { _, pending in
@@ -137,17 +143,20 @@ struct MealCalendarView: View {
         plannerSearchFocused = true
     }
 
-    /// iPad (portrait and landscape): a fixed planner sidebar beside a
-    /// width-constrained, centered agenda column.
+    /// Regular width (iPad, the iPhone Duo inner display): the Quick Planner and
+    /// the agenda as two panes of a split arrangement — side by side, or stacked
+    /// when the space is taller than wide — each wholly on one side of the fold
+    /// when iPhone Duo is partially folded. Before iOS 27.1 (and on macOS) it's
+    /// the planner sidebar beside the agenda. The agenda stays width-capped and
+    /// centered within its pane.
     private var regularLayout: some View {
-        HStack(alignment: .top, spacing: 24) {
+        PlatformSplitArrangement(fallbackPrimaryWidth: 340) {
             ScrollView {
                 quickPlanner
                     .padding(.vertical)
             }
-            .frame(width: 340)
             .scrollDismissesKeyboard(.interactively)
-
+        } secondary: {
             ScrollView {
                 VStack(spacing: 20) {
                     weekHeader
@@ -158,6 +167,10 @@ struct MealCalendarView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical)
             }
+            // Shared with the compact layout, so the same day stays at the top
+            // when iPhone Duo opens or closes (the size class flips and the other
+            // layout takes over).
+            .scrollPosition(id: $scrollAnchorDay, anchor: .top)
         }
         .padding(.horizontal)
     }
@@ -218,11 +231,14 @@ struct MealCalendarView: View {
         VStack(spacing: 0) {
             ForEach(Array(viewModel.weekDates.enumerated()), id: \.element) { index, date in
                 dayRow(date)
+                    .id(date)
                 if index < viewModel.weekDates.count - 1 {
                     Divider().padding(.leading, 76)
                 }
             }
         }
+        // Day rows are the scroll-position targets (see scrollAnchorDay).
+        .scrollTargetLayout()
         .surface(.card, radius: Surface.Radius.large)
         // Clip per-row backgrounds (today's highlight) to the card's rounded
         // corners so they can't poke past the top/bottom edges.
