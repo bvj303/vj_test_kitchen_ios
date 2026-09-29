@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// Spatch's single fixed **perch** — the non-blocking replacement for the old
-/// random-corner pop-in cameo. He sits in one place (bottom-trailing, above the
-/// tab bar), always the same anchor, and *every* screen routes its commentary
+/// random-corner pop-in cameo. He sits in one place (bottom-trailing, clear of
+/// the bars), always the same anchor, and *every* screen routes its commentary
 /// through the shared `SpatchPerchViewModel` instead of hosting its own overlay.
 /// Because the perch lives in a fixed corner and a tip never forces its bubble
 /// open, it structurally cannot land over a card title or stat tile the way the
@@ -22,10 +22,10 @@ import SwiftUI
 /// coordinator's registry so a flyby won't start over an open bubble.
 struct SpatchPerchView: View {
     var viewModel: SpatchPerchViewModel
-    /// Extra bottom padding so the perch clears whatever sits at the bottom of
-    /// the host. Defaults to the floating tab bar's height on iPhone; surfaces
-    /// without a tab bar (e.g. Cook Mode) pass a small value.
-    var bottomClearance: CGFloat? = nil
+    /// Bottom padding inside the host's safe area. The host's safe area already
+    /// excludes its bars (the bottom tab bar on iPhone, or iPhone Duo's side
+    /// controls column), so this is just breathing room.
+    var bottomClearance: CGFloat = 12
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     // Optional so previews / tests without the app root's injection still work.
@@ -54,10 +54,11 @@ struct SpatchPerchView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-        // Lift clear of the floating tab bar so the perch sits above it, never
-        // over a tab button.
+        // Inside the host's safe area, which already excludes its bars — so the
+        // perch clears the tab bar wherever the system puts it (bottom on iPhone,
+        // a side column on iPhone Duo) without assuming a position.
         .padding(.trailing, 16)
-        .padding(.bottom, (bottomClearance ?? (horizontalSizeClass == .regular ? 20 : 68)) + viewModel.extraBottomInset)
+        .padding(.bottom, bottomClearance + viewModel.extraBottomInset)
         .animation(.easeInOut(duration: 0.25), value: viewModel.extraBottomInset)
         .animation(.spring(response: 0.4, dampingFraction: 0.7), value: isShowing)
         .animation(.spring(response: 0.45, dampingFraction: 0.7), value: viewModel.isExpanded)

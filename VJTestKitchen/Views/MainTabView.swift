@@ -30,24 +30,42 @@ struct MainTabView: View {
     @Environment(SpatchPerchViewModel.self) private var spatchPerchViewModel
     @State private var selection: AppTab = .home
     @State private var showLocationPrompt = false
+    /// Whether iPhone Duo is partially folded. Spatch's full-screen flybys sit
+    /// out while it is, rather than flying through the crease.
+    @State private var isFoldActive = false
+
+    /// Spatch's single fixed perch — one anchor every screen posts its
+    /// commentary to, so a tip can never float over card titles the way the old
+    /// random-corner cameo did. Overlaid on the *selected tab's content* (not
+    /// layered above the whole TabView) so it inherits that tab's real safe area:
+    /// above the bottom tab bar on iPhone, and beside the side controls column on
+    /// iPhone Duo — rather than a hardcoded bottom offset that assumed the tab bar
+    /// always sits at the bottom. Only the visible tab hosts one, so there's still
+    /// a single perch. Hidden during the tour and stunts (see SpatchPerchView).
+    @ViewBuilder
+    private func perch(on tab: AppTab) -> some View {
+        if selection == tab {
+            SpatchPerchView(viewModel: spatchPerchViewModel)
+        }
+    }
 
     var body: some View {
         ZStack {
             TabView(selection: $selection) {
                 Tab("Home", systemImage: "house", value: AppTab.home) {
-                    HomeTab()
+                    HomeTab().overlay { perch(on: .home) }
                 }
                 Tab("Recipes", systemImage: "fork.knife", value: AppTab.recipes) {
-                    RecipesTab()
+                    RecipesTab().overlay { perch(on: .recipes) }
                 }
                 Tab("Groceries", systemImage: "cart", value: AppTab.grocery) {
-                    GroceryListTab()
+                    GroceryListTab().overlay { perch(on: .grocery) }
                 }
                 Tab("AI Planner", systemImage: "sparkles", value: AppTab.planner) {
-                    AIPlannerTab()
+                    AIPlannerTab().overlay { perch(on: .planner) }
                 }
                 Tab("Calendar", systemImage: "calendar", value: AppTab.calendar) {
-                    CalendarTab()
+                    CalendarTab().overlay { perch(on: .calendar) }
                 }
             }
             // The real screens must be inert while the tour narrates over
@@ -64,12 +82,6 @@ struct MainTabView: View {
             // above the tabs (below the walkthrough, though the coordinator
             // never runs the two at once). See SpatchStuntCoordinator.
             SpatchStuntStageView()
-
-            // Spatch's single fixed perch — one anchor every screen posts its
-            // commentary to, so a tip can never float over card titles the way
-            // the old random-corner cameo did. Hosted once here (hidden during
-            // the tour and stunts). See SpatchPerchView.
-            SpatchPerchView(viewModel: spatchPerchViewModel)
 
             // Spatch's walkthrough overlays the real tabs (rather than
             // covering them in a sheet) and drives `selection` itself as it
@@ -104,13 +116,18 @@ struct MainTabView: View {
         // visibility is tracked inside the coordinator by the cameo views.
         .task {
             await spatchStuntCoordinator.run {
-                settingsViewModel.showSpatch && !spatchTutorialViewModel.isPresented
+                settingsViewModel.showSpatch && !spatchTutorialViewModel.isPresented && !isFoldActive
             }
         }
         // Turning Spatch off mid-performance yanks him off stage immediately
         // rather than letting the current flyby finish.
         .onChange(of: settingsViewModel.showSpatch) { _, show in
             if !show { spatchStuntCoordinator.cancelActiveStunt() }
+        }
+        // Folding mid-flyby likewise ends it right away.
+        .onFoldActiveChange { active in
+            isFoldActive = active
+            if active { spatchStuntCoordinator.cancelActiveStunt() }
         }
         // Follow the tour's target tab live, so each step shows the real
         // screen rather than a static mockup.

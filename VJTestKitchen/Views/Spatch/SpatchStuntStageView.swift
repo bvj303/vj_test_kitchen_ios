@@ -29,7 +29,11 @@ struct SpatchStuntStageView: View {
             }
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
         }
-        .ignoresSafeArea()
+        // The stage is the safe area, clipped — so a flyby slides in from the
+        // safe-area edge and never draws over the camera (the Dynamic Island, or
+        // iPhone Duo's outer camera in the side controls column) or the status
+        // bar. (MainTabView also sits stunts out while a fold is active.)
+        .clipped()
         .allowsHitTesting(false)
     }
 }
