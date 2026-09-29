@@ -201,6 +201,23 @@ targets:
     dependencies:
       - target: VJTestKitchen
 
+  # Layout pass over every screen for iPhone Duo's configurations (and standard
+  # iPhones/iPad): screenshots + state-preservation checks. UI tests need a
+  # signed-in account, so they live in their own scheme and are NOT run by CI —
+  # see VJTestKitchenUITests/DuoLayoutUITests.swift for how to run them.
+  VJTestKitchenUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "27.0"
+    sources:
+      - path: VJTestKitchenUITests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: VJTestKitchen
+    dependencies:
+      - target: VJTestKitchen
+
   # Same test sources as the iOS suite, compiled for macOS — the CI proof that
   # the Platform/ shims behave on the platform that actually differs.
   VJTestKitchenMacTests:
@@ -235,5 +252,19 @@ schemes:
     test:
       targets:
         - VJTestKitchenMacTests
+    run:
+      config: Debug
+
+  # iPhone Duo layout pass (UI tests) — run manually per device pose; see
+  # VJTestKitchenUITests/DuoLayoutUITests.swift. Kept out of the VJTestKitchen
+  # scheme so CI's unit-test run doesn't pick it up.
+  VJTestKitchenDuoUITests:
+    build:
+      targets:
+        VJTestKitchen: all
+        VJTestKitchenUITests: [test]
+    test:
+      targets:
+        - VJTestKitchenUITests
     run:
       config: Debug
