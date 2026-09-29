@@ -1,7 +1,6 @@
 import SwiftUI
 
 struct GroceryListView: View {
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(AppCommands.self) private var appCommands
     @State private var viewModel = GroceryListViewModel()
     @State private var showingClearConfirmation = false
@@ -12,61 +11,41 @@ struct GroceryListView: View {
     /// item's name and its quantity).
     private static let contentMaxWidth: CGFloat = 680
 
-    /// The floating "+" FAB is a one-handed reach affordance that only makes
-    /// sense on a compact iPhone. On iPad (regular width) and macOS the add
-    /// action lives in the toolbar instead.
-    private var usesToolbarAdd: Bool {
-        #if os(macOS)
-        return true
-        #else
-        return horizontalSizeClass == .regular
-        #endif
-    }
-
     var body: some View {
         content
             .navigationTitle("Grocery List")
             .toolbar {
-                ToolbarItem(placement: .platformLeading) {
-                    if !viewModel.isEmpty {
-                        Menu {
-                            Button {
-                                Task { await viewModel.exportToReminders() }
-                            } label: {
-                                Label("Export to Apple Reminders", systemImage: "square.and.arrow.up")
-                            }
-                            Divider()
-                            Button(role: .destructive) {
-                                showingClearConfirmation = true
-                            } label: {
-                                Label("Clear List", systemImage: "trash")
-                            }
-                        } label: {
-                            Image(systemName: "ellipsis.circle")
-                        }
-                        .accessibilityLabel("List Options")
+                // One Add button in the same place in every pose and width — the
+                // old compact-only floating "+" turned into a toolbar button on
+                // wide layouts, so it jumped when iPhone Duo opened or closed. A
+                // standard toolbar item also moves into Duo's side controls column
+                // with the other bars. High priority: it's this screen's main action.
+                ToolbarItem(placement: .platformPrimaryAction) {
+                    Button {
+                        showingAddItem = true
+                    } label: {
+                        Label("Add Item", systemImage: "plus")
                     }
                 }
-                // A floating FAB only makes sense on a compact iPhone (one-handed
-                // reach). On iPad (regular width) and macOS — where the FAB would
-                // also anchor to the centered empty-state view, landing the "+"
-                // mid-window — use a standard toolbar button, matching the
-                // Recipes list.
-                if usesToolbarAdd {
-                    ToolbarItem(placement: .platformPrimaryAction) {
+                .platformVisibilityPriority(.high)
+                // List-level actions go in the system overflow menu (HIG: move
+                // your own overflow actions there, and reserve the ellipsis for it)
+                // rather than a custom ellipsis menu.
+                if !viewModel.isEmpty {
+                    PlatformOverflowMenu {
                         Button {
-                            showingAddItem = true
+                            Task { await viewModel.exportToReminders() }
                         } label: {
-                            Label("Add Item", systemImage: "plus")
+                            Label("Export to Apple Reminders", systemImage: "square.and.arrow.up")
+                        }
+                        Button(role: .destructive) {
+                            showingClearConfirmation = true
+                        } label: {
+                            Label("Clear List", systemImage: "trash")
                         }
                     }
                 }
             }
-            #if os(iOS)
-            .overlay(alignment: .bottomTrailing) {
-                if !usesToolbarAdd { addButton }
-            }
-            #endif
             .task { await viewModel.load() }
             .refreshable { await viewModel.load() }
             .sheet(isPresented: $showingAddItem) {
@@ -139,7 +118,7 @@ struct GroceryListView: View {
                 }
                 .pickerStyle(.segmented)
                 // Keep the segmented control a natural width rather than letting
-                // it stretch the full window.
+                // it stretch the full column.
                 .frame(maxWidth: 420)
                 .padding(.horizontal)
                 .padding(.vertical, 8)
@@ -158,27 +137,11 @@ struct GroceryListView: View {
                 }
                 .platformInsetGroupedListStyle()
             }
-            // Center the whole checklist in a readable column on wide screens.
-            .frame(maxWidth: Self.contentMaxWidth)
-            .frame(maxWidth: .infinity)
+            // A readable, centered column on wide screens — and on a partially
+            // folded iPhone Duo, wholly on one side of the fold so no row or the
+            // Group By control sits on the crease.
+            .foldAwareColumn(maxWidth: Self.contentMaxWidth)
         }
-    }
-
-    /// Large, thumb-reachable floating "add" button pinned to the bottom-trailing
-    /// corner — replaces the old top-bar "+" so it's easy to reach one-handed.
-    private var addButton: some View {
-        Button {
-            showingAddItem = true
-        } label: {
-            Image(systemName: "plus")
-                .font(.title2.weight(.semibold))
-                .frame(width: 60, height: 60)
-        }
-        .buttonStyle(.glassProminent)
-        .tint(Color.brandPrimary)
-        .clipShape(Circle())
-        .padding(20)
-        .accessibilityLabel("Add Item")
     }
 
     private func rowView(_ row: GroceryDisplayRow) -> some View {

@@ -48,10 +48,10 @@ struct AddToCalendarSheet: View {
             .inlineNavigationTitle()
             .toolbar {
                 ToolbarItem(placement: .platformCancellation) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel", systemImage: "xmark") { dismiss() }
                 }
                 ToolbarItem(placement: .platformPrimaryAction) {
-                    Button("Add") {
+                    Button("Add", systemImage: "plus") {
                         Task {
                             await viewModel.add()
                             if viewModel.didAdd { dismiss() }

@@ -54,10 +54,10 @@ struct AddGroceryItemSheet: View {
             .keyboardDoneButton()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel", systemImage: "xmark") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Add") {
+                    Button("Add", systemImage: "plus") {
                         let amount = IngredientAmountParser.parse(amountText) ?? 0
                         onAdd(name, amount, unit, category)
                         dismiss()
