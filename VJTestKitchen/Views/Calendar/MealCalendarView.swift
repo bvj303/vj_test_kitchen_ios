@@ -2,17 +2,25 @@ import SwiftUI
 
 /// Week-at-a-glance meal calendar rendered as a Google-Calendar-style
 /// "Schedule" (agenda) list: one continuous list of the week's days, each day a
-/// leading date column beside that day's holiday + meal entries. Adapts to
-/// width via the horizontal size class — iPhone stacks the Quick Planner above
-/// the agenda in one scroll; iPad (including landscape) puts the planner in a
-/// fixed sidebar beside a width-constrained agenda column so wide screens stay
-/// readable instead of stretching rows edge to edge.
+/// leading date column beside that day's holiday + meal entries. Adapts to the
+/// space it has (`CalendarLayout`): a portrait phone stacks the Quick Planner
+/// above the agenda in one scroll; iPad, wide compact screens (iPhone Duo's inner
+/// display in landscape) and a book-style fold put the planner in a pane beside a
+/// width-constrained agenda column — on iPhone Duo each pane wholly on one side
+/// of the fold.
 struct MealCalendarView: View {
     @State private var viewModel = MealCalendarViewModel()
 
-    // iPad gets the sidebar-beside-agenda layout; iPhone stays a single
-    // scrolling column. Same size-class gate as RecipesTab.
+    // Regular width always gets the planner-beside-agenda split; compact widths
+    // get it too when there's room or a fold to respect (see CalendarLayout).
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    /// The calendar's measured width and whether a vertical fold crosses it —
+    /// the inputs, with the size class, to `CalendarLayout.resolve`.
+    @State private var containerWidth: CGFloat = 0
+    @State private var hasVerticalFold = false
+    /// Pane widths for the compact-width split, from its own measured width
+    /// and fold position.
+    @State private var panes = CalendarLayout.Panes(plannerWidth: 260, spacing: CalendarLayout.paneSpacing)
     // meal_plans is account-synced via Supabase, so re-sync when the app returns
     // to the foreground — edits made on another device then show up without a
     // manual pull-to-refresh.
@@ -58,10 +66,18 @@ struct MealCalendarView: View {
 
     var body: some View {
         Group {
-            if horizontalSizeClass == .regular {
-                regularLayout
-            } else {
-                compactLayout
+            switch layout {
+            case .split: splitLayout
+            case .stacked: compactLayout
+            }
+        }
+        .background {
+            GeometryReader { proxy in
+                let key = LayoutInputs(width: proxy.size.width, hasVerticalFold: !activeVerticalFolds(in: proxy).isEmpty)
+                Color.clear.onChange(of: key, initial: true) { _, key in
+                    containerWidth = key.width
+                    hasVerticalFold = key.hasVerticalFold
+                }
             }
         }
         .screenBackground()
@@ -97,11 +113,24 @@ struct MealCalendarView: View {
 
     // MARK: - Layouts
 
+    private struct LayoutInputs: Equatable {
+        var width: CGFloat
+        var hasVerticalFold: Bool
+    }
+
+    private var layout: CalendarLayout {
+        CalendarLayout.resolve(
+            isRegularWidth: horizontalSizeClass == .regular,
+            containerWidth: containerWidth,
+            hasVerticalFold: hasVerticalFold
+        )
+    }
+
     /// iPhone: Quick Planner then the agenda list, one scroll.
     private var compactLayout: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                VStack(spacing: 20) {
+                VStack(spacing: 16) {
                     weekHeader
                     quickPlanner
                         .id(Self.plannerAnchor)
@@ -132,36 +161,78 @@ struct MealCalendarView: View {
         plannerSearchFocused = true
     }
 
-    /// Regular width (iPad, the iPhone Duo inner display): the Quick Planner and
+    /// `CalendarLayout.split` (iPad, wide compact screens, a book-style fold): the Quick Planner and
     /// the agenda as two panes of a split arrangement — side by side, or stacked
     /// when the space is taller than wide — each wholly on one side of the fold
     /// when iPhone Duo is partially folded. Before iOS 27.1 (and on macOS) it's
     /// the planner sidebar beside the agenda. The agenda stays width-capped and
     /// centered within its pane.
-    private var regularLayout: some View {
-        PlatformSplitArrangement(fallbackPrimaryWidth: 340) {
-            ScrollView {
-                quickPlanner
-                    .padding(.vertical)
+    @ViewBuilder
+    private var splitLayout: some View {
+        if horizontalSizeClass == .regular {
+            PlatformSplitArrangement(fallbackPrimaryWidth: 340) {
+                plannerPane
+            } secondary: {
+                agendaPane
             }
-            .scrollDismissesKeyboard(.interactively)
-        } secondary: {
-            ScrollView {
-                VStack(spacing: 20) {
-                    weekHeader
-                    agendaList
-                    weatherAttributionFooter
+            .padding(.horizontal)
+        } else {
+            compactSplit
+        }
+    }
+
+    /// The compact-width split (iPhone Duo's inner display): `ArrangementView`
+    /// keeps to the size class and shows only one pane in compact width, so the
+    /// two panes are placed here — around the crease when the display is folded
+    /// like a book (see `CalendarLayout.panes`).
+    private var compactSplit: some View {
+        HStack(alignment: .top, spacing: panes.spacing) {
+            plannerPane.frame(width: panes.plannerWidth)
+            agendaPane
+        }
+        .background {
+            GeometryReader { proxy in
+                let key = PaneInputs(width: proxy.size.width, folds: activeVerticalFolds(in: proxy))
+                Color.clear.onChange(of: key, initial: true) { _, key in
+                    panes = CalendarLayout.panes(
+                        containerWidth: key.width,
+                        verticalFolds: key.folds,
+                        preferredPlannerWidth: 260
+                    )
                 }
-                .frame(maxWidth: Self.agendaMaxWidth)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical)
             }
-            // Shared with the compact layout, so the same day stays at the top
-            // when iPhone Duo opens or closes (the size class flips and the other
-            // layout takes over).
-            .scrollPosition(id: $scrollAnchorDay, anchor: .top)
         }
         .padding(.horizontal)
+    }
+
+    private struct PaneInputs: Equatable {
+        var width: CGFloat
+        var folds: [ClosedRange<CGFloat>]
+    }
+
+    private var plannerPane: some View {
+        ScrollView {
+            quickPlanner
+                .padding(.vertical)
+        }
+        .scrollDismissesKeyboard(.interactively)
+    }
+
+    private var agendaPane: some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                weekHeader
+                agendaList
+                weatherAttributionFooter
+            }
+            .frame(maxWidth: Self.agendaMaxWidth)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical)
+        }
+        // Shared with the compact layout, so the same day stays at the top
+        // when iPhone Duo opens or closes (the size class flips and the other
+        // layout takes over).
+        .scrollPosition(id: $scrollAnchorDay, anchor: .top)
     }
 
     // MARK: - Week header
@@ -170,9 +241,9 @@ struct MealCalendarView: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(viewModel.isCurrentWeek ? "This Week" : "Schedule")
-                    .font(.title2.weight(.bold))
+                    .font(.title3.weight(.bold))
                 Text(weekRangeLabel)
-                    .font(.subheadline)
+                    .font(.footnote)
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
@@ -203,9 +274,9 @@ struct MealCalendarView: View {
     private func weekArrow(_ systemImage: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.subheadline.weight(.semibold))
+                .font(.footnote.weight(.semibold))
                 .foregroundStyle(Color.brandPrimary)
-                .frame(width: 34, height: 34)
+                .frame(width: 30, height: 30)
                 .glassEffect(.regular.tint(Color.brandPrimary.opacity(0.12)), in: Circle())
         }
         .buttonStyle(.plain)
@@ -222,7 +293,8 @@ struct MealCalendarView: View {
                 dayRow(date)
                     .id(date)
                 if index < viewModel.weekDates.count - 1 {
-                    Divider().padding(.leading, 76)
+                    // Lines up with the meal column: row padding + date column + spacing.
+                    Divider().padding(.leading, 64)
                 }
             }
         }
@@ -241,7 +313,7 @@ struct MealCalendarView: View {
         let isToday = viewModel.isToday(date)
         let forecast = viewModel.forecast(for: date)
 
-        HStack(alignment: .top, spacing: 16) {
+        HStack(alignment: .top, spacing: 12) {
             dateColumn(date, isToday: isToday)
 
             VStack(alignment: .leading, spacing: 8) {
@@ -274,7 +346,7 @@ struct MealCalendarView: View {
                     }
                     .buttonStyle(.plain)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 4)
+                    .padding(.vertical, 2)
                     .accessibilityLabel("Add a meal on \(Self.dayPickerLabel(for: date))")
                     .accessibilityHint("Opens the Quick Planner for this day")
                 } else {
@@ -283,8 +355,8 @@ struct MealCalendarView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.vertical, 14)
-        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .padding(.horizontal, 12)
         .background(
             (isToday ? Color.brandPrimary.opacity(0.07) : .clear)
         )
@@ -309,14 +381,14 @@ struct MealCalendarView: View {
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(isToday ? Color.brandPrimary : .secondary)
             Text(Self.dayNumberFormatter.string(from: parsedDate))
-                .font(.title3.weight(.semibold))
+                .font(.body.weight(.semibold))
                 .foregroundStyle(isToday ? .white : .primary)
-                .frame(width: 38, height: 38)
+                .frame(width: 32, height: 32)
                 .background(
                     Circle().fill(isToday ? AnyShapeStyle(Color.brandPrimary) : AnyShapeStyle(Color.clear))
                 )
         }
-        .frame(width: 46)
+        .frame(width: 40)
     }
 
     /// A compact, glanceable weather chip tucked into a day's top-right corner: a
@@ -431,17 +503,17 @@ struct MealCalendarView: View {
     private var quickPlanner: some View {
         @Bindable var viewModel = viewModel
 
-        return VStack(alignment: .leading, spacing: 12) {
+        return VStack(alignment: .leading, spacing: 10) {
             Label("Quick Planner", systemImage: "calendar.badge.clock")
-                .font(.headline)
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(Color.brandPrimary)
 
-            Picker("Meal", selection: $viewModel.selectedMealType) {
-                ForEach(MealCalendarViewModel.mealTypes, id: \.self) { type in
-                    Text(type).tag(type)
-                }
+            // Segmented when all four meal types fit; a menu in a narrow pane
+            // (one side of iPhone Duo's fold) instead of truncated segments.
+            ViewThatFits(in: .horizontal) {
+                mealTypePicker.pickerStyle(.segmented)
+                mealTypePicker.pickerStyle(.menu)
             }
-            .pickerStyle(.segmented)
 
             Picker("Day", selection: $viewModel.selectedPlanningDate) {
                 ForEach(viewModel.weekDates, id: \.self) { date in
@@ -477,8 +549,17 @@ struct MealCalendarView: View {
                 }
             }
         }
-        .padding()
+        .padding(14)
         .surface(.card, radius: Surface.Radius.large)
+    }
+
+    private var mealTypePicker: some View {
+        @Bindable var viewModel = viewModel
+        return Picker("Meal", selection: $viewModel.selectedMealType) {
+            ForEach(MealCalendarViewModel.mealTypes, id: \.self) { type in
+                Text(type).tag(type)
+            }
+        }
     }
 
     // MARK: - Formatting helpers

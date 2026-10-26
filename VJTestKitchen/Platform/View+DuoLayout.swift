@@ -119,9 +119,15 @@ extension View {
 /// HIG's recommendation for any layout that's already an HStack of two panes.
 /// Before 27.1 and on macOS it falls back to the plain side-by-side layout with a
 /// fixed-width primary pane. Keep navigation containers outside it (HIG).
+///
+/// `ArrangementView` butts the two panes together at the fold with no gap, so
+/// each pane gets `paneClearance` on the edge facing the other — otherwise a
+/// card or header in either pane runs right up to (and visually across) the
+/// crease.
 struct PlatformSplitArrangement<Primary: View, Secondary: View>: View {
     var fallbackPrimaryWidth: CGFloat
     var fallbackSpacing: CGFloat = 24
+    var paneClearance: CGFloat = 12
     @ViewBuilder var primary: Primary
     @ViewBuilder var secondary: Secondary
 
@@ -129,9 +135,9 @@ struct PlatformSplitArrangement<Primary: View, Secondary: View>: View {
         #if os(iOS)
         if #available(iOS 27.1, *) {
             ArrangementView {
-                primary
+                primary.padding(.trailing, paneClearance)
             } secondary: {
-                secondary
+                secondary.padding(.leading, paneClearance)
             }
             .arrangementViewStyle(.split)
         } else {
