@@ -3,8 +3,8 @@ name: CI
 # Runs the full test suite as a merge gate (Engineering Principles: "deploys
 # come from the pipeline" — this is the CI half; CD lands in a later phase).
 #
-# The iOS job runs on the `xcode-27` image (release Xcode 27.0, iOS deployment
-# target 27.0); the macOS job stays on `macos-26` / Xcode 26 (macOS target 26.0). The image
+# The iOS job runs on the `xcode-27` image (release Xcode 27.1 — the iPhone Duo
+# layout uses iOS 27.1 SDK APIs; iOS deployment target stays 27.0); the macOS job stays on `macos-26` / Xcode 26 (macOS target 26.0). The image
 # ships Xcode but NOT the matching iOS simulator runtime, so the iOS job
 # downloads it (see the "Install the iOS 27 simulator runtime" step). If you're on a different plan/
 # image, adjust the `runs-on` label and the setup-xcode version accordingly.
@@ -28,13 +28,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Select Xcode 27
-        # The iOS/iPadOS deployment target is 27.0 (DECISIONS.md, 2026-09-28), which
-        # needs the iOS 27 SDK. Pinned (not latest-stable) so a runner image without
-        # Xcode 27 fails loudly here instead of building with the wrong toolchain.
+      - name: Select Xcode 27.1
+        # The iOS/iPadOS deployment target is 27.0 (DECISIONS.md, 2026-09-28), but the
+        # iPhone Duo layout calls iOS 27.1 SDK APIs (ReservedRegion, ArrangementView,
+        # toolbarVerticalCompressionBehavior) behind `#available` — which guards at
+        # runtime only, so they don't compile against the 27.0 SDK. Pinned (not
+        # latest-stable) so a runner image without Xcode 27.1 fails loudly here.
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: '27.0'
+          xcode-version: '27.1'
 
       - name: Install xcodegen
         run: brew install xcodegen
