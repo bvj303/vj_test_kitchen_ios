@@ -7,6 +7,7 @@ enum SnapshotKey: String, CaseIterable, Sendable {
     case groceryItems
     case mealPlansWindow
     case homeShelf
+    case conciergeChat
 }
 
 /// A tiny last-known-good cache for each screen's loaded data, so launches

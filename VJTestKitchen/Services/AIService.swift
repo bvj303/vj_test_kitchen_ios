@@ -3,7 +3,7 @@ import Supabase
 
 /// A recipe the assistant surfaced (from its `search_recipes` tool). The Planner
 /// renders tappable cards for the ones actually named in the reply.
-struct AIRecipeRef: Decodable, Sendable, Hashable, Identifiable {
+struct AIRecipeRef: Codable, Sendable, Hashable, Identifiable {
     let id: Int64
     let title: String
 }
@@ -11,7 +11,7 @@ struct AIRecipeRef: Decodable, Sendable, Hashable, Identifiable {
 /// A proposed "add these recipes to the calendar" action. The concierge never
 /// writes — the client renders this as a confirm-to-apply control and performs
 /// the write only on explicit user tap.
-struct AIMealPlanProposal: Decodable, Sendable, Hashable {
+struct AIMealPlanProposal: Codable, Sendable, Hashable {
     let recipeId: Int64
     let recipeTitle: String
     let date: String
@@ -19,14 +19,14 @@ struct AIMealPlanProposal: Decodable, Sendable, Hashable {
 }
 
 /// One proposed grocery item (amount/unit optional).
-struct AIGroceryProposalItem: Decodable, Sendable, Hashable {
+struct AIGroceryProposalItem: Codable, Sendable, Hashable {
     let name: String
     let amount: Double?
     let unit: String?
 }
 
 /// A proposed "add these ingredients to the grocery list" action.
-struct AIGroceryProposal: Decodable, Sendable, Hashable {
+struct AIGroceryProposal: Codable, Sendable, Hashable {
     let recipeId: Int64?
     let recipeTitle: String?
     let items: [AIGroceryProposalItem]
@@ -35,7 +35,9 @@ struct AIGroceryProposal: Decodable, Sendable, Hashable {
 /// A proposed write action the concierge surfaced. Every case requires an
 /// explicit user confirmation in the UI before anything is written. `.unknown`
 /// tolerates action types a future server adds that this build doesn't render.
-enum AIChatAction: Decodable, Sendable, Hashable, Identifiable {
+/// `Encodable` writes the same flat wire shape it decodes, so a saved chat
+/// (see `AIPlannerViewModel`) round-trips.
+enum AIChatAction: Codable, Sendable, Hashable, Identifiable {
     case addToMealPlan(AIMealPlanProposal)
     case addToGroceryList(AIGroceryProposal)
     case unknown
@@ -49,6 +51,25 @@ enum AIChatAction: Decodable, Sendable, Hashable, Identifiable {
         case "add_to_grocery_list": self = .addToGroceryList(try AIGroceryProposal(from: decoder))
         default: self = .unknown
         }
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case let .addToMealPlan(proposal):
+            try container.encode("add_to_meal_plan", forKey: .type)
+            try proposal.encode(to: encoder)
+        case let .addToGroceryList(proposal):
+            try container.encode("add_to_grocery_list", forKey: .type)
+            try proposal.encode(to: encoder)
+        case .unknown:
+            try container.encode("unknown", forKey: .type)
+        }
+    }
+
+    var isMealPlan: Bool {
+        if case .addToMealPlan = self { return true }
+        return false
     }
 
     var id: String {
