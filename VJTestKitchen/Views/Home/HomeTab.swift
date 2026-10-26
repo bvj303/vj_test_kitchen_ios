@@ -14,6 +14,7 @@ struct HomeTab: View {
                     ToolbarItem(placement: .platformPrimaryAction) {
                         AccountButton()
                     }
+                    .platformVisibilityPriority(.low)
                 }
         }
     }

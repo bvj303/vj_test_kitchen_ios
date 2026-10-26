@@ -8,6 +8,7 @@ struct GroceryListTab: View {
                     ToolbarItem(placement: .platformPrimaryAction) {
                         AccountButton()
                     }
+                    .platformVisibilityPriority(.low)
                 }
         }
     }

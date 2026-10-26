@@ -231,6 +231,17 @@ extension ToolbarItemPlacement {
         #endif
     }
 
+    /// A prominent Done/close pinned to the trailing edge: `.topBarPinnedTrailing`
+    /// on iOS (Apple's placement for Done — it stays at the top of iPhone Duo's
+    /// vertical controls column), `.confirmationAction` on macOS.
+    static var platformPinnedTrailing: ToolbarItemPlacement {
+        #if os(iOS)
+        .topBarPinnedTrailing
+        #else
+        .confirmationAction
+        #endif
+    }
+
     /// Leading slot for a non-cancel control (e.g. an overflow menu):
     /// `.topBarLeading` on iOS, `.automatic` on macOS.
     static var platformLeading: ToolbarItemPlacement {

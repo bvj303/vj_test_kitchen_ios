@@ -180,11 +180,11 @@ struct RecipeFormView: View {
         .toolbar {
             if showsCancelButton {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel", systemImage: "xmark") { dismiss() }
                 }
             }
             ToolbarItem(placement: .confirmationAction) {
-                Button("Save") {
+                Button("Save", systemImage: "checkmark") {
                     Task {
                         await viewModel.save()
                         if viewModel.didSave {

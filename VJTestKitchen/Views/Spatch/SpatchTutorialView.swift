@@ -55,7 +55,9 @@ struct SpatchTutorialView: View {
         // Glass *before* the centering frame: applied after it, the glass slab
         // itself spanned edge-to-edge on iPad instead of hugging the 480pt card.
         .glassEffect(.regular.tint(SpatchPalette.teal.opacity(0.2)), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .frame(maxWidth: .infinity)
+        // Centered normally; on a partially folded iPhone Duo the card moves
+        // wholly onto one side of the fold instead of straddling the crease.
+        .foldAwareColumn(maxWidth: 480)
     }
 
     private var pageDots: some View {

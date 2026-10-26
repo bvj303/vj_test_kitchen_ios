@@ -10,6 +10,8 @@ struct HomeView: View {
     @Environment(AppCommands.self) private var appCommands
     @Environment(SpatchPerchViewModel.self) private var spatchPerch
     @State private var viewModel = HomeViewModel()
+    /// The suggested grid's measured width, driving its (even) column count.
+    @State private var gridWidth: CGFloat = 0
 
     /// Cap + center the content on very wide screens so a landscape iPad reads
     /// as a centered dashboard rather than a few stretched-out rows.
@@ -149,7 +151,7 @@ struct HomeView: View {
             if viewModel.suggestedRecipes.isEmpty {
                 loadingOrEmpty("Finding recipes for you…")
             } else {
-                LazyVGrid(columns: gridColumns, alignment: .leading, spacing: isRegular ? 20 : 16) {
+                LazyVGrid(columns: gridColumns, alignment: .leading, spacing: gridSpacing) {
                     ForEach(viewModel.suggestedRecipes) { recipe in
                         NavigationLink(value: recipe.id) {
                             suggestedCard(recipe)
@@ -157,14 +159,24 @@ struct HomeView: View {
                         .buttonStyle(.plain)
                     }
                 }
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { gridWidth = $0 }
             }
         }
     }
 
-    /// Adaptive columns so the grid fills the available width — ~2 columns on
-    /// iPhone, ~4–5 on iPad — with no horizontal scrolling.
+    private var gridSpacing: CGFloat { isRegular ? 20 : 16 }
+
+    /// Flexible columns filling the available width with no horizontal scrolling
+    /// — 2 on iPhone, 4 on iPad — always an EVEN count, so on a partially folded
+    /// iPhone Duo the grid divides cleanly at the fold instead of putting a middle
+    /// column on the crease (HIG "Designing for iPhone Duo").
     private var gridColumns: [GridItem] {
-        [GridItem(.adaptive(minimum: isRegular ? 200 : 150), spacing: isRegular ? 20 : 16)]
+        let count = FoldLayout.evenColumnCount(
+            availableWidth: gridWidth,
+            minimumItemWidth: isRegular ? 200 : 150,
+            spacing: gridSpacing
+        )
+        return Array(repeating: GridItem(.flexible(), spacing: gridSpacing), count: count)
     }
 
     private func suggestedCard(_ recipe: Recipe) -> some View {

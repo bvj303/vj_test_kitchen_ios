@@ -87,7 +87,9 @@ struct AuthView: View {
                             }
                             .padding(24)
                             .glassEffect(in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-                            .frame(maxWidth: 420)
+                            // Centered normally; on a partially folded iPhone Duo,
+                            // wholly on one side of the fold rather than across it.
+                            .foldAwareColumn(maxWidth: 420)
 
                             Spacer(minLength: 0)
                         }

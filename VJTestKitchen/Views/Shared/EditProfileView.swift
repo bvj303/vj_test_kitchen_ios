@@ -94,7 +94,7 @@ struct EditProfileView: View {
         .keyboardDoneButton()
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
-                Button("Save") {
+                Button("Save", systemImage: "checkmark") {
                     Task {
                         await viewModel.save()
                         if viewModel.didSave { dismiss() }

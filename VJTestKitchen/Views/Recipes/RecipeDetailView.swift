@@ -51,11 +51,11 @@ struct RecipeDetailView: View {
                 }
             }
             .padding()
-            // Cap the content to a readable column so a long recipe doesn't run
-            // edge-to-edge across a wide iPad/Mac window.
-            .frame(maxWidth: 700)
-            .frame(maxWidth: .infinity)
         }
+        // A readable column so a long recipe doesn't run edge-to-edge across a
+        // wide iPad/Mac window — and, on a partially folded iPhone Duo, wholly on
+        // one side of the fold rather than across the crease.
+        .foldAwareScrollColumn(maxWidth: 700)
         .scrollDismissesKeyboard(.interactively)
         // "Start Cooking" is pinned to the bottom so it stays reachable while
         // scrolling through ingredients and steps, instead of scrolling away
@@ -79,25 +79,29 @@ struct RecipeDetailView: View {
         .dismissesKeyboardOnBackgroundTap()
         .keyboardDoneButton()
         .toolbar {
-            // Any signed-in user can schedule any recipe onto their own
-            // (RLS-scoped) calendar — this isn't gated on ownership the way
-            // Edit is. Shown once the recipe has loaded, since the sheet needs
-            // its title.
+            // The recipe's own actions, grouped so the system spaces them as a
+            // unit (and keeps them together in iPhone Duo's side column). High
+            // priority: they stay visible while the account button overflows.
             if viewModel.detail != nil {
-                ToolbarItem(placement: .platformPrimaryAction) {
+                ToolbarItemGroup(placement: .platformPrimaryAction) {
+                    // Any signed-in user can schedule any recipe onto their own
+                    // (RLS-scoped) calendar — not gated on ownership like Edit.
+                    // Shown once loaded, since the sheet needs the title.
                     Button {
                         showingAddToCalendar = true
                     } label: {
                         Label("Add to Calendar", systemImage: "calendar.badge.plus")
                     }
+                    if isOwnedByCurrentUser {
+                        Button("Edit", systemImage: "pencil") { showingEditSheet = true }
+                    }
                 }
-            }
-            if isOwnedByCurrentUser {
-                ToolbarItem(placement: .platformPrimaryAction) {
-                    Button("Edit") { showingEditSheet = true }
-                }
+                .platformVisibilityPriority(.high)
             }
         }
+        // A task screen: when a vertical bar runs short, keep these actions and
+        // minimize the tab bar (navigation screens keep the tab bar instead).
+        .platformBarCompression(.prefersToolbarItems)
         .sheet(isPresented: $showingEditSheet, onDismiss: {
             // If the recipe was deleted from the edit sheet, it's gone — tell the
             // parent to drop it and pop back, rather than reloading a row that no
@@ -233,7 +237,9 @@ struct RecipeDetailView: View {
                 heroPlaceholder
             }
         }
-        .frame(height: 220)
+        // Relative to the visible scroll height: full size normally, smaller on
+        // short layouts (iPhone Duo closed in landscape, tabletop halves).
+        .containerRelativeFrame(.vertical) { length, _ in FoldLayout.heroHeight(viewportHeight: length) }
         .frame(maxWidth: .infinity)
         .clipShape(shape)
     }
@@ -576,8 +582,9 @@ struct RecipeDetailView: View {
         }
         .buttonStyle(.glassProminent)
         .tint(Color.brandPrimary)
-        .frame(maxWidth: 700)
-        .frame(maxWidth: .infinity)
+        // Same column as the content above — so on a partially folded iPhone
+        // Duo the button sits on one side of the fold, never across it.
+        .foldAwareColumn(maxWidth: 700)
         .padding(.horizontal)
         .padding(.top, 10)
         .padding(.bottom, 6)

@@ -56,7 +56,9 @@ struct CreateAccountView: View {
         }
         .padding(24)
         .glassEffect(in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .frame(maxWidth: 460)
+        // Centered normally; on a partially folded iPhone Duo, wholly on one side
+        // of the fold rather than across it.
+        .foldAwareColumn(maxWidth: 460)
         .padding(.horizontal)
     }
 
@@ -153,7 +155,7 @@ struct CreateAccountView: View {
             }
             .padding(24)
             .glassEffect(in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .frame(maxWidth: 460)
+            .foldAwareColumn(maxWidth: 460)
         }
         .padding(.horizontal)
         .frame(maxWidth: .infinity)

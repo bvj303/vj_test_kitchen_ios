@@ -63,7 +63,7 @@ struct ProfileView: View {
             .inlineNavigationTitle()
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+                    Button("Done", systemImage: "checkmark") { dismiss() }
                 }
             }
             // Reload whenever the sheet reappears (e.g. returning from Edit

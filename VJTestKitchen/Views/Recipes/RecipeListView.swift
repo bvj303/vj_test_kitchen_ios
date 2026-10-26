@@ -76,6 +76,9 @@ struct RecipeListView: View {
                     Label("Add Recipe", systemImage: "plus")
                 }
             }
+            // The list's main action: stays visible while Account overflows first
+            // when iPhone Duo's side controls column runs out of room.
+            .platformVisibilityPriority(.high)
         }
         .sheet(isPresented: $showingAddRecipe) {
             NavigationStack {

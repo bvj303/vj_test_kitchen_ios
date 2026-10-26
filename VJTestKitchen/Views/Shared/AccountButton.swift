@@ -5,24 +5,23 @@ import SwiftUI
 /// on. Presents ProfileView as a sheet, matching how Apple's own apps
 /// (App Store, Music, Photos) handle a profile icon: a dedicated page, not
 /// an inline menu, once there's more than a single trivial action.
+///
+/// A plain title + SF Symbol label, not the user's avatar image: on iPhone Duo
+/// the system only presents toolbar items vertically (the side controls column
+/// on the outer display and the inner display in landscape) when they have an
+/// icon, and never when they use a custom view — the avatar made Account,
+/// Settings and Sign Out unreachable in those poses. The avatar still shows in
+/// the Profile sheet this opens.
 struct AccountButton: View {
     @Environment(SettingsViewModel.self) private var settingsViewModel
-    @Environment(AccountViewModel.self) private var accountViewModel
     @State private var showingProfile = false
 
     var body: some View {
         Button {
             showingProfile = true
         } label: {
-            if let avatarUrl = accountViewModel.avatarUrl, !avatarUrl.isEmpty {
-                // Show the user's actual profile picture in the toolbar; falls
-                // back to the person symbol when they haven't set one.
-                AvatarView(avatarUrl: avatarUrl, name: nil, size: 28)
-            } else {
-                Image(systemName: "person.crop.circle")
-            }
+            Label("Account", systemImage: "person.crop.circle")
         }
-        .accessibilityLabel("Account")
         .sheet(isPresented: $showingProfile) {
             ProfileView()
                 // `.preferredColorScheme` on the WindowGroup root doesn't

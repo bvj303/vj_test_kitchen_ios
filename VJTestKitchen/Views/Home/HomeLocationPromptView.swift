@@ -50,11 +50,13 @@ struct HomeLocationPromptView: View {
                 }
             }
             .padding(24)
-            .frame(maxWidth: 420)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Centered normally; on a partially folded iPhone Duo, wholly on one
+            // side of the fold rather than across it.
+            .foldAwareColumn(maxWidth: 420)
+            .frame(maxHeight: .infinity)
             .toolbar {
                 ToolbarItem(placement: .platformPrimaryAction) {
-                    Button("Not now") { dismiss() }
+                    Button("Not Now", systemImage: "xmark") { dismiss() }
                 }
             }
         }

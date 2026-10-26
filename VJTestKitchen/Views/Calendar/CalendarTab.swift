@@ -8,6 +8,7 @@ struct CalendarTab: View {
                     ToolbarItem(placement: .platformPrimaryAction) {
                         AccountButton()
                     }
+                    .platformVisibilityPriority(.low)
                 }
         }
     }

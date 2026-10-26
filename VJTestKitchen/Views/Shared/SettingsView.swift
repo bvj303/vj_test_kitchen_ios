@@ -69,7 +69,7 @@ struct SettingsView: View {
         #if os(iOS)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
-                Button("Done") { dismiss() }
+                Button("Done", systemImage: "checkmark") { dismiss() }
             }
         }
         #endif

@@ -67,8 +67,10 @@ struct CookModeView: View {
             .navigationTitle(detail.title)
             .inlineNavigationTitle()
             .toolbar {
-                ToolbarItem(placement: .platformPrimaryAction) {
-                    Button("Done") { dismiss() }
+                // Pinned trailing: Apple's placement for a prominent Done — it
+                // stays at the top of iPhone Duo's side controls column.
+                ToolbarItem(placement: .platformPinnedTrailing) {
+                    Button("Done", systemImage: "checkmark") { dismiss() }
                         .font(.headline)
                 }
             }

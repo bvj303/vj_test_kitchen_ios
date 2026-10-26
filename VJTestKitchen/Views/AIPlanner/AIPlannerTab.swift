@@ -11,6 +11,7 @@ struct AIPlannerTab: View {
                     ToolbarItem(placement: .platformPrimaryAction) {
                         AccountButton()
                     }
+                    .platformVisibilityPriority(.low)
                 }
         }
     }

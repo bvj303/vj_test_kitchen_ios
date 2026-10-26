@@ -52,6 +52,10 @@ struct AIPlannerView: View {
 
             inputBar
         }
+        // Full width normally; on a partially folded iPhone Duo the whole chat —
+        // header, transcript and input bar together — moves onto one side of the
+        // fold so no message line or the text field runs across the crease.
+        .foldAwareColumn(maxWidth: .infinity)
         .navigationTitle("AI Planner")
         .inlineNavigationTitle()
         .dismissesKeyboardOnBackgroundTap()
