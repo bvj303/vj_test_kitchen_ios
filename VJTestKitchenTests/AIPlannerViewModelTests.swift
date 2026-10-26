@@ -31,14 +31,14 @@ private struct TestError: Error, LocalizedError {
 @MainActor
 struct AIPlannerViewModelTests {
     @Test func startsWithNoMessages() {
-        let viewModel = AIPlannerViewModel(aiService: FakeAIService())
+        let viewModel = AIPlannerViewModel(aiService: FakeAIService(), recipeService: FakeRecipeService(), snapshotStore: FakeSnapshotStore())
         #expect(viewModel.messages.isEmpty)
     }
 
     @Test func sendAppendsUserMessageThenAssistantReply() async {
         let ai = FakeAIService()
         ai.responseToReturn = "Try the Carbonara!"
-        let viewModel = AIPlannerViewModel(aiService: ai)
+        let viewModel = AIPlannerViewModel(aiService: ai, recipeService: FakeRecipeService(), snapshotStore: FakeSnapshotStore())
         viewModel.inputText = "What should I cook tonight?"
 
         await viewModel.send()
@@ -58,7 +58,7 @@ struct AIPlannerViewModelTests {
         ai.errorToThrow = SendError()
         let sink = SpyLogSink()
         let logger = AppLogger(sinks: [sink], context: LogContext(appVersion: "1", platform: "test"))
-        let viewModel = AIPlannerViewModel(aiService: ai, logger: logger)
+        let viewModel = AIPlannerViewModel(aiService: ai, recipeService: FakeRecipeService(), snapshotStore: FakeSnapshotStore(), logger: logger)
         viewModel.inputText = "What should I cook?"
 
         await viewModel.send()
@@ -70,7 +70,7 @@ struct AIPlannerViewModelTests {
     @Test func sendPassesFullConversationHistorySoFollowUpsHaveContext() async {
         let ai = FakeAIService()
         ai.responseToReturn = "Try the Kale Salad."
-        let viewModel = AIPlannerViewModel(aiService: ai)
+        let viewModel = AIPlannerViewModel(aiService: ai, recipeService: FakeRecipeService(), snapshotStore: FakeSnapshotStore())
 
         viewModel.inputText = "something healthy"
         await viewModel.send()
@@ -101,7 +101,7 @@ struct AIPlannerViewModelTests {
 
     @Test func sendIgnoresBlankInput() async {
         let ai = FakeAIService()
-        let viewModel = AIPlannerViewModel(aiService: ai)
+        let viewModel = AIPlannerViewModel(aiService: ai, recipeService: FakeRecipeService(), snapshotStore: FakeSnapshotStore())
         viewModel.inputText = "   "
 
         await viewModel.send()
@@ -113,14 +113,15 @@ struct AIPlannerViewModelTests {
     @Test func sendSurfacesErrorMessageButKeepsUserMessage() async {
         let ai = FakeAIService()
         ai.errorToThrow = TestError()
-        let viewModel = AIPlannerViewModel(aiService: ai)
+        let viewModel = AIPlannerViewModel(aiService: ai, recipeService: FakeRecipeService(), snapshotStore: FakeSnapshotStore())
         viewModel.inputText = "Plan my week"
 
         await viewModel.send()
 
         #expect(viewModel.messages.count == 1)
         #expect(viewModel.messages[0].role == .user)
-        #expect(viewModel.errorMessage == "failed")
+        #expect(viewModel.messages[0].failureReason == "failed")
+        #expect(viewModel.errorMessage == nil) // inline, not an alert
     }
 
     @Test func assistantReplyAttachesOnlyRecipesItNames() async {
@@ -130,7 +131,7 @@ struct AIPlannerViewModelTests {
             AIRecipeRef(id: 2, title: "Beef Tacos"),      // named in the reply
             AIRecipeRef(id: 9, title: "Chicken Alfredo"), // searched but not named
         ]
-        let viewModel = AIPlannerViewModel(aiService: ai)
+        let viewModel = AIPlannerViewModel(aiService: ai, recipeService: FakeRecipeService(), snapshotStore: FakeSnapshotStore())
         viewModel.inputText = "tacos please"
 
         await viewModel.send()
@@ -151,7 +152,7 @@ struct AIPlannerViewModelTests {
 
     @Test func clearChatRemovesAllMessages() async {
         let ai = FakeAIService()
-        let viewModel = AIPlannerViewModel(aiService: ai)
+        let viewModel = AIPlannerViewModel(aiService: ai, recipeService: FakeRecipeService(), snapshotStore: FakeSnapshotStore())
         viewModel.inputText = "Hi"
         await viewModel.send()
         #expect(!viewModel.messages.isEmpty)
@@ -172,7 +173,7 @@ struct AIPlannerViewModelTests {
         )
         ai.responseToReturn = "I've proposed Beef Tacos for Monday — tap to add it."
         ai.actionsToReturn = [action]
-        let viewModel = AIPlannerViewModel(aiService: ai, mealPlanService: meal, groceryService: grocery)
+        let viewModel = AIPlannerViewModel(aiService: ai, recipeService: FakeRecipeService(), mealPlanService: meal, groceryService: grocery, snapshotStore: FakeSnapshotStore())
         viewModel.inputText = "add tacos to monday dinner"
 
         await viewModel.send()
@@ -186,7 +187,7 @@ struct AIPlannerViewModelTests {
 
     @Test func applyMealPlanWritesThroughTheServiceOnlyWhenConfirmed() async {
         let meal = FakeMealPlanService()
-        let viewModel = AIPlannerViewModel(aiService: FakeAIService(), mealPlanService: meal, groceryService: FakeGroceryItemService())
+        let viewModel = AIPlannerViewModel(aiService: FakeAIService(), recipeService: FakeRecipeService(), mealPlanService: meal, groceryService: FakeGroceryItemService(), snapshotStore: FakeSnapshotStore())
         let action = AIChatAction.addToMealPlan(
             AIMealPlanProposal(recipeId: 7, recipeTitle: "Coq au Vin", date: "2026-07-21", mealType: "dinner")
         )
@@ -203,7 +204,7 @@ struct AIPlannerViewModelTests {
 
     @Test func applyGroceryMapsItemsAndCategorizesThem() async {
         let grocery = FakeGroceryItemService()
-        let viewModel = AIPlannerViewModel(aiService: FakeAIService(), mealPlanService: FakeMealPlanService(), groceryService: grocery)
+        let viewModel = AIPlannerViewModel(aiService: FakeAIService(), recipeService: FakeRecipeService(), mealPlanService: FakeMealPlanService(), groceryService: grocery, snapshotStore: FakeSnapshotStore())
         let action = AIChatAction.addToGroceryList(
             AIGroceryProposal(recipeId: 7, recipeTitle: "Coq au Vin", items: [
                 AIGroceryProposalItem(name: "chicken thighs", amount: 2, unit: "lb"),
@@ -229,7 +230,7 @@ struct AIPlannerViewModelTests {
 
     @Test func applyIsIdempotentAndWontDoubleWrite() async {
         let meal = FakeMealPlanService()
-        let viewModel = AIPlannerViewModel(aiService: FakeAIService(), mealPlanService: meal, groceryService: FakeGroceryItemService())
+        let viewModel = AIPlannerViewModel(aiService: FakeAIService(), recipeService: FakeRecipeService(), mealPlanService: meal, groceryService: FakeGroceryItemService(), snapshotStore: FakeSnapshotStore())
         let action = AIChatAction.addToMealPlan(
             AIMealPlanProposal(recipeId: 3, recipeTitle: "Ragu", date: "2026-07-22", mealType: "dinner")
         )
@@ -244,7 +245,7 @@ struct AIPlannerViewModelTests {
         struct WriteError: Error {}
         let meal = FakeMealPlanService()
         meal.errorToThrow = WriteError()
-        let viewModel = AIPlannerViewModel(aiService: FakeAIService(), mealPlanService: meal, groceryService: FakeGroceryItemService())
+        let viewModel = AIPlannerViewModel(aiService: FakeAIService(), recipeService: FakeRecipeService(), mealPlanService: meal, groceryService: FakeGroceryItemService(), snapshotStore: FakeSnapshotStore())
         let action = AIChatAction.addToMealPlan(
             AIMealPlanProposal(recipeId: 4, recipeTitle: "Stew", date: "2026-07-23", mealType: "dinner")
         )
@@ -277,4 +278,193 @@ struct AIPlannerViewModelTests {
         }
         #expect(actions[2] == .unknown) // gracefully tolerated; AIService filters it out
     }
+
+    // MARK: - Retry
+
+    @Test func retryResendsTheFailedMessageAndClearsTheFailure() async {
+        let ai = FakeAIService()
+        ai.errorToThrow = TestError()
+        let viewModel = AIPlannerViewModel(aiService: ai, recipeService: FakeRecipeService(), snapshotStore: FakeSnapshotStore())
+        viewModel.inputText = "Plan my week"
+        await viewModel.send()
+
+        ai.errorToThrow = nil
+        ai.responseToReturn = "Here's your week."
+        await viewModel.retry()
+
+        #expect(viewModel.messages.count == 2)
+        #expect(viewModel.messages[0].content == "Plan my week")
+        #expect(viewModel.messages[0].failureReason == nil)
+        #expect(viewModel.messages[1].content == "Here's your week.")
+        // The same conversation went out again — no duplicated user turn.
+        #expect(ai.receivedHistories.count == 2)
+        #expect(ai.receivedHistories[1] == [.user("Plan my week")])
+    }
+
+    @Test func retryDoesNothingWhenTheLastMessageDidNotFail() async {
+        let ai = FakeAIService()
+        let viewModel = AIPlannerViewModel(aiService: ai, recipeService: FakeRecipeService(), snapshotStore: FakeSnapshotStore())
+        viewModel.inputText = "Hi"
+        await viewModel.send()
+
+        await viewModel.retry()
+
+        #expect(ai.receivedHistories.count == 1)
+    }
+
+    @Test func sendingANewMessageDropsTheFailedFlagFromAnEarlierOne() async {
+        let ai = FakeAIService()
+        ai.errorToThrow = TestError()
+        let viewModel = AIPlannerViewModel(aiService: ai, recipeService: FakeRecipeService(), snapshotStore: FakeSnapshotStore())
+        viewModel.inputText = "First"
+        await viewModel.send()
+
+        ai.errorToThrow = nil
+        viewModel.inputText = "Second"
+        await viewModel.send()
+
+        #expect(viewModel.messages.allSatisfy { $0.failureReason == nil })
+        #expect(ai.receivedHistories[1].map(\.content) == ["First", "Second"])
+    }
+
+    // MARK: - Add the whole plan
+
+    private static let weekPlan: [AIChatAction] = [
+        .addToMealPlan(AIMealPlanProposal(recipeId: 1, recipeTitle: "Tacos", date: "2026-10-26", mealType: "dinner")),
+        .addToMealPlan(AIMealPlanProposal(recipeId: 2, recipeTitle: "Ragu", date: "2026-10-27", mealType: "dinner")),
+        .addToMealPlan(AIMealPlanProposal(recipeId: 3, recipeTitle: "Stew", date: "2026-10-28", mealType: "dinner")),
+    ]
+
+    @Test func applyAllMealPlansWritesEveryUnappliedMealOnce() async {
+        let ai = FakeAIService()
+        ai.actionsToReturn = Self.weekPlan
+        let meal = FakeMealPlanService()
+        let viewModel = AIPlannerViewModel(aiService: ai, recipeService: FakeRecipeService(), mealPlanService: meal, groceryService: FakeGroceryItemService(), snapshotStore: FakeSnapshotStore())
+        viewModel.inputText = "Plan three dinners"
+        await viewModel.send()
+        let reply = viewModel.messages[1]
+        // One meal was already added individually.
+        await viewModel.apply(Self.weekPlan[0])
+
+        #expect(viewModel.unappliedMealPlans(in: reply).count == 2)
+        await viewModel.applyAllMealPlans(in: reply)
+
+        #expect(meal.createdDrafts.map(\.recipeId) == [1, 2, 3])
+        #expect(Self.weekPlan.allSatisfy(viewModel.hasApplied))
+        #expect(viewModel.unappliedMealPlans(in: reply).isEmpty)
+        #expect(viewModel.actionResultMessage == "Added 2 meals to your calendar.")
+    }
+
+    @Test func applyAllMealPlansStopsOnAFailureAndKeepsWhatLanded() async {
+        let ai = FakeAIService()
+        ai.actionsToReturn = Self.weekPlan
+        let meal = FakeMealPlanService()
+        let viewModel = AIPlannerViewModel(aiService: ai, recipeService: FakeRecipeService(), mealPlanService: meal, groceryService: FakeGroceryItemService(), snapshotStore: FakeSnapshotStore())
+        viewModel.inputText = "Plan three dinners"
+        await viewModel.send()
+        meal.failAfter = 1
+
+        await viewModel.applyAllMealPlans(in: viewModel.messages[1])
+
+        #expect(viewModel.hasApplied(Self.weekPlan[0]))
+        #expect(!viewModel.hasApplied(Self.weekPlan[1]))
+        #expect(viewModel.errorMessage != nil)
+        // Tapping again picks up where it stopped.
+        #expect(viewModel.unappliedMealPlans(in: viewModel.messages[1]).count == 2)
+    }
+
+    // MARK: - Recipe card details
+
+    @Test func namedRecipesGetTheirDetailsFetchedForTheCards() async {
+        let ai = FakeAIService()
+        ai.responseToReturn = "Try the Beef Tacos."
+        ai.recipesToReturn = [AIRecipeRef(id: 2, title: "Beef Tacos")]
+        let recipes = FakeRecipeService()
+        recipes.recipesToReturn = [
+            Recipe(id: 2, userId: nil, title: "Beef Tacos", description: nil, instructions: nil, imagePath: nil, prepTime: 25, servings: 4, createdAt: Date(), atkRating: 4.6),
+        ]
+        let viewModel = AIPlannerViewModel(aiService: ai, recipeService: recipes, snapshotStore: FakeSnapshotStore())
+        viewModel.inputText = "Taco night?"
+
+        await viewModel.send()
+
+        #expect(viewModel.recipeInfo[2]?.prepTime == 25)
+        #expect(viewModel.recipeInfo[2]?.atkRating == 4.6)
+    }
+
+    @Test func aFailedDetailFetchStillShowsTheReply() async {
+        let ai = FakeAIService()
+        ai.responseToReturn = "Try the Beef Tacos."
+        ai.recipesToReturn = [AIRecipeRef(id: 2, title: "Beef Tacos")]
+        let recipes = FakeRecipeService()
+        recipes.errorToThrow = TestError()
+        let viewModel = AIPlannerViewModel(aiService: ai, recipeService: recipes, snapshotStore: FakeSnapshotStore())
+        viewModel.inputText = "Taco night?"
+
+        await viewModel.send()
+
+        #expect(viewModel.messages.count == 2)
+        #expect(viewModel.messages[1].recipes.map(\.id) == [2])
+        #expect(viewModel.recipeInfo.isEmpty)
+        #expect(viewModel.errorMessage == nil) // cards just stay plain
+    }
+
+    // MARK: - Persistence
+
+    @Test func theConversationSurvivesARelaunch() async {
+        let store = FakeSnapshotStore()
+        let ai = FakeAIService()
+        ai.responseToReturn = "Try the Beef Tacos."
+        ai.recipesToReturn = [AIRecipeRef(id: 2, title: "Beef Tacos")]
+        ai.actionsToReturn = [Self.weekPlan[0]]
+        let first = AIPlannerViewModel(aiService: ai, recipeService: FakeRecipeService(), mealPlanService: FakeMealPlanService(), groceryService: FakeGroceryItemService(), snapshotStore: store)
+        first.inputText = "Taco night?"
+        await first.send()
+        await first.apply(Self.weekPlan[0])
+
+        let relaunched = AIPlannerViewModel(aiService: FakeAIService(), recipeService: FakeRecipeService(), snapshotStore: store)
+
+        #expect(relaunched.messages.map(\.content) == ["Taco night?", "Try the Beef Tacos."])
+        #expect(relaunched.messages[1].recipes.map(\.id) == [2])
+        #expect(relaunched.messages[1].actions == [Self.weekPlan[0]])
+        #expect(relaunched.hasApplied(Self.weekPlan[0])) // can't be added twice after a relaunch
+    }
+
+    @Test func newChatClearsTheSavedConversation() async {
+        let store = FakeSnapshotStore()
+        let viewModel = AIPlannerViewModel(aiService: FakeAIService(), recipeService: FakeRecipeService(), snapshotStore: store)
+        viewModel.inputText = "Hi"
+        await viewModel.send()
+
+        viewModel.clearChat()
+
+        #expect(AIPlannerViewModel(aiService: FakeAIService(), recipeService: FakeRecipeService(), snapshotStore: store).messages.isEmpty)
+    }
+
+    // MARK: - Follow-ups
+
+    @Test func followUpsShowOnlyUnderTheLatestReply() async {
+        let ai = FakeAIService()
+        ai.responseToReturn = "Try the Beef Tacos."
+        ai.recipesToReturn = [AIRecipeRef(id: 2, title: "Beef Tacos")]
+        let viewModel = AIPlannerViewModel(aiService: ai, recipeService: FakeRecipeService(), snapshotStore: FakeSnapshotStore())
+        viewModel.inputText = "One"
+        await viewModel.send()
+        viewModel.inputText = "Two"
+        await viewModel.send()
+
+        #expect(viewModel.followUps(for: viewModel.messages[1]).isEmpty)
+        #expect(!viewModel.followUps(for: viewModel.messages[3]).isEmpty)
+        #expect(viewModel.followUps(for: viewModel.messages[2]).isEmpty) // user turn
+    }
+
+    @Test func sendingAFollowUpSendsItsPrompt() async {
+        let ai = FakeAIService()
+        let viewModel = AIPlannerViewModel(aiService: ai, recipeService: FakeRecipeService(), snapshotStore: FakeSnapshotStore())
+
+        await viewModel.send(ConciergePrompts.starters[0].prompt)
+
+        #expect(ai.receivedPrompts == [ConciergePrompts.starters[0].prompt])
+    }
 }
+

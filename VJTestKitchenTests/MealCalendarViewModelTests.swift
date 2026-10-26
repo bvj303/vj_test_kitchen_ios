@@ -14,6 +14,10 @@ final class FakeMealPlanService: MealPlanServicing {
     /// The id and recipe title the next `create` returns; incremented per call.
     var nextCreatedId: Int64 = 100
     var createdRecipeTitle = "Created Recipe"
+    /// Fail every `create` after this many have succeeded (nil = never) — for
+    /// partial-batch failures.
+    var failAfter: Int?
+    private struct FailAfterError: Error {}
 
     func fetch(from startDate: String, to endDate: String) async throws -> [MealPlanWithRecipe] {
         if let errorToThrow { throw errorToThrow }
@@ -24,6 +28,7 @@ final class FakeMealPlanService: MealPlanServicing {
     @discardableResult
     func create(_ draft: MealPlanDraft) async throws -> MealPlanWithRecipe {
         if let errorToThrow { throw errorToThrow }
+        if let failAfter, createdDrafts.count >= failAfter { throw FailAfterError() }
         createdDrafts.append(draft)
         let plan = MealPlanWithRecipe(
             id: nextCreatedId, userId: UUID(), date: draft.date, mealType: draft.mealType,
