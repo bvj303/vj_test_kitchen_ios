@@ -27,13 +27,6 @@ final class DuoLayoutUITests: XCTestCase {
             throw XCTSkip("Set TEST_RUNNER_DUO_UI_EMAIL / TEST_RUNNER_DUO_UI_PASSWORD to run the layout pass.")
         }
         app = XCUIApplication()
-        // Spatch's always-on idle animation keeps the app from ever going idle,
-        // which makes XCTest's text-field queries time out; the typing test
-        // turns him off (UserDefaults argument domain). The screenshot pass
-        // keeps him, since where he sits is part of what it checks.
-        if name.contains("TypedText") {
-            app.launchArguments += ["-vj_show_spatch", "NO"]
-        }
         app.launch()
         try signInIfNeeded()
     }
@@ -110,10 +103,8 @@ final class DuoLayoutUITests: XCTestCase {
         dismissOnboardingIfShown()
     }
 
-    /// First launch shows Spatch's walkthrough and the home-location prompt.
+    /// First launch shows the home-location prompt.
     private func dismissOnboardingIfShown() {
-        let sendAway = app.buttons["Send Spatch Away"]
-        if sendAway.waitForExistence(timeout: 3) { sendAway.tap() }
         let notNow = app.buttons["Not Now"]
         if notNow.waitForExistence(timeout: 3) { notNow.tap() }
     }

@@ -12,10 +12,9 @@ import AppKit
 // Re-run after any art tweak; the icon set / imageset names must match
 // AppIconOption and ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES in project.yml.
 //
-// SpatchFigure below is a faithful static port of SpatchCharacterView's
-// design-space geometry (112-unit-wide canvas, same part offsets/sizes/shapes)
-// so the icon actually looks like the in-app Spatch — keep them in sync if his
-// face ever changes. The handle length is the one deliberate departure
+// SpatchFigure below is a static port of the retired in-app Spatch character's
+// design-space geometry (112-unit-wide canvas). The in-app mascot was removed
+// (2026-10-25); this script is now the only place his art lives. The handle length is the one deliberate departure
 // (shortened for icon legibility; full length reads as a distant stick figure
 // at home-screen sizes).
 

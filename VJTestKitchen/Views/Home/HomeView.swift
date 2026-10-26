@@ -8,7 +8,6 @@ import SwiftUI
 struct HomeView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(AppCommands.self) private var appCommands
-    @Environment(SpatchPerchViewModel.self) private var spatchPerch
     @State private var viewModel = HomeViewModel()
     /// The suggested grid's measured width, driving its (even) column count.
     @State private var gridWidth: CGFloat = 0
@@ -37,31 +36,6 @@ struct HomeView: View {
         // ⌘R reloads the dashboard when Home is the visible tab.
         .onChange(of: appCommands.refreshRequests) { _, _ in
             Task { await viewModel.load(force: true) }
-        }
-        // First pop-in a few beats after the shelf's actual suggestion is in —
-        // referencing the real recommended recipe rather than a placeholder.
-        // Held off longer than a bare load-complete beat so he doesn't read as
-        // pouncing on the dashboard the instant it appears.
-        .task(id: viewModel.suggestedRecipes.isEmpty) {
-            guard !viewModel.suggestedRecipes.isEmpty else { return }
-            try? await Task.sleep(for: .seconds(4))
-            guard !Task.isCancelled else { return }
-            spatchPerch.post(
-                SpatchContent.recommendationLine(recipeTitle: viewModel.suggestedRecipes.first?.title),
-                mood: .happy
-            )
-        }
-        // "Every now and again" — Spatch pops back in with a fresh line for as
-        // long as Home stays on screen, rather than being a permanent fixture.
-        // A longer, wider gap than earlier drafts — frequent recipe pitches on
-        // the main dashboard read as pushy rather than helpful.
-        .task {
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(.random(in: 100...160)))
-                guard !Task.isCancelled, !viewModel.suggestedRecipes.isEmpty else { continue }
-                let (message, mood) = Self.randomSpatchLine(recipes: viewModel.suggestedRecipes)
-                spatchPerch.post(message, mood: mood)
-            }
         }
         .alert(
             "Couldn't Load Home",
@@ -225,19 +199,4 @@ struct HomeView: View {
         .surface(.card)
     }
 
-    /// Spatch's Home pop-in line. A recipe recommendation is only one option
-    /// among several (roughly a third of the time) rather than the default —
-    /// the rest of the time it's a joke or a catchphrase, so repeat pop-ins
-    /// read as company, not a recurring pitch.
-    private static func randomSpatchLine(recipes: [Recipe]) -> (String, SpatchMood) {
-        switch Double.random(in: 0..<1) {
-        case ..<0.3:
-            guard let title = recipes.randomElement()?.title else { fallthrough }
-            return (SpatchContent.recommendationLine(recipeTitle: title), .happy)
-        case ..<0.65:
-            return (SpatchContent.randomJoke(), [.laughing, .surprised].randomElement() ?? .laughing)
-        default:
-            return (SpatchContent.randomCatchphrase(), .happy)
-        }
-    }
 }

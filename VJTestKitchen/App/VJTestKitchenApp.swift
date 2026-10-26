@@ -10,17 +10,6 @@ struct VJTestKitchenApp: App {
     @State private var homeLocationViewModel = HomeLocationViewModel()
     // Menu-bar / keyboard-shortcut command bus (see AppCommands).
     @State private var appCommands = AppCommands()
-    // Shared so the first-launch walkthrough (MainTabView) and Settings'
-    // "Meet Spatch Again" replay read and write the same instance.
-    @State private var spatchTutorialViewModel = SpatchTutorialViewModel()
-    // Schedules Spatch's surprise stunt flybys — shared so the stage/scheduler
-    // (MainTabView) and every cameo (which must yield the stage to a stunt and
-    // vice versa) coordinate through one instance.
-    @State private var spatchStuntCoordinator = SpatchStuntCoordinator()
-    // Spatch's single fixed perch — shared so every screen posts its commentary
-    // to the one anchor MainTabView hosts, instead of each screen floating its
-    // own cameo (the old overlap-bug source).
-    @State private var spatchPerchViewModel = SpatchPerchViewModel()
 
     init() {
         // Give `URLSession.shared` (and therefore every `RemoteImage`) a roomy
@@ -48,9 +37,6 @@ struct VJTestKitchenApp: App {
                 .environment(accountViewModel)
                 .environment(homeLocationViewModel)
                 .environment(appCommands)
-                .environment(spatchTutorialViewModel)
-                .environment(spatchStuntCoordinator)
-                .environment(spatchPerchViewModel)
                 .preferredColorScheme(settingsViewModel.appearanceMode.colorScheme)
                 // Two kinds of vjtestkitchen:// deep links land here:
                 //  • Widget taps (host = a tab, e.g. vjtestkitchen://calendar) →
@@ -122,7 +108,6 @@ struct VJTestKitchenApp: App {
                 .environment(settingsViewModel)
                 .environment(accountViewModel)
                 .environment(homeLocationViewModel)
-                .environment(spatchTutorialViewModel)
                 .preferredColorScheme(settingsViewModel.appearanceMode.colorScheme)
                 .frame(minWidth: 420, minHeight: 320)
         }

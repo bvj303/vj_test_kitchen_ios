@@ -109,19 +109,6 @@ extension View {
     func foldAwareColumn(maxWidth: CGFloat) -> some View {
         modifier(FoldAwareColumn(maxWidth: maxWidth))
     }
-
-    /// Reports whether a fold (division reserved region) is active — e.g. so
-    /// Spatch's decorative flybys can sit out while the display is folded rather
-    /// than flying through the crease.
-    func onFoldActiveChange(_ action: @escaping (Bool) -> Void) -> some View {
-        background {
-            GeometryReader { proxy in
-                Color.clear.onChange(of: hasActiveFold(in: proxy), initial: true) { _, active in
-                    action(active)
-                }
-            }
-        }
-    }
 }
 
 // MARK: - Arrangement views

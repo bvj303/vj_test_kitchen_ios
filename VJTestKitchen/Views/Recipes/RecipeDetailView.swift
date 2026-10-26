@@ -11,7 +11,6 @@ struct RecipeDetailView: View {
     /// tile. 1 = original.
     @State private var scale: Double = 1
     @State private var wasDeleted = false
-    @Environment(SpatchPerchViewModel.self) private var spatchPerch
     let recipeId: Int64
 
     /// Called when the recipe is deleted, so a coordinating parent can drop it
@@ -70,12 +69,6 @@ struct RecipeDetailView: View {
         // carries only a compact inline title rather than a second large one.
         .navigationTitle(viewModel.detail?.title ?? "Recipe")
         .inlineNavigationTitle()
-        // Lift Spatch's perch above the pinned cook bar while it's shown so he
-        // never sits over the "Start Cooking" button.
-        .onChange(of: cookBarShown, initial: true) { _, shows in
-            spatchPerch.extraBottomInset = shows ? 76 : 0
-        }
-        .onDisappear { spatchPerch.extraBottomInset = 0 }
         .dismissesKeyboardOnBackgroundTap()
         .keyboardDoneButton()
         .toolbar {
@@ -136,18 +129,6 @@ struct RecipeDetailView: View {
                 viewModel.currentUserId = userId
             }
             await viewModel.load()
-        }
-        // Offer Spatch a recipe-aware line shortly after load — routed to the
-        // shared perch (he stays put; the user taps to read it), not floated
-        // over the recipe.
-        .task(id: viewModel.detail?.id) {
-            guard let detail = viewModel.detail else { return }
-            try? await Task.sleep(for: .seconds(2.5))
-            guard !Task.isCancelled, Double.random(in: 0...1) < 0.6 else { return }
-            spatchPerch.post(
-                SpatchContent.recipeCameoLine(prepTime: detail.prepTime, tag: detail.tagNames.first),
-                mood: .happy
-            )
         }
         .alert(
             "Something Went Wrong",

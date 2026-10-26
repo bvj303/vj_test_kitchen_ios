@@ -11,12 +11,6 @@ final class SettingsViewModel {
         didSet { store.saveAppearanceMode(appearanceMode) }
     }
 
-    /// Whether Spatch shows up at all — gates his cameo pop-ins, stunt
-    /// flybys, and the walkthrough replay (see `SpatchPreferenceStoring`).
-    var showSpatch: Bool {
-        didSet { spatchStore.saveShowSpatch(showSpatch) }
-    }
-
     /// The icon look currently applied — the system owns the persistence
     /// (`setAlternateIconName` survives relaunches), so this is read back from
     /// the switcher rather than from a store of our own.
@@ -29,19 +23,15 @@ final class SettingsViewModel {
     var supportsAppIconPicker: Bool { appIconSwitcher.supportsAlternateIcons }
 
     private let store: AppearanceStoring
-    private let spatchStore: SpatchPreferenceStoring
     private let appIconSwitcher: AppIconSwitching
 
     init(
         store: AppearanceStoring = UserDefaultsAppearanceStore(),
-        spatchStore: SpatchPreferenceStoring = UserDefaultsSpatchPreferenceStore(),
         appIconSwitcher: AppIconSwitching = AppIconSwitcher()
     ) {
         self.store = store
-        self.spatchStore = spatchStore
         self.appIconSwitcher = appIconSwitcher
         self.appearanceMode = store.loadAppearanceMode()
-        self.showSpatch = spatchStore.loadShowSpatch()
         self.selectedAppIcon = .option(forAlternateIconName: appIconSwitcher.currentAlternateIconName)
     }
 

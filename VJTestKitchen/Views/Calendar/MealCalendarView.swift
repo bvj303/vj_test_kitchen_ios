@@ -26,11 +26,6 @@ struct MealCalendarView: View {
     // Menu-bar / keyboard-shortcut command bus — ⌘R reloads the agenda.
     @Environment(AppCommands.self) private var appCommands
     // Optional so previews without the app root's injection still work. While
-    // Spatch's walkthrough narrates this tab, the compact layout swaps the
-    // Quick Planner out (see compactLayout) so the tour shows the actual
-    // week agenda, not a search form.
-    @Environment(SpatchTutorialViewModel.self) private var tutorialViewModel: SpatchTutorialViewModel?
-
     /// Focuses the Quick Planner's recipe search when an empty day's "Add a meal"
     /// button is tapped, and a scroll trigger so the compact layout brings the
     /// planner (which sits above the agenda) into view first.
@@ -108,14 +103,8 @@ struct MealCalendarView: View {
             ScrollView {
                 VStack(spacing: 20) {
                     weekHeader
-                    // The tour's "Meal Calendar" step can't scroll (the content is
-                    // disabled under the dim), and on iPhone the planner form sits
-                    // above the fold — without this swap the step showed a search
-                    // form instead of the calendar it's introducing.
-                    if tutorialViewModel?.isPresented != true {
-                        quickPlanner
-                            .id(Self.plannerAnchor)
-                    }
+                    quickPlanner
+                        .id(Self.plannerAnchor)
                     agendaList
                     weatherAttributionFooter
                 }
