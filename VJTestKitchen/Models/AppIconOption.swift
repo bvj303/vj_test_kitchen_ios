@@ -4,7 +4,7 @@ import Foundation
 /// alter egos. Each case maps to an alternate icon set in Assets.xcassets
 /// (regenerate them with `scripts/render_app_icon.swift` after art changes)
 /// and a small preview imageset for the Settings picker. Pure and stateless,
-/// same shape as `SpatchMood`/`MealTypeStyle`.
+/// same shape as `MealTypeStyle`.
 enum AppIconOption: String, CaseIterable, Identifiable, Sendable {
     case classic
     case pizzaSurf

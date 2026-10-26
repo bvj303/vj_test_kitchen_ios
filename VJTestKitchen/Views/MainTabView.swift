@@ -24,125 +24,37 @@ struct MainTabView: View {
     @Environment(AccountViewModel.self) private var accountViewModel
     @Environment(HomeLocationViewModel.self) private var homeLocationViewModel
     @Environment(AppCommands.self) private var appCommands
-    @Environment(SettingsViewModel.self) private var settingsViewModel
-    @Environment(SpatchTutorialViewModel.self) private var spatchTutorialViewModel
-    @Environment(SpatchStuntCoordinator.self) private var spatchStuntCoordinator
-    @Environment(SpatchPerchViewModel.self) private var spatchPerchViewModel
     @State private var selection: AppTab = .home
     @State private var showLocationPrompt = false
-    /// Whether iPhone Duo is partially folded. Spatch's full-screen flybys sit
-    /// out while it is, rather than flying through the crease.
-    @State private var isFoldActive = false
-
-    /// Spatch's single fixed perch — one anchor every screen posts its
-    /// commentary to, so a tip can never float over card titles the way the old
-    /// random-corner cameo did. Overlaid on the *selected tab's content* (not
-    /// layered above the whole TabView) so it inherits that tab's real safe area:
-    /// above the bottom tab bar on iPhone, and beside the side controls column on
-    /// iPhone Duo — rather than a hardcoded bottom offset that assumed the tab bar
-    /// always sits at the bottom. Only the visible tab hosts one, so there's still
-    /// a single perch. Hidden during the tour and stunts (see SpatchPerchView).
-    @ViewBuilder
-    private func perch(on tab: AppTab) -> some View {
-        if selection == tab {
-            SpatchPerchView(viewModel: spatchPerchViewModel)
-        }
-    }
 
     var body: some View {
-        ZStack {
-            TabView(selection: $selection) {
-                Tab("Home", systemImage: "house", value: AppTab.home) {
-                    HomeTab().overlay { perch(on: .home) }
-                }
-                Tab("Recipes", systemImage: "fork.knife", value: AppTab.recipes) {
-                    RecipesTab().overlay { perch(on: .recipes) }
-                }
-                Tab("Groceries", systemImage: "cart", value: AppTab.grocery) {
-                    GroceryListTab().overlay { perch(on: .grocery) }
-                }
-                Tab("AI Planner", systemImage: "sparkles", value: AppTab.planner) {
-                    AIPlannerTab().overlay { perch(on: .planner) }
-                }
-                Tab("Calendar", systemImage: "calendar", value: AppTab.calendar) {
-                    CalendarTab().overlay { perch(on: .calendar) }
-                }
+        TabView(selection: $selection) {
+            Tab("Home", systemImage: "house", value: AppTab.home) {
+                HomeTab()
             }
-            // The real screens must be inert while the tour narrates over
-            // them. The dim layer's tap-swallowing alone isn't enough: on
-            // macOS, clicks pass straight through it into the content
-            // (confirmed live — a click behind the tour pushed a recipe
-            // detail), and `.allowsHitTesting(false)` doesn't help either
-            // (also confirmed live — the tab content is AppKit-backed there,
-            // and event routing bypasses SwiftUI hit-testing). `.disabled`
-            // works: it disables the actual controls across the bridge.
-            .disabled(spatchTutorialViewModel.isPresented)
-
-            // Spatch's surprise stunt flybys play on a non-interactive layer
-            // above the tabs (below the walkthrough, though the coordinator
-            // never runs the two at once). See SpatchStuntCoordinator.
-            SpatchStuntStageView()
-
-            // Spatch's walkthrough overlays the real tabs (rather than
-            // covering them in a sheet) and drives `selection` itself as it
-            // advances — see `SpatchTutorialViewModel.targetTab` — so each
-            // step narrates over the actual screen it introduces. The dimming
-            // layer blocks stray taps on the tab bar/content underneath
-            // without hiding what it's showing off.
-            if spatchTutorialViewModel.isPresented {
-                Color.black.opacity(0.18)
-                    .ignoresSafeArea()
-                    .contentShape(Rectangle())
-                    .onTapGesture {}
-                    .transition(.opacity)
-                SpatchTutorialView()
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            Tab("Recipes", systemImage: "fork.knife", value: AppTab.recipes) {
+                RecipesTab()
+            }
+            Tab("Groceries", systemImage: "cart", value: AppTab.grocery) {
+                GroceryListTab()
+            }
+            Tab("AI Planner", systemImage: "sparkles", value: AppTab.planner) {
+                AIPlannerTab()
+            }
+            Tab("Calendar", systemImage: "calendar", value: AppTab.calendar) {
+                CalendarTab()
             }
         }
         // Load the signed-in user's avatar once for the account button; runs
         // on each sign-in since MainTabView is recreated when auth state flips.
         .task { await accountViewModel.load() }
-        // First-launch-only: Spatch's walkthrough, shown ahead of the location
-        // prompt below so a brand-new user isn't hit with two prompts at once.
-        .task {
-            spatchTutorialViewModel.maybePresentOnLaunch()
-            if !spatchTutorialViewModel.isPresented, homeLocationViewModel.shouldPromptForLocation {
-                showLocationPrompt = true
-            }
-        }
-        // Spatch's stunt scheduler runs for the life of the signed-in UI (this
-        // task cancels on sign-out). The gate carries what the coordinator
-        // can't see itself: the Settings toggle and the walkthrough. Cameo
-        // visibility is tracked inside the coordinator by the cameo views.
-        .task {
-            await spatchStuntCoordinator.run {
-                settingsViewModel.showSpatch && !spatchTutorialViewModel.isPresented && !isFoldActive
-            }
-        }
-        // Turning Spatch off mid-performance yanks him off stage immediately
-        // rather than letting the current flyby finish.
-        .onChange(of: settingsViewModel.showSpatch) { _, show in
-            if !show { spatchStuntCoordinator.cancelActiveStunt() }
-        }
-        // Folding mid-flyby likewise ends it right away.
-        .onFoldActiveChange { active in
-            isFoldActive = active
-            if active { spatchStuntCoordinator.cancelActiveStunt() }
-        }
-        // Follow the tour's target tab live, so each step shows the real
-        // screen rather than a static mockup.
-        .onChange(of: spatchTutorialViewModel.stepIndex) { _, _ in
-            if let tab = spatchTutorialViewModel.targetTab {
-                selection = tab
-            }
-        }
         // First-login-only: offer to set a home location for the weather
         // outlook. Gated so it's shown at most once (the prompt itself records
-        // that it was shown — see HomeLocationPromptView). Deferred until
-        // Spatch's walkthrough (above) has been dismissed.
-        .onChange(of: spatchTutorialViewModel.isPresented) { _, isPresented in
-            guard !isPresented, homeLocationViewModel.shouldPromptForLocation else { return }
-            showLocationPrompt = true
+        // that it was shown — see HomeLocationPromptView).
+        .task {
+            if homeLocationViewModel.shouldPromptForLocation {
+                showLocationPrompt = true
+            }
         }
         .sheet(isPresented: $showLocationPrompt) {
             HomeLocationPromptView()
@@ -169,7 +81,4 @@ struct MainTabView: View {
         .environment(AccountViewModel())
         .environment(HomeLocationViewModel())
         .environment(AppCommands())
-        .environment(SpatchTutorialViewModel())
-        .environment(SpatchStuntCoordinator())
-        .environment(SpatchPerchViewModel())
 }

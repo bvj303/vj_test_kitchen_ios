@@ -22,12 +22,25 @@ BUNDLE_ID="com.bvj303.vjtestkitchen"
 
 cd "$(dirname "$0")/.."
 
-# Resolve a simulator UDID by device name (first available match) and boot it.
+# Resolve a simulator UDID by device name and boot it. When the same name
+# exists on several runtimes (e.g. iOS 26.5 and 27.0), take the NEWEST — the
+# first listed can be a runtime older than the app's deployment target, which
+# made the build-settings query below fail.
 resolve_and_boot() {
   local name="$1" udid
-  udid=$(xcrun simctl list devices available \
-    | grep -F "$name (" | head -1 \
-    | grep -oiE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}')
+  udid=$(xcrun simctl list devices available -j | python3 -I -c '
+import json, sys
+name = sys.argv[1]
+best = None
+for runtime, devices in json.load(sys.stdin)["devices"].items():
+    if ".iOS-" not in runtime:
+        continue
+    version = [int(x) for x in runtime.rsplit(".iOS-", 1)[1].split("-")]
+    for d in devices:
+        if d["name"] == name and (best is None or version > best[0]):
+            best = (version, d["udid"])
+print(best[1] if best else "")
+' "$name")
   if [ -z "$udid" ]; then
     echo "error: no available simulator named '$name'" >&2
     echo "       set REVIEW_IPHONE / REVIEW_IPAD to a name from 'xcrun simctl list devices'" >&2
@@ -40,7 +53,15 @@ resolve_and_boot() {
 echo "▸ Resolving simulators…"
 IPHONE_ID=$(resolve_and_boot "$IPHONE_NAME")
 IPAD_ID=$(resolve_and_boot "$IPAD_NAME")
-open -a Simulator || true
+# Show the booted devices. Xcode 27.1 replaced Simulator.app with Device Hub.
+DEV_DIR="${DEVELOPER_DIR:-$(xcode-select -p)}"
+if [ -d "$DEV_DIR/Applications/Simulator.app" ]; then
+  open -a "$DEV_DIR/Applications/Simulator.app" || true
+elif [ -d "$DEV_DIR/../Applications/DeviceHub.app" ]; then
+  open -a "$DEV_DIR/../Applications/DeviceHub.app" || true
+else
+  open -a Simulator 2>/dev/null || true
+fi
 
 # Where the built .app will land for the simulator SDK (parsed, not guessed).
 APP_DIR=$(xcodebuild -scheme "$SCHEME" -destination "id=$IPHONE_ID" -showBuildSettings 2>/dev/null \

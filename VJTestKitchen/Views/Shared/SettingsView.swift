@@ -5,7 +5,6 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(SettingsViewModel.self) private var settingsViewModel
     @Environment(HomeLocationViewModel.self) private var homeLocationViewModel
-    @Environment(SpatchTutorialViewModel.self) private var spatchTutorialViewModel
     // Closes the enclosing Profile sheet's navigation on iOS — a trailing "Done"
     // to match ProfileView, so Settings has an obvious dismiss and doesn't rely
     // on the back chevron alone. (macOS presents Settings as its own window.)
@@ -47,22 +46,6 @@ struct SettingsView: View {
             }
 
             weatherSection(homeLocationViewModel: homeLocationViewModel)
-
-            Section {
-                Toggle(isOn: $settingsViewModel.showSpatch) {
-                    Label("Show Spatch", systemImage: "face.smiling")
-                }
-                Button {
-                    spatchTutorialViewModel.restart()
-                } label: {
-                    Label("Meet Spatch Again", systemImage: "hand.wave.fill")
-                }
-                .disabled(!settingsViewModel.showSpatch)
-            } header: {
-                Text("Spatch")
-            } footer: {
-                Text("Spatch is your kitchen sidekick — he pops in with tips and the occasional stunt. Turn him off to hide his visits and animations, or replay his walkthrough anytime.")
-            }
         }
         .navigationTitle("Settings")
         .inlineNavigationTitle()
@@ -141,5 +124,4 @@ struct SettingsView: View {
     }
     .environment(SettingsViewModel())
     .environment(HomeLocationViewModel())
-    .environment(SpatchTutorialViewModel())
 }
